@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "وصّلها — نموذج تشغيل لمطعم واحد ومندوب واحد",
+  "description": "وصّلها — منصة لمطاعم ومناديب توصيل مستقلين، بديلة لعمولة تطبيقات التوصيل",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
     "setup": "node scripts/setup.mjs",
