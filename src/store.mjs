@@ -28,7 +28,7 @@ export function createStore(filename = ':memory:', clock = () => Date.now()) {
   if (filename !== ':memory:') mkdirSync(dirname(filename), { recursive: true });
   const db = new DatabaseSync(filename);
   db.exec(`PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
-    CREATE TABLE IF NOT EXISTS restaurants(id TEXT PRIMARY KEY,slug TEXT UNIQUE NOT NULL,name TEXT NOT NULL,city TEXT NOT NULL,password_salt BLOB NOT NULL,password_hash BLOB NOT NULL,accepting INTEGER NOT NULL DEFAULT 1,capacity INTEGER NOT NULL DEFAULT 6,fee INTEGER NOT NULL DEFAULT 1000,prep INTEGER NOT NULL DEFAULT 20,created INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS restaurants(id TEXT PRIMARY KEY,slug TEXT UNIQUE NOT NULL,name TEXT NOT NULL,city TEXT NOT NULL,password_salt BLOB NOT NULL,password_hash BLOB NOT NULL,accepting INTEGER NOT NULL DEFAULT 1,capacity INTEGER NOT NULL DEFAULT 6,fee INTEGER NOT NULL DEFAULT 1000,prep INTEGER NOT NULL DEFAULT 20,whatsapp_number TEXT,created INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS couriers(id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT UNIQUE NOT NULL,password_salt BLOB NOT NULL,password_hash BLOB NOT NULL,created INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS products(id TEXT PRIMARY KEY,restaurant_id TEXT NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL,price INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS products_restaurant ON products(restaurant_id);
@@ -75,7 +75,7 @@ export function createStore(filename = ':memory:', clock = () => Date.now()) {
     data.assigned=Boolean(courier);
     data.mine=courier===actor.actor_id;
     const restaurant=restaurantById(restaurant_id);
-    data.restaurant={name:restaurant?.name??'مطعم محذوف',city:restaurant?.city??''};
+    data.restaurant={name:restaurant?.name??'مطعم محذوف',city:restaurant?.city??'',whatsappNumber:restaurant?.whatsapp_number??null};
     if (!owns) { delete data.name; delete data.phone; delete data.address; delete data.note; }
     data.events=owns ? db.prepare('SELECT action,detail,at FROM events WHERE order_id=? ORDER BY id').all(order.id) : [];
     return data;
@@ -262,7 +262,9 @@ export function createStore(filename = ':memory:', clock = () => Date.now()) {
       demand(actor.role==='restaurant','غير مسموح.',403);
       return mutate(actor,key,'settings',body,()=>{
         demand(typeof body.accepting==='boolean' && Number.isInteger(body.capacity) && body.capacity>=1 && body.capacity<=20,'طاقة المطعم يجب أن تكون بين 1 و20 طلبًا.',400);
-        db.prepare('UPDATE restaurants SET accepting=?,capacity=? WHERE id=?').run(Number(body.accepting),body.capacity,actor.actor_id);
+        const whatsapp=String(body.whatsappNumber??'').replace(/[\s()-]/g,'');
+        demand(whatsapp==='' || phonePattern.test(whatsapp),'أدخل رقم واتساب سعودي صحيحًا (05xxxxxxxx).',400);
+        db.prepare('UPDATE restaurants SET accepting=?,capacity=?,whatsapp_number=? WHERE id=?').run(Number(body.accepting),body.capacity,whatsapp||null,actor.actor_id);
         return restaurantById(actor.actor_id);
       });
     },

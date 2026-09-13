@@ -146,6 +146,17 @@ test('cancelling before pickup works for the customer, not the courier',t=>{
   assert.equal(action(s,customer,order.id,'cancel').status,'cancelled');
 });
 
+test('restaurant sets a WhatsApp number, exposed to the customer on the order for a manual ping',t=>{
+  const s=createStore();t.after(()=>s.close());
+  const {restaurant,staff,product}=bootRestaurant(s);
+  const customer={role:'customer',actor_id:'customer-a'};
+  assert.throws(()=>s.settings(staff,key(),{accepting:true,capacity:6,whatsappNumber:'not-a-phone'}),expected(400));
+  s.settings(staff,key(),{accepting:true,capacity:6,whatsappNumber:'0511111111'});
+  assert.equal(s.catalog(restaurant.slug).restaurant.whatsapp_number,'0511111111');
+  const order=s.createOrder(customer,key(),payload(restaurant,product));
+  assert.equal(order.restaurant.whatsappNumber,'0511111111');
+});
+
 test('billing totals monthly subscription plus a flat fee per closed order',t=>{
   const s=createStore();t.after(()=>s.close());
   const {restaurant,staff,product}=bootRestaurant(s);

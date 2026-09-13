@@ -7,6 +7,12 @@ const closed=['closed','cancelled','expired'];
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const price=v=>new Intl.NumberFormat('ar-SA',{maximumFractionDigits:2}).format(v/100)+' ر.س';
 const time=v=>new Intl.DateTimeFormat('ar-SA',{hour:'2-digit',minute:'2-digit',hour12:true}).format(new Date(v));
+function whatsappLink(o){
+  const raw=o.restaurant?.whatsappNumber;if(!raw)return null;
+  const digits=raw.replace(/[^\d]/g,'').replace(/^0/,'966');
+  const text=[`طلب جديد #${o.id.slice(0,8).toUpperCase()} من وصلها`,...o.items.map(i=>`${i.name} × ${i.quantity}`),`الإجمالي: ${price(o.total)}`,`الاسم: ${o.name}`,`الحي: ${o.district}`,`العنوان: ${o.address}`,o.note?`ملاحظة: ${o.note}`:null].filter(Boolean).join('\n');
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
 const total=()=>[...S.cart].reduce((n,[id,q])=>n+(S.catalog?.products.find(p=>p.id===id)?.price??0)*q,0);
 function toast(message,error=false){const el=document.querySelector('#toast');el.textContent=message;el.className=error?'error':'';el.hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.hidden=true,6000);}
 async function api(path,{body,role=S.role,csrf=S.session?.csrf,method}={}) {
@@ -103,6 +109,7 @@ function renderOrder(o,expanded=false){
   <div class="order-body"><div><h3>${esc(o.name??'طلب توصيل جديد')} <span class="muted">· ${esc(o.district)}</span></h3><p class="muted">${esc(o.restaurant.name)} · ${time(o.created)}</p>${o.address?`<p>${esc(o.address)}</p><p dir="ltr">${esc(o.phone)}</p>`:''}</div><strong class="price">${price(o.total)}</strong></div>
   <div class="order-items">${o.items.map(i=>`${esc(i.name)} ${esc(i.description)} × ${i.quantity}`).join(' • ')}</div>${o.note?`<p class="muted">ملاحظة: ${esc(o.note)}</p>`:''}
   <div class="muted">التحصيل: ${payLabels[o.payment_status]}</div>
+  ${o.status==='awaiting_courier'&&S.role==='customer'&&whatsappLink(o)?`<a class="button full" target="_blank" rel="noopener" href="${whatsappLink(o)}">أرسل تفاصيل الطلب للمطعم عبر واتساب</a>`:''}
   ${o.status==='reserved'&&S.role==='customer'?`<div class="issue">قبل المندوب المهمة. أكد طلبك قبل ${time(o.expires)} حتى يبدأ المطبخ.</div>`:''}
   ${o.status==='delivered'?'<p class="note">تم التسليم. اكتمال الطلب يتطلب تسوية المطعم مع المندوب.</p>':''}
   ${o.status==='delivery_failed'?'<div class="issue">الطلب متعثر. يعالج المطعم عودته.</div>':''}
@@ -124,7 +131,7 @@ function renderDashboard(){
   const r=restaurant?S.catalog?.restaurant:null;
   return intro(restaurant?'كل طلبات مطعمك أمامك.':'توصيلة واضحة، خطوة بخطوة.',restaurant?'تابع التجهيز والتسليم والتحصيل دون فقدان أي خطوة.':'اقبل المهمة من أي مطعم منضم، ثم استلم وسلّم.',`<button class="button secondary" data-logout>تسجيل الخروج</button>`)+
   `<div class="stats"><div class="stat"><span>${restaurant?'طلبات نشطة':'مهام متاحة'}</span><strong>${restaurant?ongoing.length:waiting.length}</strong></div><div class="stat"><span>${restaurant?'جاهزة للاستلام':'في عهدتك'}</span><strong>${restaurant?S.orders.filter(o=>o.status==='ready').length:ongoing.filter(o=>o.mine).length}</strong></div><div class="stat"><span>تسويات مفتوحة</span><strong>${delivered.length}</strong></div></div>
-  ${restaurant&&r?`<div class="panel"><form id="settings" class="settings"><label><input name="accepting" type="checkbox" ${r.accepting?'checked':''}> استقبال طلبات جديدة</label><label>الحد المتزامن <input name="capacity" type="number" min="1" max="20" value="${r.capacity}" required></label><button class="button secondary">حفظ</button><span class="muted">الحد الحالي: ${r.capacity} طلبات · الطلبات القائمة تستمر عند الإيقاف</span></form></div>`:''}
+  ${restaurant&&r?`<div class="panel"><form id="settings" class="settings"><label><input name="accepting" type="checkbox" ${r.accepting?'checked':''}> استقبال طلبات جديدة</label><label>الحد المتزامن <input name="capacity" type="number" min="1" max="20" value="${r.capacity}" required></label><label>رقم واتساب المطعم <input name="whatsappNumber" type="tel" placeholder="05xxxxxxxx" dir="ltr" value="${esc(r.whatsapp_number??'')}"></label><button class="button secondary">حفظ</button><span class="muted">الحد الحالي: ${r.capacity} طلبات · العميل يرسل تفاصيل طلبه لهذا الرقم عبر واتساب</span></form></div>`:''}
   ${restaurant?renderBilling():''}
   ${restaurant?renderProducts():''}
   <div class="toolbar"><h2 class="section-title">${restaurant?'متابعة التشغيل':'المهام'}</h2><span class="muted">تحديث تلقائي كل 3 ثوانٍ</span></div><div class="cards">${ongoing.length?ongoing.map(o=>renderOrder(o)).join(''):empty('لا توجد طلبات نشطة',restaurant?'تظهر الطلبات هنا عند إنشائها من واجهة العميل.':'تظهر هنا مهام كل المطاعم المنضمة عند توفرها.')}</div>
@@ -140,7 +147,7 @@ function render(){
   else if(S.role==='customer'&&S.page==='shop')main.innerHTML=renderDirectory();
   else if(S.page==='checkout')main.innerHTML=renderCheckout();
   else if(S.page==='restaurant'||S.page==='courier')main.innerHTML=renderDashboard();
-  else if(S.page==='track'){const order=S.orders.find(o=>o.id===S.sub);main.innerHTML=intro('طلبك، خطوة بخطوة.','تابع الحالة هنا. لا توجد رسائل واتساب فعلية في هذه النسخة.')+(order?renderOrder(order,true):empty('الطلب غير موجود','افتحه من الحساب أو المتصفح الذي أنشأ الطلب.'));}
+  else if(S.page==='track'){const order=S.orders.find(o=>o.id===S.sub);main.innerHTML=intro('طلبك، خطوة بخطوة.','تابع الحالة هنا. زر واتساب يفتح رسالة جاهزة ترسلها بنفسك — لا رسائل تلقائية في هذه النسخة.')+(order?renderOrder(order,true):empty('الطلب غير موجود','افتحه من الحساب أو المتصفح الذي أنشأ الطلب.'));}
   else main.innerHTML=intro('طلباتك.','تفاصيل كل طلب وتحديثاته في مكان واحد.')+`<div class="cards">${S.orders.length?S.orders.map(o=>renderOrder(o)).join(''):empty('لم تبدأ طلبك الأول بعد','انتقل إلى المطاعم واختر ما تحب.')}</div>`;
   S.rendered=JSON.stringify([S.orders,S.catalog?.restaurant,S.products,S.billing]);
 }
@@ -214,7 +221,7 @@ main.addEventListener('submit',async e=>{
     }else if(form.id==='checkout'){
       const order=await api('/orders',{body:{...values,restaurant:S.restaurantSlug,items:[...S.cart].map(([id,quantity])=>({id,quantity}))}});S.cart.clear();location.hash=`track/${order.id}`;
     }else if(form.id==='settings'){
-      await api('/restaurant/settings',{body:{accepting:values.accepting==='on',capacity:Number(values.capacity)}});const me=await api('/restaurant/me');S.catalog={restaurant:me.restaurant};await reloadOrders();render();toast('تم حفظ إعدادات الاستقبال.');
+      await api('/restaurant/settings',{body:{accepting:values.accepting==='on',capacity:Number(values.capacity),whatsappNumber:values.whatsappNumber??''}});const me=await api('/restaurant/me');S.catalog={restaurant:me.restaurant};await reloadOrders();render();toast('تم حفظ الإعدادات.');
     }else if(form.id==='product'){
       await api('/restaurant/products',{body:{name:values.name,description:values.description??'',price:Math.round(Number(values.price)*100)}});
       const me=await api('/restaurant/me');S.products=me.products;form.reset();render();toast('تمت إضافة الصنف.');
