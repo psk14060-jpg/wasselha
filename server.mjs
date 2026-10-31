@@ -239,6 +239,11 @@ const server = http.createServer(async (req, res) => {
   const p = url.pathname;
   try {
     // health
+    // read-only support view (no names or phones), enabled only while DIAG_TOKEN is set
+    if (p === "/api/diag" && process.env.DIAG_TOKEN && url.searchParams.get("token") === process.env.DIAG_TOKEN) {
+      const { rows } = await pool.query("SELECT num,source,type,status,area,items,note,due,created,updated,confirmed_at,out_at FROM orders WHERE op_day=$1 ORDER BY num", [url.searchParams.get("day") || opDayOf(Date.now())]);
+      return send(res, 200, rows);
+    }
     if (p === "/healthz") { await pool.query("SELECT 1"); return send(res, 200, { ok: true }); }
 
     // storefront -> server
