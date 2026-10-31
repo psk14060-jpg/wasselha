@@ -503,6 +503,7 @@ function travelMin(o){
   return m+COURIER_MIN;
 }
 function startAt(o){return o.due-(PREP_MIN+travelMin(o))*60000;}
+function startPhrase(o){return "ابدأ تحضير الطلب رقم "+o.num+(isApp(o.source)?"، "+SRC[o.source]:o.type==="del"?"، توصيل":"، استلام");}
 const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل",chefz:"ذا شيفز",hunger:"هنقرستيشن",keeta:"كيتا",ninja:"نينجا"};
 const APPS=["chefz","hunger","keeta","ninja"]; const isApp=s=>APPS.includes(s);
 function ticket(o,t){
@@ -594,12 +595,13 @@ function render(){
   const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
+  by.new.forEach(o=>{if(startAt(o)-t<20*60000)warm(startPhrase(o));});
   /* spoken reminder when it is time to start: once, then every 3 minutes (3 times) until preparation starts */
   S.spoken=S.spoken||{};
   if(S.sound&&S.ready&&S.dayOff===0){
     const due=by.new.filter(o=>t>=startAt(o)&&(!S.spoken[o.id]||(S.spoken[o.id].n<3&&t-S.spoken[o.id].at>=180000)));
     due.slice(0,2).forEach((o,i)=>{S.spoken[o.id]={n:(S.spoken[o.id]?S.spoken[o.id].n:0)+1,at:t};
-      setTimeout(()=>say("ابدأ تحضير الطلب رقم "+o.num+(isApp(o.source)?"، "+SRC[o.source]:o.type==="del"?"، توصيل":"")),i*3500);});
+      setTimeout(()=>say(startPhrase(o)),i*4500);});
   }
   S.rendered=S.ready;
 }
@@ -831,10 +833,21 @@ setInterval(()=>{tick();if(S.ready)render();},15000);tick();
 let arVoice=null;
 function pickVoice(){try{const v=speechSynthesis.getVoices();arVoice=v.find(x=>/^ar[-_]SA/i.test(x.lang))||v.find(x=>/^ar/i.test(x.lang))||null;}catch(e){}}
 try{pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}catch(e){}
+/* Saudi voice from the server (ElevenLabs, cached); falls back to the device voice */
+const ttsAudio=new Audio(); let ttsOk=true;
+function sayDevice(text){try{const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){beep(2);}}
 function say(text){
-  try{const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;u.volume=1;
-    beep(1);setTimeout(()=>speechSynthesis.speak(u),350);}catch(e){beep(2);}
+  beep(1);
+  if(!ttsOk){setTimeout(()=>sayDevice(text),350);return;}
+  setTimeout(()=>{
+    ttsAudio.src="/api/board/say?t="+encodeURIComponent(text);
+    ttsAudio.play().catch(()=>sayDevice(text));
+  },350);
 }
+ttsAudio.addEventListener("error",()=>{const t=decodeURIComponent((ttsAudio.src.split("t=")[1]||""));fetch(ttsAudio.src).then(r=>{if(r.status===503)ttsOk=false;}).catch(()=>{});if(t)sayDevice(t);});
+/* prepare the phrase in advance so it plays instantly when due */
+const warmed=new Set();
+function warm(text){if(!ttsOk||warmed.has(text))return;warmed.add(text);fetch("/api/board/say?t="+encodeURIComponent(text)).then(r=>{if(r.status===503)ttsOk=false;}).catch(()=>{});}
 function alarm(){ /* falling two-tone warning, distinct from the new-order beep */
   try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
     for(let i=0;i<3;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="sawtooth";

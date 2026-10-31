@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
+import { migrateTts, speech } from "./tts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -70,6 +71,7 @@ async function migrate() {
   `);
   await migrateWa(pool);
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
+  await migrateTts(pool);
 }
 
 // ---------- helpers ----------
@@ -308,6 +310,16 @@ const server = http.createServer(async (req, res) => {
         if (origin && new URL(origin).host !== req.headers.host) return send(res, 403, { error: "origin" });
       }
       if (p === "/api/board/menu" && req.method === "GET") return send(res, 200, await getMenu());
+      if (p === "/api/board/say" && req.method === "GET") {
+        try {
+          const audio = await speech(pool, url.searchParams.get("t"));
+          res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": audio.length, "Cache-Control": "private, max-age=86400" });
+          return res.end(audio);
+        } catch (e) {
+          if (e.code !== 503) console.log("tts: " + e.message);
+          return send(res, e.code === 400 ? 400 : 503, { error: e.message.slice(0, 80) });
+        }
+      }
       if (p === "/api/board/orders" && req.method === "GET") {
         const day = String(url.searchParams.get("day") || opDayOf(Date.now()));
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return send(res, 400, { error: "day" });
