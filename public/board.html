@@ -240,7 +240,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 </header>
 
 <section class="pending" id="pending" hidden aria-label="طلبات بانتظار تأكيدك">
-  <div class="phead"><h2>بانتظار تأكيدك</h2><p>طلبات الموقع تنتقل للمطبخ وحدها عندما تصل رسالة العميل برقم الطلب. طلبات الواتساب تدخل المطبخ مباشرة عندما ترسل للعميل «تم اعتماد طلبك».</p></div>
+  <div class="phead"><h2>بانتظار تأكيدك</h2><p>طلبات الموقع تنتقل للمطبخ وحدها عندما تصل رسالة العميل برقم الطلب.</p></div>
   <div class="plist" id="plist"></div>
 </section>
 
@@ -303,11 +303,6 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
       <label class="f"><span>الإجمالي (ريال)</span><input type="number" id="total" inputmode="decimal" min="0" step="0.5"></label>
     </div>
 
-    <details class="paste" id="pasteBox">
-      <summary>لصق رسالة واتساب بدل الاختيار</summary>
-      <textarea id="raw" placeholder="انسخ رسالة الطلب كاملة والصقها هنا"></textarea>
-      <p id="parseMsg">تتعبّأ الخانات من الرسالة تلقائيًا.</p>
-    </details>
     <p class="err" id="formErr" hidden></p>
     <div class="confirm" id="delConfirm" hidden>
       <span id="delText">إلغاء هذا الطلب؟</span>
@@ -537,7 +532,7 @@ function render(){
   if(!S.ready) rail.innerHTML=`<div class="empty" style="grid-column:1/-1">جارٍ تحميل طلبات ${S.dayOff?"بكرة":"اليوم"}…</div>`;
   else rail.innerHTML=COLS.map(c=>`<section class="col ${S.tab===c.k?"on":""}" role="tabpanel" aria-label="${c.t}">
       <div class="colhead"><h2>${c.t}</h2><span class="n">${by[c.k].length}</span>${c.hint?`<span class="hint">${c.hint}</span>`:""}</div>
-      ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما ترسل «تم اعتماد طلبك»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
+      ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما تكتب للعميل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
     </section>`).join("");
   $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
   const late=live.filter(o=>(o.status==="new"||o.status==="prep")&&o.due<t).length;
@@ -684,14 +679,12 @@ function renderSum(){
 function textMode(){return !$("textMode").hidden;}
 function setTextMode(on){$("textMode").hidden=!on;$("quick").hidden=on;renderSum();}
 
-let matchedPending=null;
 function openSheet(o){
-  S.editing=o||null; matchedPending=null; cart=[]; pickedSlot=null;
+  S.editing=o||null; cart=[]; pickedSlot=null;
   $("shTitle").textContent=o?(o.status==="pending"?"مراجعة طلب #"+o.num:"تعديل الطلب #"+o.num):"طلب جديد";
   $("saveBtn").textContent=o?(o.status==="pending"?"تأكيد وإرسال للمطبخ":"حفظ التعديل"):"أضف للمطبخ";
-  $("pasteBox").hidden=!!o; $("pasteBox").open=false; $("cancelOrderBtn").hidden=!o||o.status==="cancelled";
+  $("cancelOrderBtn").hidden=!o||o.status==="cancelled";
   $("delConfirm").hidden=true; $("formErr").hidden=true;
-  $("raw").value=""; $("parseMsg").textContent="تتعبّأ الخانات من الرسالة تلقائيًا."; $("parseMsg").className="";
   setTextMode(!!o);
   setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"call"); setSeg("typeSeg",o?o.type:"pick");
   setSeg("daySeg",o?(opDayOf(o.due)===dayKey(0)?0:1):S.dayOff);
@@ -706,43 +699,16 @@ function openSheet(o){
   if(o)setTimeout(()=>$("items").focus(),50);
   if(!MENU)loadMenu();
 }
-function closeSheet(){$("scrim").hidden=true;S.editing=null;matchedPending=null;}
+function closeSheet(){$("scrim").hidden=true;S.editing=null;}
 $("newBtn").onclick=()=>openSheet(null);
 $("closeBtn").onclick=closeSheet;
 $("scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeSheet();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("scrim").hidden)closeSheet();});
 function setAsap(){const p=rParts(now()+30*60000);setSeg("daySeg",0);$("dueTime").value=pad(p.h)+":"+pad(p.mi);pickedSlot=null;renderSlots();}
-function applyParse(){
-  const raw=$("raw").value; if(!raw.trim())return;
-  const r=parseOrder(raw); const got=[]; const m=$("parseMsg");
-  if(r.ref){
-    const p=S.orders.find(o=>o.ref===r.ref);
-    if(p&&p.status==="pending"){matchedPending=p;m.textContent="هذا طلب الموقع "+r.ref+" وهو موجود في اللوحة. اضغط «تأكيد الطلب» لنقله للمطبخ بدون تكرار.";m.className="parsed";$("saveBtn").textContent="تأكيد الطلب "+r.ref;return;}
-    if(p){m.textContent="الطلب "+r.ref+" موجود ومؤكد مسبقًا (#"+p.num+"). لا تضفه مرة ثانية.";m.className="err";return;}
-  }
-  setTextMode(true);
-  if(r.name){$("name").value=r.name;got.push("الاسم");}
-  if(r.phone){$("phone").value=r.phone;got.push("الجوال");}
-  if(r.type){setSeg("typeSeg",r.type);got.push(r.type==="del"?"توصيل":"استلام");}
-  if(r.area){const a=r.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=r.area;}}
-  if(r.day!=null)setSeg("daySeg",r.day);
-  if(r.time){$("dueTime").value=pad(r.time.h)+":"+pad(r.time.m);got.push("الوقت");}
-  else if(r.asap){setAsap();got.push("أقرب وقت");}
-  if(r.items.length){$("items").value=r.items.join("\n");got.push(r.items.length+" أصناف");}
-  if(r.total!=null){$("total").value=r.total;got.push("الإجمالي");}
-  if(r.note)$("note").value=r.note;
-  setSeg("srcSeg","wa");
-  if(got.length){m.textContent="قرأت: "+got.join("، ")+". راجع الخانات ثم أضف.";m.className="parsed";}
-  else{m.textContent="ما قدرت أقرأ الرسالة. عبّئ الخانات يدويًا.";m.className="err";}
-  if(!r.time&&!r.asap&&got.length)m.textContent+=" الوقت غير موجود في الرسالة، حدّده.";
-}
-$("raw").addEventListener("paste",()=>setTimeout(applyParse,0));
-$("raw").addEventListener("change",applyParse);
 
 $("sheet").addEventListener("submit",async e=>{
   e.preventDefault();
   const err=$("formErr"); err.hidden=true;
-  if(matchedPending){const p=matchedPending;closeSheet();return patch(p,{status:"new",confirm:true},"أُكّد الطلب #"+p.num+" وانتقل للمطبخ");}
   const tm=$("dueTime").value; const del=segVal("typeSeg")==="del";
   let items, total, deliveryFee=null;
   if(textMode()){

@@ -3,7 +3,7 @@
 // - Other customer text is read by Claude; if it is an order, it becomes a "review and confirm" card.
 // - Several messages from the same customer within 20 minutes update one card instead of creating many.
 
-import { menuText } from "./menu.mjs";
+import { getMenu } from "./menu.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -70,35 +70,36 @@ export function extractMessages(body) {
   return out;
 }
 
-async function askClaude(apiKey, transcript, nowMs, previous) {
-  const MENU = await menuText();
+async function askClaude(apiKey, transcript, nowMs, previous, menu) {
+  const MENU = menu.products.map(p => `${p.id} | ${p.name}${p.flavors.length ? " | حشوات: " + p.flavors.join("، ") : ""} | الأحجام: ` +
+    p.variants.map(v => `«${v.tag}» ${v.price} ريال`).join("، ")).join("\n");
+  const AREAS = menu.areas.map(a => a.name).join("، ");
   const riyadh = new Date(nowMs + 3 * 3600e3);
   const nowTxt = riyadh.toISOString().slice(0, 16).replace("T", " ");
-  const system = `أنت تقرأ محادثة واتساب بين عميل ومطعم مينيقيش للمعجنات في الهفوف. المحل اعتمد الطلب للتو برسالة فيها «تم اعتماد طلبك»، ومهمتك استخراج الطلب الذي اعتُمد.
+  const system = `أنت تقرأ محادثة واتساب بين عميل ومطعم مينيقيش للمعجنات في الهفوف. المحل اعتمد الطلب للتو برسالة مثل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، ومهمتك استخراج الطلب الذي اعتُمد.
 السطور التي تبدأ بـ [العميل] كتبها العميل، والتي تبدأ بـ [المحل] ردود المطعم.
 الوقت الآن في الرياض: ${nowTxt}. ساعات الطلب من 3:30 عصرًا حتى 12:30 بعد منتصف الليل، فأي ساعة بلا ص/م تعني مساءً، و12 تعني منتصف الليل.
-المنيو والأسعار (السعر للبوكس الواحد):
+المنيو (المعرّف | الاسم | الأحجام):
 ${MENU}
-${previous ? `ملاحظة: هذا العميل عنده طلب مؤكد سابقًا (#${previous.num}) أصنافه: ${previous.items.replace(/\n/g, "، ")}. إذا كانت الرسائل الجديدة تعدّل ذلك الطلب أو تضيف عليه فاجعل is_change=true واكتب في items الطلب كاملًا بعد التعديل.` : ""}
+أحياء التوصيل: ${AREAS}
+${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سابقًا (#${previous.num}) أصنافه: ${previous.items.replace(/\n/g, "، ")}. إذا كانت الرسائل الجديدة تعدّل ذلك الطلب أو تضيف عليه فاجعل is_change=true واكتب في items الطلب كاملًا بعد التعديل.` : ""}
 أعد JSON فقط بلا أي نص آخر:
-{"is_order":true|false,"is_change":true|false,"name":"","type":"del|pick|unknown","area":"","day":0|1,"time":"HH:MM"|"asap"|null,"items":["1 × بيتزا 10 قطع (رانش) — 21 ريال"],"total":number|null,"note":"","unclear":"ما ينقص باختصار، أو فارغ"}
+{"is_change":true|false,"name":"","type":"del|pick|unknown","area":"","day":0|1,"time":"HH:MM"|"asap"|null,"items":[{"id":"triangles","tag":"20 قطعة","qty":2,"flavor":"رانش"}],"note":"","unclear":""}
 قواعد:
-- العملاء يكتبون بالعامية وعلى عدة رسائل، ويسألون قبل أن يطلبوا. اقرأ المحادثة كلها واستخرج ما استقر عليه العميل في النهاية: إذا غيّر رأيه فخذ الأخير.
-- is_order=true فقط إذا طلب العميل أصنافًا فعلًا (مثل: سو لي، ابغى، جهز لي، خلاص عطني). الأسئلة عن الأصناف أو الحشوات أو الأسعار أو الدوام أو الموقع وحدها ليست طلبًا.
-- العدد قد يكون بالقطع لا بالبوكسات: «10 بيتزا» تعني بوكس بيتزا 10 قطع، و«20 فطاير» بوكس 20 قطعة. إذا لم يطابق العدد حجمًا في المنيو فاكتبه كما قاله وانسب السعر الأقرب منطقيًا واذكر ذلك في unclear.
-- الحشوة أو النكهة تُكتب بين قوسين بعد الصنف. إذا طلب نكهتين لنفس الصنف فاجعل كل نكهة سطرًا مستقلًا.
-- إذا ذكر [المحل] سعرًا أو وقتًا أو تفصيلًا ووافق العميل فاعتمده.
-- رسالة الاعتماد من [المحل] هي المرجع الأقوى: إذا كتب فيها ملخصًا للأصناف أو الوقت فخذ به حتى لو خالف ما قبله.
-- is_order=true دائمًا هنا ما دام في المحادثة طلب أصناف.
-- اكتب السعر من المنيو لكل سطر = العدد × سعر البوكس، والإجمالي مجموع السطور. إذا تعذّر سعر سطر فاتركه بلا سعر واجعل total=null.
-- day=1 فقط إذا قال بكرة أو غدًا. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو بمر آخذه.
-- لا تخترع شيئًا لم يُذكر.
-- unclear للمطبخ فقط: اذكر فيه ما ينقص فعلًا لتجهيز الطلب (صنف غير محدد، عدد غير واضح، وقت غير مذكور) في أقل من 10 كلمات، ولا تشرح افتراضاتك (مثل تحويل الساعة لمساءً). اتركه فارغًا إذا كان الطلب واضحًا.
-- note: ملاحظة العميل للتحضير فقط (مثل: بدون زيتون، حار)، وإلا فاتركه فارغًا.`;
+- العملاء يكتبون بالعامية وعلى عدة رسائل، ويسألون قبل أن يطلبوا. استخرج ما استقر عليه العميل في النهاية: إذا غيّر رأيه فخذ الأخير.
+- رسالة الاعتماد من [المحل] هي المرجع الأقوى: إذا كتب فيها ملخصًا للأصناف أو الوقت فخذ به.
+- items: لكل صنف id و tag مطابقين حرفيًا لما في المنيو أعلاه، و qty عدد البوكسات، و flavor الحشوة إن ذُكرت (وإلا ""). إذا طلب حشوتين لنفس الصنف فاجعل كل حشوة عنصرًا مستقلًا.
+- العدد قد يكون بالقطع: «10 بيتزا» = بيتزا بحجم «10 قطع» qty=1، و«20 فطاير» = فطائر مثلثة «20 قطعة» qty=1، و«40 فطاير» = «20 قطعة» qty=2.
+- إذا تعذّرت مطابقة صنف مع المنيو فاكتبه {"text":"كما قاله العميل"} بدل id.
+- area: اسم الحي مطابقًا حرفيًا لقائمة الأحياء إن أمكن، وإلا كما قاله العميل.
+- day=1 فقط إذا قال بكرة أو غدًا. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو يمر يأخذه، وunknown إن لم يتضح.
+- note: ملاحظة العميل للتحضير فقط (مثل: بدون زيتون، حار)، وإلا فارغ.
+- unclear: ما ينقص فعلًا لتجهيز الطلب في أقل من 10 كلمات، أو فارغ. لا تشرح افتراضاتك.
+- لا تخترع شيئًا لم يُذكر.`;
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com") + "/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 900, system, messages: [{ role: "user", content: transcript }] }),
+    body: JSON.stringify({ model: MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: transcript }] }),
     signal: AbortSignal.timeout(25000),
   });
   if (!r.ok) throw new Error("claude_http_" + r.status + " " + (await r.text()).slice(0, 200));
@@ -121,9 +122,38 @@ function dueFromParsed(p, nowMs) {
 }
 
 // The owner's approval phrase. Only a message from the business containing it turns a chat into a kitchen order.
-const APPROVAL = /تم\s*(ال)?[اأ]عتماد\s*(ال)?طلب/;
+const APPROVAL = /تم\s*(ال)?([اأ]عتماد|تأكيد|تاكيد)\s*(ال)?طلب/;
 const APPROVAL_WINDOW = 3 * 3600e3; // how far back a chat is read when it is approved
 const SESSION_GAP = 90 * 60e3;      // a silence this long starts a new conversation
+
+// Turn the reader's structured items into kitchen lines with prices from the live website menu,
+// and add the delivery fee of the matched area.
+const norm = t => String(t || "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\s+/g, " ").trim();
+function priceOrder(p, menu) {
+  const lines = []; const missing = []; let sum = 0, unknown = 0;
+  for (const it of (Array.isArray(p.items) ? p.items : []).slice(0, 30)) {
+    if (it && typeof it === "object" && it.id) {
+      const prod = menu.products.find(x => x.id === it.id);
+      const v = prod && (prod.variants.find(x => x.tag === it.tag) || prod.variants.find(x => norm(x.tag) === norm(it.tag)) || (prod.variants.length === 1 ? prod.variants[0] : null));
+      const qty = Math.max(1, Math.min(99, parseInt(it.qty, 10) || 1));
+      const flavor = it.flavor ? ` (${String(it.flavor).slice(0, 30)})` : "";
+      if (prod && v) { lines.push(`${qty} × ${prod.name} ${v.tag}${flavor} — ${v.price * qty} ريال`); sum += v.price * qty; continue; }
+      if (prod) { lines.push(`${qty} × ${prod.name}${flavor} — ؟ (الحجم غير محدد)`); unknown++; missing.push("حجم " + prod.name); continue; }
+    }
+    const text = typeof it === "string" ? it : (it && (it.text || it.name)) || "";
+    if (text) { lines.push(`؟ ${String(text).slice(0, 120)}`); unknown++; }
+  }
+  if (!lines.length) { lines.push("(راجع المحادثة)"); missing.push("الأصناف"); }
+  else if (unknown && !missing.length) missing.push("صنف غير مطابق للمنيو");
+  let fee = null, areaLabel = "";
+  if (p.type === "del") {
+    const a = menu.areas.find(x => norm(x.name) === norm(p.area)) || menu.areas.find(x => p.area && (norm(p.area).includes(norm(x.name)) || norm(x.name).includes(norm(p.area))));
+    if (a) { fee = a.fee; areaLabel = `${a.name}${a.fee ? ` (توصيل ${a.fee} ر)` : " (توصيل مجاني)"}`; }
+    else if (p.area) { areaLabel = String(p.area).slice(0, 80); missing.push("رسوم الحي"); }
+    else missing.push("الحي");
+  }
+  return { items: lines.join("\n"), total: sum ? sum + (fee || 0) : null, fee, areaLabel, missing };
+}
 
 // Build the order from this customer's chat, triggered by the owner's approval message.
 async function approveFromConversation(m, phone, ctx, apiKey) {
@@ -154,36 +184,39 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (!customerRows.length) return "approval_without_customer_text";
   const transcript = rows.map(r => (r.dir === "out" ? "[المحل] " : "[العميل] ") + r.body).join("\n").slice(-7000);
 
+  const menu = await getMenu();
   let p = null;
   if (apiKey) {
-    try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null); }
+    try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu); }
     catch (e) { log("wa: claude failed " + String(e.message || e).slice(0, 160)); }
   }
   if (!p) {
     // no Claude: read time and type with the simple reader, keep the customer's words as the items
     let pr = {}; try { pr = parseOrder(customerRows.map(r => r.body).join("\n") + "\n" + m.text); } catch {}
-    p = { type: pr.type, area: pr.area, day: pr.day, total: pr.total ?? null,
+    p = { type: pr.type || "unknown", area: pr.area, day: pr.day,
       time: pr.time ? `${String(pr.time.h).padStart(2, "0")}:${String(pr.time.m).padStart(2, "0")}` : (pr.asap ? "asap" : null),
-      items: customerRows.map(r => r.body).slice(-6), unclear: "راجع الأصناف في المحادثة" };
+      items: customerRows.map(r => ({ text: r.body })).slice(-6), unclear: "راجع الأصناف في المحادثة" };
   }
+  const built = priceOrder(p, menu);
   const { due, timeKnown } = dueFromParsed(p, now);
-  const items = (Array.isArray(p.items) ? p.items : []).map(x => String(x).slice(0, 140)).filter(Boolean).slice(0, 30).join("\n") || "(راجع المحادثة)";
   const fields = {
     name: String(p.name || m.name || "").slice(0, 60), type: p.type === "del" ? "del" : "pick",
-    area: p.type === "del" ? String(p.area || "").slice(0, 80) : "", items,
-    total: p.total !== null && p.total !== undefined && isFinite(Number(p.total)) ? Number(p.total) : null, due,
+    area: built.areaLabel, items: built.items, total: built.total, deliveryFee: built.fee, due,
   };
-  const baseNote = [p.note, !timeKnown ? "الوقت غير محدد" : "", p.unclear ? "ناقص: " + p.unclear : ""].filter(Boolean);
+  const missing = [...built.missing];
+  if (!timeKnown) missing.push("الوقت");
+  if (p.type !== "del" && p.type !== "pick") missing.push("استلام أو توصيل");
+  const baseNote = [missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
 
   // approved again before the kitchen finished: it is a change to that order, not a new one
   if (prev && p.is_change && ["new", "prep"].includes(prev.status) && prev.source === "wa") {
     const note = ["عُدّل بعد الاعتماد", ...baseNote].join(" · ").slice(0, 300);
-    await pool.query(`UPDATE orders SET name=CASE WHEN $1<>'' THEN $1 ELSE name END,type=$2,area=$3,items=$4,total=$5,note=$6,due=$7,raw_text=$8,updated=$9 WHERE id=$10`,
-      [fields.name, fields.type, fields.area, fields.items, fields.total, note, fields.due, transcript.slice(-3000), now, prev.id]);
+    await pool.query(`UPDATE orders SET name=CASE WHEN $1<>'' THEN $1 ELSE name END,type=$2,area=$3,items=$4,total=$5,note=$6,due=$7,raw_text=$8,updated=$9,delivery_fee=$11 WHERE id=$10`,
+      [fields.name, fields.type, fields.area, fields.items, fields.total, note, fields.due, transcript.slice(-3000), now, prev.id, fields.deliveryFee]);
     return `order_changed #${prev.num}`;
   }
   const note = [prev && p.is_change ? `تعديل على الطلب #${prev.num} وقد بدأ تجهيزه — راجعهما` : "", ...baseNote].filter(Boolean).join(" · ").slice(0, 300);
-  const o = await insertOrder({ ref: null, source: "wa", status: "new", phone, deliveryFee: null, ...fields, note,
+  const o = await insertOrder({ ref: null, source: "wa", status: "new", phone, ...fields, note,
     waFrom: m.from, rawText: transcript.slice(-3000), needsReview: false });
   return `approved_order #${o.num}`;
 }
