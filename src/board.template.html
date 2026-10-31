@@ -75,6 +75,11 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 @keyframes latePulse{50%{outline-color:transparent;background:var(--late-soft)}}
 .due.warn{background:#fde3c4} .due.warn .left{color:#b55e00}
 @media (prefers-reduced-motion:reduce){.tk.st-late{animation:none}}
+.startat{font-size:14px;font-weight:600;color:var(--call)}
+.startat small{font-weight:500;color:var(--muted)}
+.startnow{justify-self:start;font-weight:700;font-size:15px;color:#fff;background:var(--call);border-radius:8px;padding:4px 12px;animation:startPulse 1.2s ease-in-out infinite}
+@keyframes startPulse{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.startnow{animation:none}}
 .offline{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);background:var(--late);color:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:13px;z-index:40}
 </style>
 </head>
@@ -214,7 +219,7 @@ function minsLeftText(mins){
 
 /* ---------- state ---------- */
 const COLS=[
-  {k:"new",t:"بانتظار التحضير",hint:"الأقرب موعدًا أولًا"},
+  {k:"new",t:"بانتظار التحضير",hint:"حسب وقت البدء"},
   {k:"prep",t:"يُحضَّر"},
   {k:"ready",t:"جاهز"},
   {k:"out",t:"مع المندوب"}];
@@ -267,6 +272,17 @@ function urgency(o,t){
   if(["new","prep","ready"].includes(o.status)) cls=o.due<t?"late over":o.due-t<=5*60000?"warn":"ok";
   return {mins,cls};
 }
+/* when to start: delivery time minus preparation (and travel for delivery) */
+const PREP_MIN=25, COURIER_MIN=10, DEFAULT_TRAVEL_MIN=20;
+function travelMin(o){
+  if(o.type!=="del"||isApp(o.source))return 0;
+  const name=String(o.area||"").replace(/\s*\(.*\)\s*$/,"").trim();
+  const a=MENU&&MENU.areas.find(x=>x.name===name);
+  const f=(MENU&&MENU.rules&&MENU.rules.timeFactor)||1.4;
+  const m=a&&a.minutes!=null?Math.ceil(a.minutes*f):DEFAULT_TRAVEL_MIN;
+  return m+COURIER_MIN;
+}
+function startAt(o){return o.due-(PREP_MIN+travelMin(o))*60000;}
 const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل",chefz:"ذا شيفز",hunger:"هنقرستيشن",keeta:"كيتا",ninja:"نينجا"};
 const APPS=["chefz","hunger","keeta","ninja"]; const isApp=s=>APPS.includes(s);
 function ticket(o,t){
@@ -281,6 +297,7 @@ function ticket(o,t){
       <span class="type ${o.type==="del"?"del":""}">${isApp(o.source)?"مندوب التطبيق":o.type==="del"?"توصيل":"استلام"}</span>
       <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):minsLeftText(u.mins)}</span></div>
     </div>
+    ${o.status==="new"?(t>=startAt(o)?`<div class="startnow">ابدأ الآن</div>`:`<div class="startat">ابدأ التحضير <span class="num">${fmtClock(startAt(o))}</span>${travelMin(o)?` <small>(توصيل ${travelMin(o)} د)</small>`:""}</div>`):""}
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
     ${o.type==="del"&&o.area?`<div class="area">${esc(o.area)}</div>`:""}
     ${items.length?`<ul class="items">${items.map(i=>`<li><span>${esc(i)}</span></li>`).join("")}</ul>`:""}
@@ -329,6 +346,7 @@ function render(){
   $("plist").innerHTML=pend.map(o=>pendingCard(o,t)).join("");
   const live=all.filter(o=>["new","prep","ready","out"].includes(o.status)).sort((a,b)=>a.due-b.due);
   const by=Object.fromEntries(COLS.map(c=>[c.k,live.filter(o=>o.status===c.k)]));
+  by.new.sort((a,b)=>startAt(a)-startAt(b));
   const rail=$("rail");
   if(!S.ready) rail.innerHTML=`<div class="empty" style="grid-column:1/-1">جارٍ تحميل طلبات ${S.dayOff?"بكرة":"اليوم"}…</div>`;
   else rail.innerHTML=COLS.map(c=>`<section class="col ${S.tab===c.k?"on":""}" role="tabpanel" aria-label="${c.t}">
@@ -356,6 +374,13 @@ function render(){
   const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
+  /* spoken reminder when it is time to start: once, then every 3 minutes (3 times) until preparation starts */
+  S.spoken=S.spoken||{};
+  if(S.sound&&S.ready&&S.dayOff===0){
+    const due=by.new.filter(o=>t>=startAt(o)&&(!S.spoken[o.id]||(S.spoken[o.id].n<3&&t-S.spoken[o.id].at>=180000)));
+    due.slice(0,2).forEach((o,i)=>{S.spoken[o.id]={n:(S.spoken[o.id]?S.spoken[o.id].n:0)+1,at:t};
+      setTimeout(()=>say("ابدأ تحضير الطلب رقم "+o.num+(isApp(o.source)?"، "+SRC[o.source]:o.type==="del"?"، توصيل":"")),i*3500);});
+  }
   S.rendered=S.ready;
 }
 
@@ -569,7 +594,7 @@ function beep(n){
 }
 async function keepAwake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible")await navigator.wakeLock.request("screen");}catch(e){}}
 function setSound(on){S.sound=on;$("soundBtn").setAttribute("aria-pressed",on);$("soundBtn").textContent="التنبيه الصوتي: "+(on?"شغّال":"مطفأ");
-  try{localStorage.setItem("mg-sound",on?"1":"0")}catch(e){} if(on){beep(1);keepAwake();}}
+  try{localStorage.setItem("mg-sound",on?"1":"0")}catch(e){} if(on){keepAwake();say("التنبيه الصوتي شغّال");}}
 $("soundBtn").onclick=()=>setSound(!S.sound);
 /* browsers allow sound only after a tap: if the sound was on last time, the first tap anywhere turns it back on */
 try{if(localStorage.getItem("mg-sound")==="1"){$("soundBtn").textContent="التنبيه الصوتي: اضغط أي مكان لتشغيله";
@@ -578,6 +603,13 @@ let toastT=null;
 function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800);}
 function tick(){$("clock").textContent=fmtClock(now());}
 setInterval(()=>{tick();if(S.ready)render();},15000);tick();
+let arVoice=null;
+function pickVoice(){try{const v=speechSynthesis.getVoices();arVoice=v.find(x=>/^ar[-_]SA/i.test(x.lang))||v.find(x=>/^ar/i.test(x.lang))||null;}catch(e){}}
+try{pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}catch(e){}
+function say(text){
+  try{const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;u.volume=1;
+    beep(1);setTimeout(()=>speechSynthesis.speak(u),350);}catch(e){beep(2);}
+}
 function alarm(){ /* falling two-tone warning, distinct from the new-order beep */
   try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
     for(let i=0;i<3;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="sawtooth";

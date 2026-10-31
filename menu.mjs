@@ -92,9 +92,11 @@ async function refresh() {
     const dsrc = (html.match(/<script[^>]+src="([^"]*minigeesh-delivery[^"]*)"/) || [])[1] || "assets/minigeesh-delivery.js";
     const djs = await fetchText(new URL(dsrc, SITE + "/").href);
     const at = literalAfter(djs, "AREAS:");
-    if (at) areas = evalLiteral(at).map(a => ({ name: String(a.name), city: String(a.city || ""), fee: Number(a.fee) || 0 }));
+    if (at) areas = evalLiteral(at).map(a => ({ name: String(a.name), city: String(a.city || ""), fee: Number(a.fee) || 0,
+      minutes: a.minutes === null || a.minutes === undefined ? null : Number(a.minutes) }));
     rules = { minSubtotal: numberAfter(djs, "MIN_SUBTOTAL"), midMinSubtotal: numberAfter(djs, "MID_MIN_SUBTOTAL"), midMinFee: numberAfter(djs, "MID_MIN_FEE"),
-      farMinSubtotal: numberAfter(djs, "FAR_MIN_SUBTOTAL"), farMinFee: numberAfter(djs, "FAR_MIN_FEE") };
+      farMinSubtotal: numberAfter(djs, "FAR_MIN_SUBTOTAL"), farMinFee: numberAfter(djs, "FAR_MIN_FEE"),
+      timeFactor: numberAfter(djs, "TIME_FACTOR") };
   } catch {}
   if (!areas.length) areas = current.areas;
   current = { products, areas, rules, source: "site", fetchedAt: Date.now() };
