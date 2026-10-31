@@ -25,9 +25,6 @@ import { fileURLToPath } from "node:url";
 const { parseOrder } = new Function(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "src", "parser.js"), "utf8") + "\nreturn { parseOrder };")();
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
-const MERGE_WINDOW = 20 * 60e3;   // raw fallback merge
-const CONV_WINDOW = 90 * 60e3;    // how far back a chat is read as one conversation
-const CHANGE_WINDOW = 3 * 3600e3; // a confirmed order this recent can be "changed" by new messages
 
 const localPhone = waId => {
   const d = String(waId || "").replace(/\D/g, "");
@@ -89,7 +86,7 @@ export function extractMessages(body) {
 async function askClaude(apiKey, transcript, nowMs, previous) {
   const riyadh = new Date(nowMs + 3 * 3600e3);
   const nowTxt = riyadh.toISOString().slice(0, 16).replace("T", " ");
-  const system = `أنت تقرأ محادثة واتساب بين عميل ومطعم مينيقيش للمعجنات في الهفوف، وتستخرج الطلب النهائي الذي اتفقا عليه.
+  const system = `أنت تقرأ محادثة واتساب بين عميل ومطعم مينيقيش للمعجنات في الهفوف. المحل اعتمد الطلب للتو برسالة فيها «تم اعتماد طلبك»، ومهمتك استخراج الطلب الذي اعتُمد.
 السطور التي تبدأ بـ [العميل] كتبها العميل، والتي تبدأ بـ [المحل] ردود المطعم.
 الوقت الآن في الرياض: ${nowTxt}. ساعات الطلب من 3:30 عصرًا حتى 12:30 بعد منتصف الليل، فأي ساعة بلا ص/م تعني مساءً، و12 تعني منتصف الليل.
 المنيو والأسعار (السعر للبوكس الواحد):
@@ -103,6 +100,8 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب مؤكد ساب�
 - العدد قد يكون بالقطع لا بالبوكسات: «10 بيتزا» تعني بوكس بيتزا 10 قطع، و«20 فطاير» بوكس 20 قطعة. إذا لم يطابق العدد حجمًا في المنيو فاكتبه كما قاله وانسب السعر الأقرب منطقيًا واذكر ذلك في unclear.
 - الحشوة أو النكهة تُكتب بين قوسين بعد الصنف. إذا طلب نكهتين لنفس الصنف فاجعل كل نكهة سطرًا مستقلًا.
 - إذا ذكر [المحل] سعرًا أو وقتًا أو تفصيلًا ووافق العميل فاعتمده.
+- رسالة الاعتماد من [المحل] هي المرجع الأقوى: إذا كتب فيها ملخصًا للأصناف أو الوقت فخذ به حتى لو خالف ما قبله.
+- is_order=true دائمًا هنا ما دام في المحادثة طلب أصناف.
 - اكتب السعر من المنيو لكل سطر = العدد × سعر البوكس، والإجمالي مجموع السطور. إذا تعذّر سعر سطر فاتركه بلا سعر واجعل total=null.
 - day=1 فقط إذا قال بكرة أو غدًا. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو بمر آخذه.
 - لا تخترع شيئًا لم يُذكر.`;
@@ -131,73 +130,84 @@ function dueFromParsed(p, nowMs) {
   return { due: ms, timeKnown: true };
 }
 
-// Read this customer's recent conversation and create or update their order card.
-async function readConversation(m, phone, ctx, apiKey, fallbackCard) {
+// The owner's approval phrase. Only a message from the business containing it turns a chat into a kitchen order.
+const APPROVAL = /تم\s*(ال)?[اأ]عتماد\s*(ال)?طلب/;
+const APPROVAL_WINDOW = 3 * 3600e3; // how far back a chat is read when it is approved
+
+// Build the order from this customer's chat, triggered by the owner's approval message.
+async function approveFromConversation(m, phone, ctx, apiKey) {
   const { pool, insertOrder, log } = ctx;
   const now = Date.now();
-  const open = (await pool.query(
-    `SELECT id, created FROM orders WHERE wa_from=$1 AND source='wa' AND status='pending' AND created > $2 ORDER BY created DESC LIMIT 1`,
-    [m.from, now - CONV_WINDOW])).rows[0];
-  const prev = open ? null : (await pool.query(
-    `SELECT id, num, items, confirmed_at FROM orders WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND confirmed_at > $2 ORDER BY confirmed_at DESC LIMIT 1`,
-    [m.from, now - CHANGE_WINDOW])).rows[0];
-  // where the conversation starts: shortly before the open card, after the confirmed order, or the last 90 minutes
-  const since = open ? Number(open.created) - 30 * 60e3 : prev ? Number(prev.confirmed_at) - 5000 : now - CONV_WINDOW; // WhatsApp timestamps are whole seconds
+  // last order already approved for this customer (website or WhatsApp) that the kitchen has not finished
+  const prev = (await pool.query(
+    `SELECT id, num, items, source, ref, confirmed_at, status FROM orders
+      WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND confirmed_at > $2 ORDER BY confirmed_at DESC LIMIT 1`,
+    [m.from, now - APPROVAL_WINDOW])).rows[0];
+  const since = prev ? Number(prev.confirmed_at) - 5000 : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
   const rows = (await pool.query(
-    `SELECT dir, body FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND body<>'' ORDER BY at ASC LIMIT 60`, [m.from, since])).rows;
-  if (!rows.some(r => r.dir !== "out")) return "no_customer_text";
-  const transcript = rows.map(r => (r.dir === "out" ? "[المحل] " : "[العميل] ") + r.body).join("\n").slice(-6000);
-  let p;
-  try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null); }
-  catch (e) {
-    log("wa: claude failed " + String(e.message || e).slice(0, 160));
-    return fallbackCard ? await fallbackCard("claude_error") : "claude_error";
+    `SELECT dir, body FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC LIMIT 80`,
+    [m.from, since, m.ts + 1000])).rows;
+  const customerRows = rows.filter(r => r.dir !== "out" && !/MG-[A-Z0-9]{4,8}/i.test(r.body));
+  if (prev && !customerRows.length) return `already_approved #${prev.num}`; // e.g. approving a website order that was confirmed by its MG number
+  if (!customerRows.length) return "approval_without_customer_text";
+  const transcript = rows.map(r => (r.dir === "out" ? "[المحل] " : "[العميل] ") + r.body).join("\n").slice(-7000);
+
+  let p = null;
+  if (apiKey) {
+    try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null); }
+    catch (e) { log("wa: claude failed " + String(e.message || e).slice(0, 160)); }
   }
-  if (!p.is_order) return "not_order";
+  if (!p) {
+    // no Claude: read time and type with the simple reader, keep the customer's words as the items
+    let pr = {}; try { pr = parseOrder(customerRows.map(r => r.body).join("\n") + "\n" + m.text); } catch {}
+    p = { type: pr.type, area: pr.area, day: pr.day, total: pr.total ?? null,
+      time: pr.time ? `${String(pr.time.h).padStart(2, "0")}:${String(pr.time.m).padStart(2, "0")}` : (pr.asap ? "asap" : null),
+      items: customerRows.map(r => r.body).slice(-6), unclear: "راجع الأصناف في المحادثة" };
+  }
   const { due, timeKnown } = dueFromParsed(p, now);
-  const items = (Array.isArray(p.items) ? p.items : []).map(x => String(x).slice(0, 140)).filter(Boolean).slice(0, 30).join("\n") || "(الأصناف غير واضحة)";
-  const changeNote = prev && p.is_change ? `تعديل على الطلب المؤكد #${prev.num} — عدّل الطلب الأصلي أو ألغه` : "";
-  const note = [changeNote, p.note, !timeKnown ? "الوقت غير محدد" : "", p.unclear ? "ناقص: " + p.unclear : ""].filter(Boolean).join(" · ").slice(0, 300);
+  const items = (Array.isArray(p.items) ? p.items : []).map(x => String(x).slice(0, 140)).filter(Boolean).slice(0, 30).join("\n") || "(راجع المحادثة)";
   const fields = {
     name: String(p.name || m.name || "").slice(0, 60), type: p.type === "del" ? "del" : "pick",
     area: p.type === "del" ? String(p.area || "").slice(0, 80) : "", items,
-    total: p.total !== null && p.total !== undefined && isFinite(Number(p.total)) ? Number(p.total) : null, note, due,
+    total: p.total !== null && p.total !== undefined && isFinite(Number(p.total)) ? Number(p.total) : null, due,
   };
-  if (open) {
+  const baseNote = [p.note, !timeKnown ? "الوقت غير محدد" : "", p.unclear ? "ناقص: " + p.unclear : ""].filter(Boolean);
+
+  // approved again before the kitchen finished: it is a change to that order, not a new one
+  if (prev && p.is_change && ["new", "prep"].includes(prev.status) && prev.source === "wa") {
+    const note = ["عُدّل بعد الاعتماد", ...baseNote].join(" · ").slice(0, 300);
     await pool.query(`UPDATE orders SET name=CASE WHEN $1<>'' THEN $1 ELSE name END,type=$2,area=$3,items=$4,total=$5,note=$6,due=$7,raw_text=$8,updated=$9 WHERE id=$10`,
-      [fields.name, fields.type, fields.area, fields.items, fields.total, fields.note, fields.due, transcript.slice(-3000), now, open.id]);
-    return "card_updated " + open.id;
+      [fields.name, fields.type, fields.area, fields.items, fields.total, note, fields.due, transcript.slice(-3000), now, prev.id]);
+    return `order_changed #${prev.num}`;
   }
-  const o = await insertOrder({ ref: null, source: "wa", status: "pending", phone, deliveryFee: null, ...fields,
-    waFrom: m.from, rawText: transcript.slice(-3000), needsReview: true });
-  return (changeNote ? "change_card_created #" : "card_created #") + o.num;
+  const note = [prev && p.is_change ? `تعديل على الطلب #${prev.num} وقد بدأ تجهيزه — راجعهما` : "", ...baseNote].filter(Boolean).join(" · ").slice(0, 300);
+  const o = await insertOrder({ ref: null, source: "wa", status: "new", phone, deliveryFee: null, ...fields, note,
+    waFrom: m.from, rawText: transcript.slice(-3000), needsReview: false });
+  return `approved_order #${o.num}`;
 }
 
 // ctx: { pool, insertOrder, opDayOf, log }
 export async function handleWebhook(body, ctx) {
-  const { pool, insertOrder, log } = ctx;
+  const { pool, log } = ctx;
   const apiKey = process.env.ANTHROPIC_API_KEY || "";
   const msgs = extractMessages(body);
   const fields = (body?.entry || []).flatMap(e => (e.changes || []).map(c => c.field)).join(",");
   log(`wa: webhook received fields=${fields || "-"} messages=${msgs.length}`);
   for (const m of msgs) {
+    if (!m.text && (m.type === "audio" || m.type === "voice")) m.text = "[رسالة صوتية]";
     // de-duplicate (providers retry)
     const ins = await pool.query("INSERT INTO wa_messages (id, wa_from, kind, body, at, dir) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING RETURNING id",
       [m.id, m.from, m.type, m.text, m.ts, m.dir]);
     if (!ins.rows.length) continue;
     const phone = localPhone(m.from);
-    let result = "ignored";
+    let result = "stored";
     try {
-      // the business's own reply: only re-read a conversation that already has an open card
       if (m.dir === "out") {
-        if (!apiKey || !m.text.trim()) { result = "echo_stored"; continue; }
-        const open = await pool.query(`SELECT id FROM orders WHERE wa_from=$1 AND source='wa' AND status='pending' AND created > $2 LIMIT 1`, [m.from, Date.now() - CONV_WINDOW]);
-        if (!open.rows.length) { result = "echo_stored"; continue; }
-        result = await readConversation(m, phone, ctx, apiKey);
-        log("wa: " + result);
+        // the owner's reply from the WhatsApp Business app: the approval phrase turns the chat into a kitchen order
+        if (APPROVAL.test(m.text)) { result = await approveFromConversation(m, phone, ctx, apiKey); log("wa: " + result); }
         continue;
       }
-      // 1) website order number
+      // a customer message carrying a website order number confirms that order
       const ref = (m.text.match(/MG-[A-Z0-9]{4,8}/i) || [])[0];
       if (ref) {
         const up = await pool.query(
@@ -205,47 +215,9 @@ export async function handleWebhook(body, ctx) {
              confirmed_at=COALESCE(confirmed_at,$2), phone=CASE WHEN phone='' THEN $3 ELSE phone END, wa_from=$4, updated=$2
            WHERE ref=$1 RETURNING num, status`, [ref.toUpperCase(), Date.now(), phone, m.from]);
         result = up.rows.length ? `confirmed ${ref} #${up.rows[0].num}` : `ref_not_found ${ref}`;
-        if (up.rows.length) { log(`wa: ${result}`); continue; }
+        log(`wa: ${result}`);
       }
-      // 2) voice note or media without text: card asking the owner to listen
-      if (!m.text && ["audio", "voice", "image", "video", "document"].includes(m.type)) {
-        if (m.type === "audio" || m.type === "voice") {
-          await insertOrder({ ref: null, source: "wa", type: "pick", status: "pending", name: m.name, phone, area: "",
-            items: "رسالة صوتية — استمع لها في واتساب", total: null, deliveryFee: null, note: "", due: Date.now() + 30 * 60e3,
-            waFrom: m.from, rawText: "[رسالة صوتية]", needsReview: true });
-          result = "voice_card";
-        }
-        continue;
-      }
-      if (!m.text.trim()) { result = "empty"; continue; }
-      const ORDER_HINT = /(ابغى|أبغى|ابغي|ابي|أبي|ابا|أبا|اطلب|أطلب|طلب|بوكس|حبه|حبة|قطعة|قطع|توصيل|استلام|فطائر|فطاير|كب|قوارب|كباجي|سمبوسة|بيتزا|مناقيش|تشكيلة|\d)/;
-      const fallbackCard = async why => {
-        // Claude unavailable: still put the raw message on the board so it is never lost
-        const open = await pool.query(`SELECT id, raw_text FROM orders WHERE wa_from=$1 AND source='wa' AND status='pending' AND created > $2 ORDER BY created DESC LIMIT 1`,
-          [m.from, Date.now() - MERGE_WINDOW]);
-        if (open.rows.length) {
-          const t = ((open.rows[0].raw_text || "") + "\n" + m.text).slice(-3000);
-          await pool.query("UPDATE orders SET raw_text=$1, items=$2, updated=$3 WHERE id=$4", [t, t.slice(0, 1500), Date.now(), open.rows[0].id]);
-          return "raw_card_updated (" + why + ")";
-        }
-        if (!ORDER_HINT.test(m.text)) return "ignored_no_hint (" + why + ")";
-        let pr = {}; try { pr = parseOrder(m.text); } catch {}
-        const t = pr.time ? `${String(pr.time.h).padStart(2, "0")}:${String(pr.time.m).padStart(2, "0")}` : (pr.asap ? "asap" : null);
-        const { due, timeKnown } = dueFromParsed({ time: t, day: pr.day === 1 ? 1 : 0 }, Date.now());
-        const cleaned = m.text.replace(/(السلام عليكم|مرحبا|ابغى|أبغى|ابغي|ابي|أبي|ابا|أبا|لو سمحت|الله يعافيك)/g, "")
-          .replace(/(?:الساعة|الساعه|ساعة|ساعه|على)\s*[\d٠-٩]{1,2}(?:[:.][\d٠-٩]{2})?\s*(ونص|و نص|والنص|وربع|و ربع|الا ربع|إلا ربع)?\s*(صباحا|صباحًا|مساء|مساءً|ليلا|عصرا|ص|م)?/g, "")
-          .replace(/(استلام|توصيل)/g, "").replace(/\s{2,}/g, " ").trim();
-        const o = await insertOrder({ ref: null, source: "wa", type: pr.type === "del" ? "del" : "pick", status: "pending", name: pr.name || m.name, phone,
-          area: pr.type === "del" ? (pr.area || "") : "", items: (cleaned || m.text).slice(0, 1500), total: pr.total ?? null, deliveryFee: null,
-          note: ["راجع الأصناف", timeKnown ? "" : "الوقت غير محدد"].filter(Boolean).join(" · "), due,
-          waFrom: m.from, rawText: m.text.slice(0, 3000), needsReview: true });
-        return "raw_card_created #" + o.num + " (" + why + ")";
-      };
-      if (!apiKey) { result = await fallbackCard("no_api_key"); log("wa: " + result); continue; }
-
-      // 3) free text -> read the whole recent conversation
-      result = await readConversation(m, phone, ctx, apiKey, fallbackCard);
-      log(`wa: ${result}`);
+      // anything else from the customer is only stored until the owner approves
     } catch (e) {
       result = "error " + String(e.message || e).slice(0, 180);
       log(`wa: ${result}`);

@@ -60,7 +60,7 @@ body{margin:0;padding-top:env(safe-area-inset-top,0px)}
 </header>
 
 <section class="pending" id="pending" hidden aria-label="طلبات بانتظار تأكيدك">
-  <div class="phead"><h2>بانتظار تأكيدك</h2><p>طلبات الموقع تتأكد وحدها عندما تصل رسالة العميل برقم الطلب. رسائل الواتساب الحرة راجعها وأكّدها.</p></div>
+  <div class="phead"><h2>بانتظار تأكيدك</h2><p>طلبات الموقع تنتقل للمطبخ وحدها عندما تصل رسالة العميل برقم الطلب. طلبات الواتساب تدخل المطبخ مباشرة عندما ترسل للعميل «تم اعتماد طلبك».</p></div>
   <div class="plist" id="plist"></div>
 </section>
 
@@ -271,7 +271,7 @@ function render(){
   if(!S.ready) rail.innerHTML=`<div class="empty" style="grid-column:1/-1">جارٍ تحميل طلبات ${S.dayOff?"بكرة":"اليوم"}…</div>`;
   else rail.innerHTML=COLS.map(c=>`<section class="col ${S.tab===c.k?"on":""}" role="tabpanel" aria-label="${c.t}">
       <div class="colhead"><h2>${c.t}</h2><span class="n">${by[c.k].length}</span>${c.hint?`<span class="hint">${c.hint}</span>`:""}</div>
-      ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. طلبات الموقع تظهر وحدها، وطلبات الاتصال والواتساب من «+ طلب جديد».":"لا شيء هنا"}</div>`}
+      ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما ترسل «تم اعتماد طلبك»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
     </section>`).join("");
   $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
   const late=live.filter(o=>(o.status==="new"||o.status==="prep")&&o.due<t).length;
