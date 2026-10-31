@@ -83,32 +83,55 @@ async function askClaude(apiKey, transcript, nowMs, previous, menu) {
 ${MENU}
 أحياء التوصيل: ${AREAS}
 ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سابقًا (#${previous.num}) أصنافه: ${previous.items.replace(/\n/g, "، ")}. إذا كانت الرسائل الجديدة تعدّل ذلك الطلب أو تضيف عليه فاجعل is_change=true واكتب في items الطلب كاملًا بعد التعديل.` : ""}
-أعد JSON فقط بلا أي نص آخر:
-{"is_change":true|false,"name":"","type":"del|pick|unknown","area":"","day":0|1,"time":"HH:MM"|"asap"|null,"items":[{"id":"triangles","tag":"20 قطعة","qty":2,"flavor":"رانش"}],"note":"","unclear":""}
+سجّل الطلب بأداة save_order.
 قواعد:
 - العملاء يكتبون بالعامية وعلى عدة رسائل، ويسألون قبل أن يطلبوا. استخرج ما استقر عليه العميل في النهاية: إذا غيّر رأيه فخذ الأخير.
 - رسالة الاعتماد من [المحل] هي المرجع الأقوى: إذا كتب فيها ملخصًا للأصناف أو الوقت فخذ به.
 - items: لكل صنف id و tag مطابقين حرفيًا لما في المنيو أعلاه، و qty عدد البوكسات، و flavor الحشوة إن ذُكرت (وإلا ""). إذا طلب حشوتين لنفس الصنف فاجعل كل حشوة عنصرًا مستقلًا.
 - العدد قد يكون بالقطع: «10 بيتزا» = بيتزا بحجم «10 قطع» qty=1، و«20 فطاير» = فطائر مثلثة «20 قطعة» qty=1، و«40 فطاير» = «20 قطعة» qty=2.
-- إذا تعذّرت مطابقة صنف مع المنيو فاكتبه {"text":"كما قاله العميل"} بدل id.
+- إذا تعذّرت مطابقة صنف مع المنيو فاكتبه في text مختصرًا (اسم الصنف وعدده فقط) بدل id.
+- items أصناف فقط: لا تضع فيها كلام الدفع (شبكة، سحب، تحويل) ولا الحشوات الزائدة ولا الأسئلة؛ طلبات التحضير مثل «حمّرها زيادة» تذهب إلى note.
 - area: اسم الحي مطابقًا حرفيًا لقائمة الأحياء إن أمكن، وإلا كما قاله العميل.
 - day=1 فقط إذا قال بكرة أو غدًا. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو يمر يأخذه، وunknown إن لم يتضح.
-- note: ملاحظة العميل للتحضير فقط (مثل: بدون زيتون، حار)، وإلا فارغ.
+- note: ملاحظة التحضير والدفع باختصار (مثل: حمّرها زيادة · الدفع شبكة عند الاستلام).
 - unclear: ما ينقص فعلًا لتجهيز الطلب في أقل من 10 كلمات، أو فارغ. لا تشرح افتراضاتك.
 - لا تخترع شيئًا لم يُذكر.`;
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com") + "/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1000, system, messages: [{ role: "user", content: transcript }] }),
-    signal: AbortSignal.timeout(25000),
+    // a forced tool call: the answer always comes back as structured fields, never as prose
+    body: JSON.stringify({ model: MODEL, max_tokens: 1500, system, tools: [ORDER_TOOL], tool_choice: { type: "tool", name: "save_order" },
+      messages: [{ role: "user", content: transcript }] }),
+    signal: AbortSignal.timeout(30000),
   });
   if (!r.ok) throw new Error("claude_http_" + r.status + " " + (await r.text()).slice(0, 200));
   const j = await r.json();
-  const raw = (j.content || []).map(c => c.text || "").join("");
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error("claude_no_json");
-  return JSON.parse(m[0]);
+  const call = (j.content || []).find(c => c.type === "tool_use" && c.name === "save_order");
+  if (!call || !call.input || !Array.isArray(call.input.items)) throw new Error("claude_no_order " + JSON.stringify(j.content || []).slice(0, 160));
+  return call.input;
 }
+const ORDER_TOOL = {
+  name: "save_order",
+  description: "يسجّل الطلب المعتمد في لوحة المطبخ.",
+  input_schema: {
+    type: "object",
+    properties: {
+      is_change: { type: "boolean" },
+      name: { type: "string" },
+      type: { type: "string", enum: ["del", "pick", "unknown"] },
+      area: { type: "string" },
+      day: { type: "integer", enum: [0, 1] },
+      time: { type: "string", description: "HH:MM بنظام 24 ساعة، أو asap، أو فارغ إن لم يُذكر" },
+      items: { type: "array", items: { type: "object", properties: {
+        id: { type: "string", description: "معرّف الصنف من المنيو" }, tag: { type: "string", description: "الحجم حرفيًا من المنيو" },
+        qty: { type: "integer", minimum: 1 }, flavor: { type: "string" },
+        text: { type: "string", description: "فقط لصنف لا يطابق المنيو" } } } },
+      note: { type: "string" },
+      unclear: { type: "string" },
+    },
+    required: ["is_change", "type", "time", "items", "note", "unclear"],
+  },
+};
 
 // "As soon as possible" (or no time said): pickup in 30 minutes; delivery after preparation plus the drive,
 // using the same numbers as the board (25 min prep, area minutes × time factor, 10 min for the courier).
@@ -197,20 +220,24 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   const menu = await getMenu();
   let p = null;
   if (apiKey) {
-    try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu); }
-    catch (e) { log("wa: claude failed " + String(e.message || e).slice(0, 160)); }
+    for (let attempt = 1; attempt <= 2 && !p; attempt++) {
+      try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu); }
+      catch (e) { log(`wa: claude failed (try ${attempt}) ` + String(e.message || e).slice(0, 200)); }
+    }
   }
   if (!p) {
     // no Claude: read time and type with the simple reader, keep the customer's words as the items
     let pr = {}; try { pr = parseOrder(customerRows.map(r => r.body).join("\n") + "\n" + m.text); } catch {}
     p = { type: pr.type || "unknown", area: pr.area, day: pr.day,
       time: pr.time ? `${String(pr.time.h).padStart(2, "0")}:${String(pr.time.m).padStart(2, "0")}` : (pr.asap ? "asap" : null),
-      items: customerRows.map(r => ({ text: r.body })).slice(-6), unclear: "راجع الأصناف في المحادثة" };
+      items: apiKey ? [{ text: "تعذّرت قراءة الأصناف — افتح المحادثة" }] : customerRows.map(r => ({ text: r.body })).slice(-6),
+      unclear: apiKey ? "" : "راجع الأصناف في المحادثة" };
   }
   const built = priceOrder(p, menu);
   const matchedItems = (Array.isArray(p.items) ? p.items : []).filter(it => it && typeof it === "object" && it.id).length;
   if (prev && !matchedItems) {
-    const extra = [p.note, p.unclear].filter(Boolean).join("، ").slice(0, 160) || customerRows.map(r => r.body).join(" ").slice(0, 160);
+    const extra = String(p.note || "").trim().slice(0, 160);
+    if (!extra) return `nothing_new_for #${prev.num}`;
     await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · واتساب: ' || $2), updated=$3 WHERE id=$1`, [prev.id, extra, Date.now()]);
     return `merged_note_into #${prev.num}`;
   }
@@ -302,3 +329,4 @@ export async function handleWebhook(body, ctx) {
   }
   return msgs.length;
 }
+export { askClaude };
