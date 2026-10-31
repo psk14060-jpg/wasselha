@@ -215,6 +215,13 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 .src.chefz{color:#fff;background:#6a2fb0;border-color:#6a2fb0} .src.hunger{color:#3a2a00;background:#ffcc00;border-color:#ffcc00}
 .src.keeta{color:#2b2200;background:#ffd84d;border-color:#ffd84d} .src.ninja{color:#fff;background:#d6243a;border-color:#d6243a}
 #srcSeg{flex-wrap:wrap}
+/* ticket state: colored top band and outline */
+.tk.st-ok{box-shadow:inset 0 5px 0 var(--ok),var(--shadow)}
+.tk.st-warn{box-shadow:inset 0 5px 0 #e8891a,var(--shadow);outline:2px solid #e8891a;outline-offset:-2px}
+.tk.st-late{box-shadow:inset 0 5px 0 var(--late),var(--shadow);outline:3px solid var(--late);outline-offset:-3px;animation:latePulse 1s steps(2,start) infinite}
+@keyframes latePulse{50%{outline-color:transparent;background:var(--late-soft)}}
+.due.warn{background:#fde3c4} .due.warn .left{color:#b55e00}
+@media (prefers-reduced-motion:reduce){.tk.st-late{animation:none}}
 .offline{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);background:var(--late);color:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:13px;z-index:40}
 </style>
 </head>
@@ -471,9 +478,9 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",
 const visible=o=>S.filter==="all"||o.type===S.filter;
 function urgency(o,t){
   const mins=Math.round((o.due-t)/60000);
+  /* until it is handed to the customer or the courier: green with time to spare, orange in the last 5 minutes, red once late */
   let cls="";
-  if(o.status==="new"||o.status==="prep") cls=mins<0?"late over":mins<10?"late":mins<=20?"warn":"ok";
-  else if(o.status==="ready") cls=mins<0?"late":"ok";
+  if(["new","prep","ready"].includes(o.status)) cls=o.due<t?"late over":o.due-t<=5*60000?"warn":"ok";
   return {mins,cls};
 }
 const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل",chefz:"ذا شيفز",hunger:"هنقرستيشن",keeta:"كيتا",ninja:"نينجا"};
@@ -483,7 +490,7 @@ function ticket(o,t){
   const items=(o.items||"").split("\n").map(s=>s.trim()).filter(Boolean);
   let next=NEXT[o.status];
   if(o.status==="ready") next=o.type==="del"?["out","سلّمته للمندوب"]:["done",isApp(o.source)?"استلمه مندوب التطبيق":"استلمه العميل"];
-  return `<article class="tk" data-id="${esc(o.id)}">
+  return `<article class="tk ${u.cls?"st-"+u.cls.split(" ")[0]:""}" data-id="${esc(o.id)}">
     <div class="tkhead">
       <span class="no">#${esc(o.num)}</span>
       <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}${o.appRef?" "+esc(o.appRef):""}</span>
@@ -545,7 +552,7 @@ function render(){
       ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما تكتب للعميل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
     </section>`).join("");
   $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
-  const late=live.filter(o=>(o.status==="new"||o.status==="prep")&&o.due<t).length;
+  const late=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t).length;
   const drv=by.ready.filter(o=>o.type==="del").length;
   const sales=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)).reduce((s,o)=>s+(+o.total||0),0);
   $("pulse").innerHTML=
@@ -561,7 +568,10 @@ function render(){
       <strong class="num">#${esc(o.num)}</strong><span>${esc(o.name||"بدون اسم")}</span><span class="mono">${fmtClock(o.due)}</span>
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
       <button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
-  live.forEach(o=>{if((o.status==="new"||o.status==="prep")&&o.due-t<10*60000&&!S.alerted.has(o.id)){S.alerted.add(o.id);if(S.sound&&S.rendered)beep(1);}});
+  /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
+  const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t);
+  let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
+  if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
   S.rendered=S.ready;
 }
 
@@ -774,11 +784,24 @@ function beep(n){
   }catch(e){}
 }
 async function keepAwake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible")await navigator.wakeLock.request("screen");}catch(e){}}
-$("soundBtn").onclick=()=>{S.sound=!S.sound;$("soundBtn").setAttribute("aria-pressed",S.sound);$("soundBtn").textContent="التنبيه الصوتي: "+(S.sound?"شغّال":"مطفأ");if(S.sound){beep(1);keepAwake();}};
+function setSound(on){S.sound=on;$("soundBtn").setAttribute("aria-pressed",on);$("soundBtn").textContent="التنبيه الصوتي: "+(on?"شغّال":"مطفأ");
+  try{localStorage.setItem("mg-sound",on?"1":"0")}catch(e){} if(on){beep(1);keepAwake();}}
+$("soundBtn").onclick=()=>setSound(!S.sound);
+/* browsers allow sound only after a tap: if the sound was on last time, the first tap anywhere turns it back on */
+try{if(localStorage.getItem("mg-sound")==="1"){$("soundBtn").textContent="التنبيه الصوتي: اضغط أي مكان لتشغيله";
+  document.addEventListener("pointerdown",function once(e){document.removeEventListener("pointerdown",once,true);if(!S.sound&&e.target.id!=="soundBtn")setSound(true);},true);}}catch(e){}
 let toastT=null;
 function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800);}
 function tick(){$("clock").textContent=fmtClock(now());}
-setInterval(()=>{tick();if(S.ready)render();},30000);tick();
+setInterval(()=>{tick();if(S.ready)render();},15000);tick();
+function alarm(){ /* falling two-tone warning, distinct from the new-order beep */
+  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    for(let i=0;i<3;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="sawtooth";
+      const t0=actx.currentTime+i*0.5;o.frequency.setValueAtTime(1046,t0);o.frequency.linearRampToValueAtTime(622,t0+0.4);
+      g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.3,t0+0.03);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.45);
+      o.connect(g).connect(actx.destination);o.start(t0);o.stop(t0+0.5);}
+  }catch(e){}
+}
 render(); load(); startPolling(); loadMenu();
 </script>
 </body>
