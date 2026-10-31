@@ -271,11 +271,13 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const visible=o=>S.filter==="all"||o.type===S.filter;
+function handoverAt(o){return o.due-travelMin(o)*60000;}
 function urgency(o,t){
-  const mins=Math.round((o.due-t)/60000);
+  const h=handoverAt(o);
+  const mins=Math.round((h-t)/60000);
   /* until it is handed to the customer or the courier: green with time to spare, orange in the last 5 minutes, red once late */
   let cls="";
-  if(["new","prep","ready"].includes(o.status)) cls=o.due<t?"late over":o.due-t<=5*60000?"warn":"ok";
+  if(["new","prep","ready"].includes(o.status)) cls=h<t?"late over":h-t<=5*60000?"warn":"ok";
   return {mins,cls};
 }
 /* when to start: delivery time minus preparation (and travel for delivery) */
@@ -302,7 +304,7 @@ function ticket(o,t){
       <span class="no">#${esc(o.num)}</span>
       <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}${o.appRef?" "+esc(o.appRef):""}</span>
       <span class="type ${o.type==="del"?"del":""}">${isApp(o.source)?"مندوب التطبيق":o.type==="del"?"توصيل":"استلام"}</span>
-      <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):minsLeftText(u.mins)}</span></div>
+      <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):(travelMin(o)?"يطلع مع المندوب "+fmtClock(handoverAt(o))+" · ":"")+minsLeftText(u.mins)}</span></div>
     </div>
     ${o.status==="new"?(t>=startAt(o)?`<div class="startnow">ابدأ الآن</div>`:`<div class="startat">ابدأ التحضير <span class="num">${fmtClock(startAt(o))}</span>${travelMin(o)?` <small>(توصيل ${travelMin(o)} د)</small>`:""}</div>`):""}
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
@@ -361,7 +363,7 @@ function render(){
       ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما تكتب للعميل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
     </section>`).join("");
   $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
-  const late=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t).length;
+  const late=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t).length;
   const drv=by.ready.filter(o=>o.type==="del").length;
   const sales=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)).reduce((s,o)=>s+(+o.total||0),0);
   $("pulse").innerHTML=
@@ -378,11 +380,11 @@ function render(){
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
       <button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
-  const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t);
+  const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
   $("soundWarn").hidden=S.sound;
   $("lateBar").hidden=!lateNow.length;
-  $("lateBar").textContent=lateNow.length?"متأخر: "+lateNow.map(o=>"#"+o.num+" ("+Math.round((t-o.due)/60000)+" د)").join("، "):"";
+  $("lateBar").textContent=lateNow.length?"متأخر: "+lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، "):"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
   by.new.forEach(o=>{if(startAt(o)-t<20*60000)warm(startPhrase(o));});
   /* spoken reminder when it is time to start: once, then every 3 minutes (3 times) until preparation starts */

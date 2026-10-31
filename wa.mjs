@@ -110,10 +110,20 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
   return JSON.parse(m[0]);
 }
 
-function dueFromParsed(p, nowMs) {
-  if (!p || !p.time || p.time === "asap") return { due: nowMs + 30 * 60e3, timeKnown: p?.time === "asap" };
+// "As soon as possible" (or no time said): pickup in 30 minutes; delivery after preparation plus the drive,
+// using the same numbers as the board (25 min prep, area minutes × time factor, 10 min for the courier).
+function asapDue(p, nowMs, menu) {
+  if (!p || p.type !== "del") return nowMs + 30 * 60e3;
+  const norm = x => String(x || "").replace(/\s+/g, " ").trim();
+  const a = menu && menu.areas.find(x => norm(x.name) === norm(p.area));
+  const f = (menu && menu.rules && menu.rules.timeFactor) || 1.4;
+  const drive = a && a.minutes != null ? Math.ceil(a.minutes * f) : 20;
+  return nowMs + (25 + drive + 10) * 60e3;
+}
+function dueFromParsed(p, nowMs, menu) {
+  if (!p || !p.time || p.time === "asap") return { due: asapDue(p, nowMs, menu), timeKnown: p?.time === "asap" };
   const mm = String(p.time).match(/^(\d{1,2}):(\d{2})$/);
-  if (!mm) return { due: nowMs + 30 * 60e3, timeKnown: false };
+  if (!mm) return { due: asapDue(p, nowMs, menu), timeKnown: false };
   const h = +mm[1], mi = +mm[2];
   const opDay = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3);          // Riyadh operating day
   let ms = Date.UTC(opDay.getUTCFullYear(), opDay.getUTCMonth(), opDay.getUTCDate() + (p.day === 1 ? 1 : 0), h, mi) - 3 * 3600e3;
@@ -210,7 +220,7 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     const a = built.items.split("\n").map(norm2).sort().join("|"), b = String(prev.items).split("\n").map(norm2).sort().join("|");
     if (a === b) return `same_as_website_order #${prev.num}`;
   }
-  const { due, timeKnown } = dueFromParsed(p, now);
+  const { due, timeKnown } = dueFromParsed(p, now, menu);
   const fields = {
     name: String(p.name || m.name || "").slice(0, 60), type: p.type === "del" ? "del" : "pick",
     area: built.areaLabel, items: built.items, total: built.total, deliveryFee: built.fee, due,
