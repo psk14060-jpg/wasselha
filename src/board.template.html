@@ -28,6 +28,10 @@ body{margin:0;padding-top:env(safe-area-inset-top,0px)}
 .pc .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .pc .row .go{flex:1 1 auto}
 .refchip{font-family:var(--f-mono);font-size:12px;color:var(--muted);direction:ltr}
+.pc.wa{border-color:var(--wa)}
+.rawt{font-size:13px;color:var(--muted)}
+.rawt summary{cursor:pointer;font-weight:600}
+.rawt div{background:var(--surface-2);border-radius:6px;padding:6px 8px;margin-top:4px;overflow-wrap:anywhere}
 .offline{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);background:var(--late);color:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:13px;z-index:40}
 </style>
 </head>
@@ -55,8 +59,8 @@ body{margin:0;padding-top:env(safe-area-inset-top,0px)}
   <div id="banner" class="banner" hidden></div>
 </header>
 
-<section class="pending" id="pending" hidden aria-label="طلبات الموقع بانتظار رسالة العميل">
-  <div class="phead"><h2>من الموقع — بانتظار رسالة العميل</h2><p>أكّد الطلب عندما تصلك رسالته على واتساب بنفس الرقم.</p></div>
+<section class="pending" id="pending" hidden aria-label="طلبات بانتظار تأكيدك">
+  <div class="phead"><h2>بانتظار تأكيدك</h2><p>طلبات الموقع تتأكد وحدها عندما تصل رسالة العميل برقم الطلب. رسائل الواتساب الحرة راجعها وأكّدها.</p></div>
   <div class="plist" id="plist"></div>
 </section>
 
@@ -178,7 +182,7 @@ async function load(){
       const fresh=j.orders.filter(o=>!S.known.has(o.id));
       if(fresh.length){
         const web=fresh.filter(o=>o.status==="pending").length;
-        toast(web?"طلب جديد من الموقع — انتظر رسالة العميل":(fresh.length===1?"أُضيف طلب جديد":"أُضيفت "+fresh.length+" طلبات"));
+        toast(web?"طلب جديد بانتظار تأكيدك":(fresh.length===1?"أُضيف طلب جديد":"أُضيفت "+fresh.length+" طلبات"));
         if(S.sound)beep(2);
       }
     }
@@ -232,6 +236,18 @@ function ticket(o,t){
 function pendingCard(o,t){
   const age=Math.round((t-o.created)/60000);
   const items=(o.items||"").split("\n").filter(Boolean);
+  if(o.source==="wa") return `<div class="pc wa" data-id="${esc(o.id)}">
+    <div class="top"><span class="src wa">واتساب</span><span class="type ${o.type==="del"?"del":""}">${o.type==="del"?"توصيل":"استلام"}</span>
+      <span class="refchip">${esc(o.phone)}</span><span class="refchip">قبل ${age} د</span></div>
+    <div><strong>${esc(o.name||"بدون اسم")}</strong>${o.type==="del"&&o.area?` · <span class="area">${esc(o.area)}</span>`:""} · <span class="refchip">${fmtClock(o.due)}</span></div>
+    <div class="sum">${esc(items.join(" · "))}${o.total!=null?" — "+esc(o.total)+" ريال":""}</div>
+    ${o.note?`<div class="note">${esc(o.note)}</div>`:""}
+    ${o.rawText?`<details class="rawt"><summary>نص رسالة العميل</summary><div>${esc(o.rawText).replace(/\n/g,"<br>")}</div></details>`:""}
+    <div class="row">
+      <button type="button" class="go" data-act="review">راجع وأكّد للمطبخ</button>
+      <button type="button" class="sm" data-act="dismiss">ليس طلبًا</button>
+    </div>
+  </div>`;
   return `<div class="pc ${age>=30?"stale":""}" data-id="${esc(o.id)}">
     <div class="top"><span class="ref">${esc(o.ref)}</span><span class="type ${o.type==="del"?"del":""}">${o.type==="del"?"توصيل":"استلام"}</span>
       <span class="refchip">${fmtClock(o.due)}</span><span class="refchip">قبل ${age} د</span></div>
@@ -294,7 +310,7 @@ document.addEventListener("click",e=>{
     else if(a==="restore") patch(o,{status:o.status==="dismissed"?"pending":"new"});
     else if(a==="confirm") patch(o,{status:"new",confirm:true},"أُكّد الطلب #"+o.num+" وانتقل للمطبخ");
     else if(a==="dismiss") patch(o,{status:"dismissed"},"أُخفي الطلب "+(o.ref||""));
-    else if(a==="edit") openSheet(o);
+    else if(a==="edit"||a==="review") openSheet(o);
     return;
   }
   const tab=e.target.closest("[data-tab]"); if(tab){S.tab=tab.dataset.tab;render();return;}
@@ -309,8 +325,8 @@ function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute
 let matchedPending=null;
 function openSheet(o){
   S.editing=o||null; matchedPending=null;
-  $("shTitle").textContent=o?"تعديل الطلب #"+o.num:"طلب جديد";
-  $("saveBtn").textContent=o?"حفظ التعديل":"إضافة إلى اللوحة";
+  $("shTitle").textContent=o?(o.status==="pending"?"مراجعة طلب واتساب #"+o.num:"تعديل الطلب #"+o.num):"طلب جديد";
+  $("saveBtn").textContent=o?(o.status==="pending"?"تأكيد وإرسال للمطبخ":"حفظ التعديل"):"إضافة إلى اللوحة";
   $("pasteBox").hidden=!!o; $("cancelOrderBtn").hidden=!o||o.status==="cancelled";
   $("delConfirm").hidden=true; $("formErr").hidden=true;
   $("raw").value=""; $("parseMsg").textContent="طلب اتصال؟ اترك هذه الخانة وعبّئ الأصناف والوقت مباشرة."; $("parseMsg").className="";
@@ -372,7 +388,8 @@ $("sheet").addEventListener("submit",async e=>{
       const o=S.editing;
       if(o.source!=="web")data.source=segVal("srcSeg");
       if(opDayOf(due)!==o.opDay){err.textContent="نقل الطلب ليوم آخر غير متاح من التعديل. ألغِه وأضفه من جديد.";err.hidden=false;btn.disabled=false;return;}
-      await patch(o,data,"انحفظ تعديل الطلب #"+o.num); closeSheet();
+      if(o.status==="pending"){data.status="new";data.confirm=true;}
+      await patch(o,data,o.status==="pending"?"أُكّد الطلب #"+o.num+" وانتقل للمطبخ":"انحفظ تعديل الطلب #"+o.num); closeSheet();
     }else{
       data.source=segVal("srcSeg");
       const j=await api("POST","/api/board/orders",data);

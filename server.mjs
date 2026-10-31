@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
+import { migrateWa, handleWebhook } from "./wa.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -18,6 +19,7 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ||
   "https://minigeesh.sa,https://www.minigeesh.sa,https://minigeesh.psk14060.chatgpt.site")
   .split(",").map(s => s.trim()).filter(Boolean);
 const DEV_ALLOW_LOCAL = process.env.DEV_ALLOW_LOCAL === "1";
+const WA_WEBHOOK_TOKEN = String(process.env.WA_WEBHOOK_TOKEN || "");
 
 if (!DATABASE_URL) { console.error("DATABASE_URL is missing"); process.exit(1); }
 if (!/^\d{4,8}$/.test(BOARD_PIN)) { console.error("BOARD_PIN must be 4-8 digits"); process.exit(1); }
@@ -64,6 +66,7 @@ async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS orders_ref_uidx ON orders (ref) WHERE ref IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS orders_day_num_uidx ON orders (op_day, num);
   `);
+  await migrateWa(pool);
 }
 
 // ---------- helpers ----------
@@ -136,6 +139,7 @@ function rowToOrder(r) {
     total: r.total === null ? null : Number(r.total), deliveryFee: r.delivery_fee === null ? null : Number(r.delivery_fee),
     note: r.note, due: Number(r.due), created: Number(r.created), updated: Number(r.updated),
     confirmedAt: r.confirmed_at ? Number(r.confirmed_at) : null, outAt: r.out_at ? Number(r.out_at) : null,
+    waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review,
   };
 }
 
@@ -148,10 +152,11 @@ async function insertOrder(o) {
     const { rows: [{ n }] } = await client.query("SELECT COALESCE(MAX(num),0)+1 AS n FROM orders WHERE op_day=$1", [day]);
     const now = Date.now();
     const { rows } = await client.query(
-      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17) RETURNING *`,
+      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20) RETURNING *`,
       [day, n, o.ref || null, o.source, o.type, o.status, o.name, o.phone, o.area, o.items, o.total, o.deliveryFee,
-        o.note, o.due, now, o.status === "pending" ? null : now, o.raw ? JSON.stringify(o.raw) : null]);
+        o.note, o.due, now, o.status === "pending" ? null : now, o.raw ? JSON.stringify(o.raw) : null,
+        o.waFrom || null, o.rawText || null, !!o.needsReview]);
     await client.query("COMMIT");
     return rowToOrder(rows[0]);
   } catch (e) {
@@ -250,6 +255,25 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // WhatsApp webhook (Meta Cloud API format). The secret token is part of the path.
+    const wh = p.match(/^\/webhooks\/whatsapp\/([A-Za-z0-9_-]{16,})$/);
+    if (wh) {
+      if (!WA_WEBHOOK_TOKEN || wh[1].length !== WA_WEBHOOK_TOKEN.length ||
+          !crypto.timingSafeEqual(Buffer.from(wh[1]), Buffer.from(WA_WEBHOOK_TOKEN))) return send(res, 404, "Not found");
+      if (req.method === "GET") {
+        const mode = url.searchParams.get("hub.mode"), tok = url.searchParams.get("hub.verify_token");
+        if (mode === "subscribe" && tok === WA_WEBHOOK_TOKEN) return send(res, 200, String(url.searchParams.get("hub.challenge") || ""));
+        return send(res, 200, "ok");
+      }
+      if (req.method === "POST") {
+        const b = await readBody(req, 512 * 1024);
+        send(res, 200, { ok: true });
+        handleWebhook(b, { pool, insertOrder, log: m => console.log(m) }).catch(e => console.error("webhook", e));
+        return;
+      }
+      return send(res, 405, { error: "method" });
+    }
+
     // login
     if (p === "/login" && req.method === "GET") { res.writeHead(200, pageHeaders); return res.end(loginHtml()); }
     if (p === "/api/login" && req.method === "POST") {
@@ -302,7 +326,7 @@ const server = http.createServer(async (req, res) => {
           put("status", b.status);
           if (b.status === "out") put("out_at", Date.now());
         }
-        if (b.confirm === true) put("confirmed_at", Date.now());
+        if (b.confirm === true) { put("confirmed_at", Date.now()); put("needs_review", false); }
         if (b.name !== undefined) put("name", clip(b.name, 60));
         if (b.phone !== undefined) put("phone", clip(b.phone, 20));
         if (b.area !== undefined) put("area", clip(b.area, 80));
