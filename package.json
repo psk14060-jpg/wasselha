@@ -1,0 +1,17 @@
+{
+  "name": "minigeesh-orders",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minigeesh kitchen order board: receives website orders and serves the kitchen board",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "pg": "8.13.1"
+  }
+}

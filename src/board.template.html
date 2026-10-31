@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#e9ecee">
+<title>لوحة طلبات مينيقيش</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&family=Lalezar&display=swap">
+{{STYLE}}
+<style>
+html{-webkit-text-size-adjust:100%}
+body{margin:0;padding-top:env(safe-area-inset-top,0px)}
+[hidden]{display:none!important}
+/* pending web orders strip */
+.pending{margin-top:14px;display:grid;gap:10px}
+.pending[hidden]{display:none}
+.phead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.phead h2{margin:0;font-size:15px;font-weight:700}
+.phead p{margin:0;font-size:13px;color:var(--muted)}
+.plist{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:10px}
+.pc{background:var(--surface);border:2px dashed var(--accent);border-radius:10px;padding:10px 12px;display:grid;gap:6px;min-width:0}
+.pc.stale{border-color:var(--line);opacity:.75}
+.pc .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ref{font-family:var(--f-mono);font-weight:600;font-size:18px;direction:ltr;letter-spacing:.02em}
+.pc .sum{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.pc .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pc .row .go{flex:1 1 auto}
+.refchip{font-family:var(--f-mono);font-size:12px;color:var(--muted);direction:ltr}
+.offline{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);background:var(--late);color:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:13px;z-index:40}
+</style>
+</head>
+<body>
+<div class="offline" id="offline" hidden>انقطع الاتصال — أحاول من جديد</div>
+<header class="bar">
+  <div class="row1">
+    <h1 class="brand">مينيقيش <small>لوحة الطلبات</small></h1>
+    <span class="clock" id="clock">--:--</span>
+    <button class="btn ghost" id="soundBtn" type="button" aria-pressed="false">التنبيه الصوتي: مطفأ</button>
+    <button class="btn primary" id="newBtn" type="button">+ طلب جديد</button>
+  </div>
+  <div class="row2">
+    <div class="seg" role="group" aria-label="اليوم">
+      <button type="button" data-day="0" aria-pressed="true">اليوم</button>
+      <button type="button" data-day="1" aria-pressed="false">بكرة</button>
+    </div>
+    <div class="seg" role="group" aria-label="نوع الطلب">
+      <button type="button" data-f="all" aria-pressed="true">الكل</button>
+      <button type="button" data-f="del" aria-pressed="false">توصيل</button>
+      <button type="button" data-f="pick" aria-pressed="false">استلام</button>
+    </div>
+    <div class="pulse" id="pulse"></div>
+  </div>
+  <div id="banner" class="banner" hidden></div>
+</header>
+
+<section class="pending" id="pending" hidden aria-label="طلبات الموقع بانتظار رسالة العميل">
+  <div class="phead"><h2>من الموقع — بانتظار رسالة العميل</h2><p>أكّد الطلب عندما تصلك رسالته على واتساب بنفس الرقم.</p></div>
+  <div class="plist" id="plist"></div>
+</section>
+
+<nav class="tabs" id="tabs" role="tablist" aria-label="حالات الطلب"></nav>
+<main class="rail" id="rail"></main>
+
+<details class="finished" id="finished">
+  <summary id="finSum">منتهية</summary>
+  <div class="flist" id="flist"></div>
+</details>
+
+<div class="scrim" id="scrim" hidden>
+  <form class="sheet" id="sheet" novalidate>
+    <div class="shhead"><h3 id="shTitle">طلب جديد</h3><button type="button" class="btn ghost x" id="closeBtn">إغلاق</button></div>
+
+    <div class="paste" id="pasteBox">
+      <label for="raw">الصق رسالة الطلب من واتساب</label>
+      <textarea id="raw" placeholder="انسخ رسالة الطلب كاملة والصقها هنا، وتتعبّأ الخانات تحتها تلقائيًا"></textarea>
+      <p id="parseMsg">طلب اتصال؟ اترك هذه الخانة وعبّئ الأصناف والوقت مباشرة.</p>
+    </div>
+
+    <div class="grid">
+      <div class="f"><span>مصدر الطلب</span>
+        <div class="seg" id="srcSeg" role="group" aria-label="مصدر الطلب">
+          <button type="button" data-v="wa" aria-pressed="true">واتساب</button>
+          <button type="button" data-v="call" aria-pressed="false">اتصال</button>
+          <button type="button" data-v="shop" aria-pressed="false">المحل</button>
+        </div></div>
+      <div class="f"><span>النوع</span>
+        <div class="seg" id="typeSeg" role="group" aria-label="النوع">
+          <button type="button" data-v="pick" aria-pressed="true">استلام</button>
+          <button type="button" data-v="del" aria-pressed="false">توصيل</button>
+        </div></div>
+
+      <div class="f full"><span>وقت التسليم المطلوب</span>
+        <div class="timeline">
+          <div class="seg" id="daySeg" role="group" aria-label="يوم التسليم">
+            <button type="button" data-v="0" aria-pressed="true">اليوم</button>
+            <button type="button" data-v="1" aria-pressed="false">بكرة</button>
+          </div>
+          <input type="time" id="dueTime" aria-label="الساعة">
+          <button type="button" class="btn" id="asapBtn">أقرب وقت (+30 د)</button>
+        </div></div>
+
+      <label class="f"><span>اسم العميل</span><input type="text" id="name" autocomplete="off"></label>
+      <label class="f"><span>الجوال</span><input type="tel" id="phone" class="mono" autocomplete="off" inputmode="tel"></label>
+      <label class="f full" id="areaWrap" hidden><span>الحي / العنوان</span><input type="text" id="area" autocomplete="off"></label>
+      <label class="f full"><span>الأصناف (سطر لكل صنف)</span><textarea id="items" rows="4" placeholder="2 × فطائر مثلثة 20 قطعة"></textarea></label>
+      <label class="f"><span>الإجمالي (ريال)</span><input type="number" id="total" inputmode="decimal" min="0" step="0.5"></label>
+      <label class="f"><span>ملاحظة للمطبخ</span><input type="text" id="note" autocomplete="off"></label>
+    </div>
+    <p class="err" id="formErr" hidden></p>
+    <div class="confirm" id="delConfirm" hidden>
+      <span id="delText">إلغاء هذا الطلب؟</span>
+      <button type="button" class="btn danger" id="delYes">نعم، ألغِه</button>
+      <button type="button" class="btn ghost" id="delNo">تراجع</button>
+    </div>
+    <div class="shfoot">
+      <button type="submit" class="btn primary" id="saveBtn">إضافة إلى اللوحة</button>
+      <button type="button" class="btn danger" id="cancelOrderBtn" hidden>إلغاء الطلب</button>
+    </div>
+  </form>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+{{PARSER}}
+
+/* ---------- time (Riyadh, UTC+3 all year; operating day starts 06:00) ---------- */
+let skew=0; /* server clock minus device clock */
+const now=()=>Date.now()+skew;
+const RIYADH=3*3600e3, CUT=6*3600e3;
+const pad=n=>String(n).padStart(2,"0");
+const rParts=ms=>{const d=new Date(ms+RIYADH);return{y:d.getUTCFullYear(),mo:d.getUTCMonth(),d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes()};};
+const opDayOf=ms=>new Date(ms+RIYADH-CUT).toISOString().slice(0,10);
+function dayKey(offset){return opDayOf(now()+offset*864e5);}
+function dueFrom(offset,h,m){
+  const k=dayKey(offset); /* operating date */
+  let ms=Date.UTC(+k.slice(0,4),+k.slice(5,7)-1,+k.slice(8,10),h,m)-RIYADH;
+  if(h*60+m<6*60) ms+=864e5;
+  return ms;
+}
+function fmtClock(ms){const p=rParts(ms);const ap=p.h<12?"ص":"م";return ((p.h%12)||12)+":"+pad(p.mi)+" "+ap;}
+function minsLeftText(mins){
+  if(mins>=60){const h=Math.floor(mins/60),m=mins%60;return "بعد "+h+" س"+(m?" "+m+" د":"");}
+  if(mins>0) return "بعد "+mins+" د";
+  if(mins===0) return "الآن";
+  const a=-mins; return "متأخر "+(a>=60?Math.floor(a/60)+" س "+(a%60)+" د":a+" د");
+}
+
+/* ---------- state ---------- */
+const COLS=[
+  {k:"new",t:"بانتظار التحضير",hint:"الأقرب موعدًا أولًا"},
+  {k:"prep",t:"يُحضَّر"},
+  {k:"ready",t:"جاهز"},
+  {k:"out",t:"مع المندوب"}];
+const NEXT={new:["prep","ابدأ التحضير"],prep:["ready","جاهز"],ready:null,out:["done","وصل للعميل"]};
+const PREV={prep:"new",ready:"prep",out:"ready"};
+const S={dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
+
+/* ---------- API ---------- */
+async function api(method,url,body){
+  const r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined,credentials:"same-origin"});
+  if(r.status===401){location.href="/login";throw new Error("auth");}
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok) throw Object.assign(new Error(j.error||("HTTP "+r.status)),{code:j.error});
+  return j;
+}
+let pollT=null,inflight=false,fails=0;
+async function load(){
+  if(inflight)return; inflight=true;
+  const day=dayKey(S.dayOff);
+  try{
+    const t0=Date.now(); const j=await api("GET","/api/board/orders?day="+day);
+    skew=j.now-Math.round((t0+Date.now())/2);
+    if(day!==dayKey(S.dayOff)){inflight=false;return;}
+    const ids=new Set(j.orders.map(o=>o.id));
+    if(S.known&&S.dayKnown===day){
+      const fresh=j.orders.filter(o=>!S.known.has(o.id));
+      if(fresh.length){
+        const web=fresh.filter(o=>o.status==="pending").length;
+        toast(web?"طلب جديد من الموقع — انتظر رسالة العميل":(fresh.length===1?"أُضيف طلب جديد":"أُضيفت "+fresh.length+" طلبات"));
+        if(S.sound)beep(2);
+      }
+    }
+    S.known=ids; S.dayKnown=day; S.orders=j.orders; S.ready=true; fails=0;
+    $("offline").hidden=true; render();
+  }catch(e){
+    if(e.message!=="auth"){fails++; if(fails>=2)$("offline").hidden=false;}
+  }finally{inflight=false;}
+}
+function startPolling(){clearInterval(pollT);pollT=setInterval(()=>{if(document.visibilityState==="visible")load();},4000);}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"){load();if(S.sound)keepAwake();}});
+
+/* ---------- render ---------- */
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const visible=o=>S.filter==="all"||o.type===S.filter;
+function urgency(o,t){
+  const mins=Math.round((o.due-t)/60000);
+  let cls="";
+  if(o.status==="new"||o.status==="prep") cls=mins<0?"late over":mins<10?"late":mins<=20?"warn":"ok";
+  else if(o.status==="ready") cls=mins<0?"late":"ok";
+  return {mins,cls};
+}
+const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل"};
+function ticket(o,t){
+  const u=urgency(o,t);
+  const items=(o.items||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  let next=NEXT[o.status];
+  if(o.status==="ready") next=o.type==="del"?["out","سلّمته للمندوب"]:["done","استلمه العميل"];
+  return `<article class="tk" data-id="${esc(o.id)}">
+    <div class="tkhead">
+      <span class="no">#${esc(o.num)}</span>
+      <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}</span>
+      <span class="type ${o.type==="del"?"del":""}">${o.type==="del"?"توصيل":"استلام"}</span>
+      <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):minsLeftText(u.mins)}</span></div>
+    </div>
+    ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
+    ${o.type==="del"&&o.area?`<div class="area">${esc(o.area)}</div>`:""}
+    ${items.length?`<ul class="items">${items.map(i=>`<li><span>${esc(i)}</span></li>`).join("")}</ul>`:""}
+    ${o.note?`<div class="note">${esc(o.note)}</div>`:""}
+    <div class="foot">
+      ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
+      <div class="acts">
+        <button type="button" class="sm" data-act="edit">تعديل</button>
+        ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
+        ${next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
+      </div>
+    </div>
+  </article>`;
+}
+function pendingCard(o,t){
+  const age=Math.round((t-o.created)/60000);
+  const items=(o.items||"").split("\n").filter(Boolean);
+  return `<div class="pc ${age>=30?"stale":""}" data-id="${esc(o.id)}">
+    <div class="top"><span class="ref">${esc(o.ref)}</span><span class="type ${o.type==="del"?"del":""}">${o.type==="del"?"توصيل":"استلام"}</span>
+      <span class="refchip">${fmtClock(o.due)}</span><span class="refchip">قبل ${age} د</span></div>
+    <div><strong>${esc(o.name||"بدون اسم")}</strong>${o.type==="del"&&o.area?` · <span class="area">${esc(o.area)}</span>`:""}</div>
+    <div class="sum">${esc(items.join(" · "))}${o.total!=null?" — "+esc(o.total)+" ريال":""}</div>
+    <div class="row">
+      <button type="button" class="go" data-act="confirm">وصلت رسالته — أكّد للمطبخ</button>
+      <button type="button" class="sm" data-act="dismiss">ما وصلت</button>
+    </div>
+  </div>`;
+}
+function render(){
+  const t=now();
+  const all=S.orders.filter(visible);
+  const pend=all.filter(o=>o.status==="pending").sort((a,b)=>a.created-b.created);
+  $("pending").hidden=!pend.length;
+  $("plist").innerHTML=pend.map(o=>pendingCard(o,t)).join("");
+  const live=all.filter(o=>["new","prep","ready","out"].includes(o.status)).sort((a,b)=>a.due-b.due);
+  const by=Object.fromEntries(COLS.map(c=>[c.k,live.filter(o=>o.status===c.k)]));
+  const rail=$("rail");
+  if(!S.ready) rail.innerHTML=`<div class="empty" style="grid-column:1/-1">جارٍ تحميل طلبات ${S.dayOff?"بكرة":"اليوم"}…</div>`;
+  else rail.innerHTML=COLS.map(c=>`<section class="col ${S.tab===c.k?"on":""}" role="tabpanel" aria-label="${c.t}">
+      <div class="colhead"><h2>${c.t}</h2><span class="n">${by[c.k].length}</span>${c.hint?`<span class="hint">${c.hint}</span>`:""}</div>
+      ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. طلبات الموقع تظهر وحدها، وطلبات الاتصال والواتساب من «+ طلب جديد».":"لا شيء هنا"}</div>`}
+    </section>`).join("");
+  $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
+  const late=live.filter(o=>(o.status==="new"||o.status==="prep")&&o.due<t).length;
+  const drv=by.ready.filter(o=>o.type==="del").length;
+  const sales=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)).reduce((s,o)=>s+(+o.total||0),0);
+  $("pulse").innerHTML=
+    (pend.length?`<span class="chip drv">بانتظار تأكيد <b>${pend.length}</b></span>`:"")+
+    (late?`<span class="chip late">متأخر <b>${late}</b></span>`:"")+
+    (drv?`<span class="chip drv">جاهز للمندوب <b>${drv}</b> · اتصل عليه</span>`:"")+
+    `<span class="chip">مفتوحة <b>${live.length}</b></span>`+
+    `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`;
+  const fin=all.filter(o=>["done","cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);
+  $("finSum").textContent="منتهية وملغاة ("+fin.length+")";
+  const finLabel=o=>o.status==="cancelled"?"ملغي":o.status==="dismissed"?"لم تصل رسالته":(o.type==="del"?"وصل":"استُلم");
+  $("flist").innerHTML=fin.length?fin.map(o=>`<div class="frow ${o.status!=="done"?"cx":""}" data-id="${esc(o.id)}">
+      <strong class="num">#${esc(o.num)}</strong><span>${esc(o.name||"بدون اسم")}</span><span class="mono">${fmtClock(o.due)}</span>
+      <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
+      <button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
+  live.forEach(o=>{if((o.status==="new"||o.status==="prep")&&o.due-t<10*60000&&!S.alerted.has(o.id)){S.alerted.add(o.id);if(S.sound&&S.rendered)beep(1);}});
+  S.rendered=S.ready;
+}
+
+/* ---------- actions ---------- */
+const findOrder=id=>S.orders.find(o=>o.id===id);
+async function patch(o,body,okMsg){
+  try{const j=await api("PATCH","/api/board/orders/"+o.id,body);Object.assign(o,j.order);render();if(okMsg)toast(okMsg);}
+  catch(e){toast("ما انحفظ التغيير، حاول مرة ثانية");}
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-act]");
+  if(b){
+    const host=b.closest("[data-id]"); const o=host&&findOrder(host.dataset.id); if(!o)return;
+    const a=b.dataset.act;
+    if(a==="go") patch(o,{status:b.dataset.to});
+    else if(a==="back"){const p=o.status==="done"?(o.type==="del"?"out":"ready"):PREV[o.status];if(p)patch(o,{status:p});}
+    else if(a==="restore") patch(o,{status:o.status==="dismissed"?"pending":"new"});
+    else if(a==="confirm") patch(o,{status:"new",confirm:true},"أُكّد الطلب #"+o.num+" وانتقل للمطبخ");
+    else if(a==="dismiss") patch(o,{status:"dismissed"},"أُخفي الطلب "+(o.ref||""));
+    else if(a==="edit") openSheet(o);
+    return;
+  }
+  const tab=e.target.closest("[data-tab]"); if(tab){S.tab=tab.dataset.tab;render();return;}
+  const dbtn=e.target.closest("[data-day]"); if(dbtn){S.dayOff=+dbtn.dataset.day;document.querySelectorAll("[data-day]").forEach(x=>x.setAttribute("aria-pressed",x===dbtn));S.ready=false;S.known=null;render();load();return;}
+  const f=e.target.closest("[data-f]"); if(f){S.filter=f.dataset.f;document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===f));render();}
+});
+
+/* ---------- sheet ---------- */
+function segVal(id){const b=$(id).querySelector('[aria-pressed="true"]');return b&&b.dataset.v;}
+function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===String(v))));if(id==="typeSeg")$("areaWrap").hidden=v!=="del";}
+["srcSeg","typeSeg","daySeg"].forEach(id=>$(id).addEventListener("click",e=>{const b=e.target.closest("button");if(b)setSeg(id,b.dataset.v);}));
+let matchedPending=null;
+function openSheet(o){
+  S.editing=o||null; matchedPending=null;
+  $("shTitle").textContent=o?"تعديل الطلب #"+o.num:"طلب جديد";
+  $("saveBtn").textContent=o?"حفظ التعديل":"إضافة إلى اللوحة";
+  $("pasteBox").hidden=!!o; $("cancelOrderBtn").hidden=!o||o.status==="cancelled";
+  $("delConfirm").hidden=true; $("formErr").hidden=true;
+  $("raw").value=""; $("parseMsg").textContent="طلب اتصال؟ اترك هذه الخانة وعبّئ الأصناف والوقت مباشرة."; $("parseMsg").className="";
+  setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"wa"); setSeg("typeSeg",o?o.type:"pick");
+  setSeg("daySeg",o?(opDayOf(o.due)===dayKey(0)?0:1):S.dayOff);
+  if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
+  $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":""; $("area").value=o?o.area||"":"";
+  $("items").value=o?o.items||"":""; $("total").value=o&&o.total!=null?o.total:""; $("note").value=o?o.note||"":"";
+  $("srcSeg").closest(".f").hidden=!!(o&&o.source==="web");
+  $("scrim").hidden=false;
+  setTimeout(()=>(o?$("items"):$("raw")).focus(),50);
+}
+function closeSheet(){$("scrim").hidden=true;S.editing=null;matchedPending=null;}
+$("newBtn").onclick=()=>openSheet(null);
+$("closeBtn").onclick=closeSheet;
+$("scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeSheet();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("scrim").hidden)closeSheet();});
+$("asapBtn").onclick=()=>{const p=rParts(now()+30*60000);setSeg("daySeg",0);$("dueTime").value=pad(p.h)+":"+pad(p.mi);};
+function applyParse(){
+  const raw=$("raw").value; if(!raw.trim())return;
+  const r=parseOrder(raw); const got=[]; const m=$("parseMsg");
+  if(r.ref){
+    const p=S.orders.find(o=>o.ref===r.ref);
+    if(p&&p.status==="pending"){matchedPending=p;m.textContent="هذا طلب الموقع "+r.ref+" وهو موجود في اللوحة. اضغط «تأكيد الطلب» لنقله للمطبخ بدون تكرار.";m.className="parsed";$("saveBtn").textContent="تأكيد الطلب "+r.ref;return;}
+    if(p){m.textContent="الطلب "+r.ref+" موجود ومؤكد مسبقًا (#"+p.num+"). لا تضفه مرة ثانية.";m.className="err";return;}
+  }
+  if(r.name){$("name").value=r.name;got.push("الاسم");}
+  if(r.phone){$("phone").value=r.phone;got.push("الجوال");}
+  if(r.type){setSeg("typeSeg",r.type);got.push(r.type==="del"?"توصيل":"استلام");}
+  if(r.area)$("area").value=r.area;
+  if(r.day!=null)setSeg("daySeg",r.day);
+  if(r.time){$("dueTime").value=pad(r.time.h)+":"+pad(r.time.m);got.push("الوقت");}
+  else if(r.asap){$("asapBtn").click();got.push("أقرب وقت");}
+  if(r.items.length){$("items").value=r.items.join("\n");got.push(r.items.length+" أصناف");}
+  if(r.total!=null){$("total").value=r.total;got.push("الإجمالي");}
+  if(r.note)$("note").value=r.note;
+  setSeg("srcSeg","wa");
+  if(got.length){m.textContent="قرأت: "+got.join("، ")+". راجع الخانات ثم أضف.";m.className="parsed";}
+  else{m.textContent="ما قدرت أقرأ الرسالة. عبّئ الخانات يدويًا.";m.className="err";}
+  if(!r.time&&!r.asap&&got.length)m.textContent+=" الوقت غير موجود في الرسالة، حدّده.";
+}
+$("raw").addEventListener("paste",()=>setTimeout(applyParse,0));
+$("raw").addEventListener("change",applyParse);
+
+$("sheet").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const err=$("formErr"); err.hidden=true;
+  if(matchedPending){const p=matchedPending;closeSheet();return patch(p,{status:"new",confirm:true},"أُكّد الطلب #"+p.num+" وانتقل للمطبخ");}
+  const tm=$("dueTime").value; const items=$("items").value.trim();
+  if(!tm){err.textContent="حدّد وقت التسليم، أو اضغط «أقرب وقت».";err.hidden=false;return;}
+  if(!items){err.textContent="اكتب صنفًا واحدًا على الأقل.";err.hidden=false;return;}
+  const [h,mi]=tm.split(":").map(Number); const off=+segVal("daySeg");
+  const due=dueFrom(off,h,mi);
+  const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),
+    area:segVal("typeSeg")==="del"?$("area").value.trim():"",items,total:$("total").value===""?null:+$("total").value,note:$("note").value.trim(),due};
+  const btn=$("saveBtn"); btn.disabled=true;
+  try{
+    if(S.editing){
+      const o=S.editing;
+      if(o.source!=="web")data.source=segVal("srcSeg");
+      if(opDayOf(due)!==o.opDay){err.textContent="نقل الطلب ليوم آخر غير متاح من التعديل. ألغِه وأضفه من جديد.";err.hidden=false;btn.disabled=false;return;}
+      await patch(o,data,"انحفظ تعديل الطلب #"+o.num); closeSheet();
+    }else{
+      data.source=segVal("srcSeg");
+      const j=await api("POST","/api/board/orders",data);
+      const sameDay=j.order.opDay===dayKey(S.dayOff);
+      if(sameDay){S.orders.push(j.order);if(S.known)S.known.add(j.order.id);render();}
+      toast("أُضيف الطلب #"+j.order.num+(sameDay?"":" إلى لوحة "+(off?"بكرة":"اليوم")));
+      closeSheet();
+    }
+  }catch(ex){err.textContent="ما انحفظ الطلب ("+(ex.code||ex.message)+"). تأكد من الاتصال وحاول مرة ثانية.";err.hidden=false;}
+  btn.disabled=false;
+});
+$("cancelOrderBtn").onclick=()=>{$("delText").textContent="إلغاء الطلب #"+S.editing.num+"؟ يبقى في قائمة الملغاة ويمكن استرجاعه.";$("delConfirm").hidden=false;};
+$("delNo").onclick=()=>{$("delConfirm").hidden=true;};
+$("delYes").onclick=async()=>{const o=S.editing;if(!o)return;closeSheet();await patch(o,{status:"cancelled"},"أُلغي الطلب #"+o.num);};
+
+/* ---------- sound, wake lock, misc ---------- */
+let actx=null;
+function beep(n){
+  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    for(let i=0;i<n;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="square";o.frequency.value=880;
+      const t=actx.currentTime+i*0.35;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.25,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
+      o.connect(g).connect(actx.destination);o.start(t);o.stop(t+0.3);}
+  }catch(e){}
+}
+async function keepAwake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible")await navigator.wakeLock.request("screen");}catch(e){}}
+$("soundBtn").onclick=()=>{S.sound=!S.sound;$("soundBtn").setAttribute("aria-pressed",S.sound);$("soundBtn").textContent="التنبيه الصوتي: "+(S.sound?"شغّال":"مطفأ");if(S.sound){beep(1);keepAwake();}};
+let toastT=null;
+function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800);}
+function tick(){$("clock").textContent=fmtClock(now());}
+setInterval(()=>{tick();if(S.ready)render();},30000);tick();
+render(); load(); startPolling();
+</script>
+</body>
+</html>

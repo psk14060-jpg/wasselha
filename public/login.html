@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>دخول لوحة الطلبات</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700&family=IBM+Plex+Mono:wght@600&family=Lalezar&display=swap">
+<style>
+:root{--bg:#e9ecee;--surface:#fff;--ink:#182024;--muted:#5a676e;--line:#d3d9dc;--accent:#b8770f;--on-accent:#fff;--late:#b8322a}
+@media (prefers-color-scheme:dark){:root{--bg:#101416;--surface:#1a2023;--ink:#e5e9eb;--muted:#93a0a7;--line:#2b3438;--accent:#e2a43c;--on-accent:#1a1205;--late:#f06b5d;color-scheme:dark}}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;display:grid;place-items:center;
+  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
+form{background:var(--surface);border-radius:16px;padding:24px;width:min(360px,100%);display:grid;gap:14px;box-shadow:0 10px 30px -18px rgba(0,0,0,.4)}
+h1{margin:0;font-family:"Lalezar",system-ui,sans-serif;font-weight:400;font-size:30px;line-height:1}
+p{margin:0;color:var(--muted);font-size:14px}
+input{font:600 28px "IBM Plex Mono",monospace;letter-spacing:.3em;text-align:center;direction:ltr;width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink)}
+button{font:700 16px inherit;font-family:inherit;min-height:48px;border:0;border-radius:12px;background:var(--accent);color:var(--on-accent);cursor:pointer}
+.err{color:var(--late);font-weight:600;font-size:14px;min-height:1.2em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<form id="f" novalidate>
+  <h1>مينيقيش</h1>
+  <p>أدخل رمز لوحة الطلبات. يبقى الجهاز مسجّلًا ستة أشهر.</p>
+  <label for="pin" class="sr">الرمز</label>
+  <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" maxlength="8" autofocus>
+  <button type="submit">دخول</button>
+  <div class="err" id="err" role="alert"></div>
+</form>
+<script>
+document.getElementById("f").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const err=document.getElementById("err");err.textContent="";
+  const pin=document.getElementById("pin").value.replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
+  try{
+    const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin})});
+    if(r.ok){location.href="/";return;}
+    err.textContent=r.status===429?"محاولات كثيرة. انتظر ربع ساعة ثم حاول.":"الرمز غير صحيح.";
+  }catch(x){err.textContent="ما في اتصال بالإنترنت. حاول مرة ثانية.";}
+});
+</script>
+</body>
+</html>
