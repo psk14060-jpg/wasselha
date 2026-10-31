@@ -638,9 +638,9 @@ try{pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}catch(e){}
 /* Saudi voice from the server (ElevenLabs, cached); falls back to the device voice */
 const ttsAudio=new Audio(); let ttsOk=true;
 function say(text){
-  bell(2);
+  bell(3);
   if(!ttsOk)return;
-  setTimeout(()=>{ttsAudio.src="/api/board/say?t="+encodeURIComponent(text);ttsAudio.play().catch(()=>{});},1500);
+  setTimeout(()=>{ttsAudio.src="/api/board/say?t="+encodeURIComponent(text);ttsAudio.play().catch(()=>{});},2300);
 }
 ttsAudio.addEventListener("error",()=>{fetch(ttsAudio.src).then(r=>{if(r.status===503)ttsOk=false;}).catch(()=>{});});
 /* prepare the phrase in advance so it plays instantly when due */
