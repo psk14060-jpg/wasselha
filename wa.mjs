@@ -72,7 +72,8 @@ export function extractMessages(body) {
             text: String(msgText(m)).slice(0, 4000), ts: Number(m.timestamp) * 1000 || Date.now() });
         }
       } else if (ch.field === "smb_message_echoes") {
-        for (const m of v.message_echoes || []) {
+        console.log("wa: echo shape value_keys=" + Object.keys(v).join("|") + " first=" + JSON.stringify((v.message_echoes || v.messages || [])[0] || {}).slice(0, 400));
+        for (const m of v.message_echoes || v.messages || []) {
           if (!m.to) continue;
           out.push({ id: m.id, from: m.to, name: "", type: m.type, dir: "out",
             text: String(msgText(m)).slice(0, 4000), ts: Number(m.timestamp) * 1000 || Date.now() });
@@ -204,6 +205,7 @@ export async function handleWebhook(body, ctx) {
     try {
       if (m.dir === "out") {
         // the owner's reply from the WhatsApp Business app: the approval phrase turns the chat into a kitchen order
+        log(`wa: owner reply len=${m.text.length} approval=${APPROVAL.test(m.text)}`);
         if (APPROVAL.test(m.text)) { result = await approveFromConversation(m, phone, ctx, apiKey); log("wa: " + result); }
         continue;
       }
