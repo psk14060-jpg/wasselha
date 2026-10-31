@@ -108,6 +108,8 @@ export async function handleWebhook(body, ctx) {
   const { pool, insertOrder, log } = ctx;
   const apiKey = process.env.ANTHROPIC_API_KEY || "";
   const msgs = extractMessages(body);
+  const fields = (body?.entry || []).flatMap(e => (e.changes || []).map(c => c.field)).join(",");
+  log(`wa: webhook received fields=${fields || "-"} customer_messages=${msgs.length}`);
   for (const m of msgs) {
     // de-duplicate (providers retry)
     const ins = await pool.query("INSERT INTO wa_messages (id, wa_from, kind, body, at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (id) DO NOTHING RETURNING id",
@@ -136,7 +138,24 @@ export async function handleWebhook(body, ctx) {
         }
         continue;
       }
-      if (!m.text.trim() || !apiKey) { result = apiKey ? "empty" : "no_api_key"; continue; }
+      if (!m.text.trim()) { result = "empty"; continue; }
+      const ORDER_HINT = /(ابغى|أبغى|ابغي|ابي|أبي|ابا|أبا|اطلب|أطلب|طلب|بوكس|حبه|حبة|قطعة|قطع|توصيل|استلام|فطائر|فطاير|كب|قوارب|كباجي|سمبوسة|بيتزا|مناقيش|تشكيلة|\d)/;
+      const fallbackCard = async why => {
+        // Claude unavailable: still put the raw message on the board so it is never lost
+        const open = await pool.query(`SELECT id, raw_text FROM orders WHERE wa_from=$1 AND source='wa' AND status='pending' AND created > $2 ORDER BY created DESC LIMIT 1`,
+          [m.from, Date.now() - MERGE_WINDOW]);
+        if (open.rows.length) {
+          const t = ((open.rows[0].raw_text || "") + "\n" + m.text).slice(-3000);
+          await pool.query("UPDATE orders SET raw_text=$1, items=$2, updated=$3 WHERE id=$4", [t, t.slice(0, 1500), Date.now(), open.rows[0].id]);
+          return "raw_card_updated (" + why + ")";
+        }
+        if (!ORDER_HINT.test(m.text)) return "ignored_no_hint (" + why + ")";
+        const o = await insertOrder({ ref: null, source: "wa", type: "pick", status: "pending", name: m.name, phone, area: "",
+          items: m.text.slice(0, 1500), total: null, deliveryFee: null, note: "اقرأ الرسالة وعبّئ التفاصيل", due: Date.now() + 30 * 60e3,
+          waFrom: m.from, rawText: m.text.slice(0, 3000), needsReview: true });
+        return "raw_card_created #" + o.num + " (" + why + ")";
+      };
+      if (!apiKey) { result = await fallbackCard("no_api_key"); log("wa: " + result); continue; }
 
       // 3) free text -> merge with this customer's recent open card, then let Claude read it
       const open = await pool.query(
@@ -150,7 +169,9 @@ export async function handleWebhook(body, ctx) {
           [m.from, Date.now() - MERGE_WINDOW, m.id]);
         if (recent.rows.length) combined = recent.rows.map(r => r.body).join("\n") + "\n" + m.text;
       }
-      const p = await askClaude(apiKey, combined.slice(-3000), Date.now());
+      let p;
+      try { p = await askClaude(apiKey, combined.slice(-3000), Date.now()); }
+      catch (e) { log("wa: claude failed " + String(e.message || e).slice(0, 160)); result = await fallbackCard("claude_error"); log("wa: " + result); continue; }
       if (!p.is_order) { result = "not_order"; continue; }
       const { due, timeKnown } = dueFromParsed(p, Date.now());
       const items = (Array.isArray(p.items) ? p.items : []).map(s => String(s).slice(0, 120)).filter(Boolean).slice(0, 30).join("\n") || "(الأصناف غير واضحة)";
