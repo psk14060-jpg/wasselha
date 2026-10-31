@@ -135,6 +135,7 @@ function dueFromParsed(p, nowMs) {
 // The owner's approval phrase. Only a message from the business containing it turns a chat into a kitchen order.
 const APPROVAL = /تم\s*(ال)?[اأ]عتماد\s*(ال)?طلب/;
 const APPROVAL_WINDOW = 3 * 3600e3; // how far back a chat is read when it is approved
+const SESSION_GAP = 40 * 60e3;      // a silence this long starts a new conversation
 
 // Build the order from this customer's chat, triggered by the owner's approval message.
 async function approveFromConversation(m, phone, ctx, apiKey) {
@@ -146,10 +147,21 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
       WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND confirmed_at > $2 ORDER BY confirmed_at DESC LIMIT 1`,
     [m.from, now - APPROVAL_WINDOW])).rows[0];
   const since = prev ? Number(prev.confirmed_at) - 5000 : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
-  const rows = (await pool.query(
-    `SELECT dir, body FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC LIMIT 80`,
+  const all = (await pool.query(
+    `SELECT id, dir, body, at FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
     [m.from, since, m.ts + 1000])).rows;
-  const customerRows = rows.filter(r => r.dir !== "out" && !/MG-[A-Z0-9]{4,8}/i.test(r.body));
+  // keep only the latest conversation: start after the previous approval, after a website order message,
+  // or after a silence longer than SESSION_GAP
+  let start = 0;
+  for (let i = 0; i < all.length; i++) {
+    const r = all[i];
+    if (r.id === m.id) continue;
+    if (r.dir === "out" && APPROVAL.test(r.body)) start = i + 1;
+    else if (r.dir !== "out" && /MG-[A-Z0-9]{4,8}/i.test(r.body)) start = i + 1;
+    if (i > 0 && Number(r.at) - Number(all[i - 1].at) > SESSION_GAP) start = Math.max(start, i);
+  }
+  const rows = all.slice(start).filter(r => !/MG-[A-Z0-9]{4,8}/i.test(r.body));
+  const customerRows = rows.filter(r => r.dir !== "out");
   if (prev && !customerRows.length) return `already_approved #${prev.num}`; // e.g. approving a website order that was confirmed by its MG number
   if (!customerRows.length) return "approval_without_customer_text";
   const transcript = rows.map(r => (r.dir === "out" ? "[المحل] " : "[العميل] ") + r.body).join("\n").slice(-7000);
