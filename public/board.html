@@ -333,6 +333,14 @@ function parseOrder(text){
   else if(/توصيل/.test(t)) r.type="del";
   if(r.day==null && /بكرة|بكره|غدًا|غدا|الغد/.test(t)) r.day=1;
   if(!r.time && !r.asap){ const m=t.match(/\d{1,2}:\d{2}\s*(?:ص|م|صباحًا|مساءً|صباحا|مساء|pm|am)?/i); if(m){const c=parseClock(m[0]); if(c&&!c.asap) r.time=c;} }
+  /* free text: "الساعة 9" / "الساعه ٩ ونص" / "على 10 مساء" */
+  if(!r.time && !r.asap){
+    const m=t.match(/(?:الساعة|الساعه|ساعة|ساعه|على)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(ونص|و نص|والنص|وربع|و ربع|الا ربع|إلا ربع)?\s*(صباح[اًا]?|مساء[ًا]?|ليل[اًا]?|عصر[اًا]?|ص|م)?/);
+    if(m){ const c=parseClock(m[1]+":"+(m[2]||"00")+" "+(m[4]||""));
+      if(c&&!c.asap){ let mins=c.h*60+c.m; if(/نص/.test(m[3]||""))mins+=30; else if(/ا ربع|إلا ربع|الا ربع/.test(m[3]||""))mins-=15; else if(/ربع/.test(m[3]||""))mins+=15;
+        mins=(mins+1440)%1440; r.time={h:Math.floor(mins/60),m:mins%60}; } }
+  }
+  if(!r.time && !r.asap && /(الحين|حالا|حالًا|أقرب وقت|اقرب وقت|الآن|الان)/.test(t)) r.asap=true;
   return r;
 }
 /* ===== PARSER END ===== */

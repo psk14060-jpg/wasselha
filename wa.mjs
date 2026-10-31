@@ -18,6 +18,12 @@ const MENU = `فطائر مثلثة: 10 قطع 20 ريال، 20 قطعة 35، 30
 تشكيلة 80 (تكفي 18): 115
 تشكيلة 115 (تكفي 25): 145`;
 
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+// the same message reader the board uses, for when Claude is unavailable
+const { parseOrder } = new Function(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "src", "parser.js"), "utf8") + "\nreturn { parseOrder };")();
+
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
 const MERGE_WINDOW = 20 * 60e3;
 
@@ -150,8 +156,15 @@ export async function handleWebhook(body, ctx) {
           return "raw_card_updated (" + why + ")";
         }
         if (!ORDER_HINT.test(m.text)) return "ignored_no_hint (" + why + ")";
-        const o = await insertOrder({ ref: null, source: "wa", type: "pick", status: "pending", name: m.name, phone, area: "",
-          items: m.text.slice(0, 1500), total: null, deliveryFee: null, note: "اقرأ الرسالة وعبّئ التفاصيل", due: Date.now() + 30 * 60e3,
+        let pr = {}; try { pr = parseOrder(m.text); } catch {}
+        const t = pr.time ? `${String(pr.time.h).padStart(2, "0")}:${String(pr.time.m).padStart(2, "0")}` : (pr.asap ? "asap" : null);
+        const { due, timeKnown } = dueFromParsed({ time: t, day: pr.day === 1 ? 1 : 0 }, Date.now());
+        const cleaned = m.text.replace(/(السلام عليكم|مرحبا|ابغى|أبغى|ابغي|ابي|أبي|ابا|أبا|لو سمحت|الله يعافيك)/g, "")
+          .replace(/(?:الساعة|الساعه|ساعة|ساعه|على)\s*[\d٠-٩]{1,2}(?:[:.][\d٠-٩]{2})?\s*(ونص|و نص|والنص|وربع|و ربع|الا ربع|إلا ربع)?\s*(صباحا|صباحًا|مساء|مساءً|ليلا|عصرا|ص|م)?/g, "")
+          .replace(/(استلام|توصيل)/g, "").replace(/\s{2,}/g, " ").trim();
+        const o = await insertOrder({ ref: null, source: "wa", type: pr.type === "del" ? "del" : "pick", status: "pending", name: pr.name || m.name, phone,
+          area: pr.type === "del" ? (pr.area || "") : "", items: (cleaned || m.text).slice(0, 1500), total: pr.total ?? null, deliveryFee: null,
+          note: ["راجع الأصناف", timeKnown ? "" : "الوقت غير محدد"].filter(Boolean).join(" · "), due,
           waFrom: m.from, rawText: m.text.slice(0, 3000), needsReview: true });
         return "raw_card_created #" + o.num + " (" + why + ")";
       };
