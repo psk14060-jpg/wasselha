@@ -135,7 +135,7 @@ function dueFromParsed(p, nowMs) {
 // The owner's approval phrase. Only a message from the business containing it turns a chat into a kitchen order.
 const APPROVAL = /تم\s*(ال)?[اأ]عتماد\s*(ال)?طلب/;
 const APPROVAL_WINDOW = 3 * 3600e3; // how far back a chat is read when it is approved
-const SESSION_GAP = 40 * 60e3;      // a silence this long starts a new conversation
+const SESSION_GAP = 90 * 60e3;      // a silence this long starts a new conversation
 
 // Build the order from this customer's chat, triggered by the owner's approval message.
 async function approveFromConversation(m, phone, ctx, apiKey) {
