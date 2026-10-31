@@ -65,6 +65,9 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 .shfoot .sum{flex:1 1 100%;font-size:14px;font-weight:600;min-height:1.2em}
 .shfoot .sum b{font-family:var(--f-mono)}
 .shfoot .sum .warn{color:var(--warn);font-weight:600}
+.src.chefz{color:#fff;background:#6a2fb0;border-color:#6a2fb0} .src.hunger{color:#3a2a00;background:#ffcc00;border-color:#ffcc00}
+.src.keeta{color:#2b2200;background:#ffd84d;border-color:#ffd84d} .src.ninja{color:#fff;background:#d6243a;border-color:#d6243a}
+#srcSeg{flex-wrap:wrap}
 .offline{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);background:var(--late);color:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:13px;z-index:40}
 </style>
 </head>
@@ -110,18 +113,24 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="shhead"><h3 id="shTitle">طلب جديد</h3><button type="button" class="btn ghost x" id="closeBtn">إغلاق</button></div>
 
     <div class="grid">
-      <div class="f"><span>مصدر الطلب</span>
+      <div class="f full"><span>مصدر الطلب</span>
         <div class="seg" id="srcSeg" role="group" aria-label="مصدر الطلب">
           <button type="button" data-v="call" aria-pressed="true">اتصال</button>
+          <button type="button" data-v="chefz" aria-pressed="false">ذا شيفز</button>
           <button type="button" data-v="shop" aria-pressed="false">المحل</button>
+          <button type="button" data-v="hunger" aria-pressed="false">هنقر</button>
+          <button type="button" data-v="keeta" aria-pressed="false">كيتا</button>
+          <button type="button" data-v="ninja" aria-pressed="false">نينجا</button>
           <button type="button" data-v="wa" aria-pressed="false">واتساب</button>
         </div></div>
-      <div class="f"><span>النوع</span>
+      <div class="f" id="typeWrap"><span>النوع</span>
         <div class="seg" id="typeSeg" role="group" aria-label="النوع">
           <button type="button" data-v="pick" aria-pressed="true">استلام</button>
           <button type="button" data-v="del" aria-pressed="false">توصيل</button>
         </div></div>
     </div>
+
+    <label class="f full" id="appRefWrap" hidden><span>رقم طلب التطبيق</span><input type="text" id="appRef" class="mono" inputmode="numeric" autocomplete="off" placeholder="مثل 300358933"></label>
 
     <section class="quick" id="quick" aria-label="الأصناف">
       <div class="qhead"><h4>الأصناف</h4><span class="qhint" id="menuSrc"></span></div>
@@ -251,17 +260,18 @@ function urgency(o,t){
   else if(o.status==="ready") cls=mins<0?"late":"ok";
   return {mins,cls};
 }
-const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل"};
+const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل",chefz:"ذا شيفز",hunger:"هنقرستيشن",keeta:"كيتا",ninja:"نينجا"};
+const APPS=["chefz","hunger","keeta","ninja"]; const isApp=s=>APPS.includes(s);
 function ticket(o,t){
   const u=urgency(o,t);
   const items=(o.items||"").split("\n").map(s=>s.trim()).filter(Boolean);
   let next=NEXT[o.status];
-  if(o.status==="ready") next=o.type==="del"?["out","سلّمته للمندوب"]:["done","استلمه العميل"];
+  if(o.status==="ready") next=o.type==="del"?["out","سلّمته للمندوب"]:["done",isApp(o.source)?"استلمه مندوب التطبيق":"استلمه العميل"];
   return `<article class="tk" data-id="${esc(o.id)}">
     <div class="tkhead">
       <span class="no">#${esc(o.num)}</span>
-      <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}</span>
-      <span class="type ${o.type==="del"?"del":""}">${o.type==="del"?"توصيل":"استلام"}</span>
+      <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}${o.appRef?" "+esc(o.appRef):""}</span>
+      <span class="type ${o.type==="del"?"del":""}">${isApp(o.source)?"مندوب التطبيق":o.type==="del"?"توصيل":"استلام"}</span>
       <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):minsLeftText(u.mins)}</span></div>
     </div>
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
@@ -366,6 +376,7 @@ document.addEventListener("click",e=>{
 /* ---------- sheet ---------- */
 function segVal(id){const b=$(id).querySelector('[aria-pressed="true"]');return b&&b.dataset.v;}
 function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===String(v))));
+  if(id==="srcSeg"){const app=isApp(v);$("appRefWrap").hidden=!app;$("typeWrap").hidden=app;if(app){setSeg("typeSeg","pick");if(!$("dueTime").value&&!S.editing)setAsap();}if(typeof renderCart==="function"&&MENU)renderCart();}
   if(id==="typeSeg"){$("areaWrap").hidden=v!=="del";renderSlots();renderSum();}
   if(id==="daySeg")renderSlots();}
 ["srcSeg","typeSeg","daySeg"].forEach(id=>$(id).addEventListener("click",e=>{const b=e.target.closest("button");if(b)setSeg(id,b.dataset.v);}));
@@ -384,6 +395,7 @@ function fillAreas(){
     byCity[c].map(a=>`<option value="${esc(a.name)}" data-fee="${a.fee}">${esc(a.name)} — ${a.fee?a.fee+" ر":"مجاني"}</option>`).join("")+`</optgroup>`).join("")+
     `<option value="__other">حي آخر (اكتبه)</option>`;
 }
+$("appRef").addEventListener("input",()=>renderSum());
 $("areaSel").addEventListener("change",()=>{$("area").hidden=$("areaSel").value!=="__other";if(!$("area").hidden)$("area").focus();renderSum();});
 function areaFee(){const o=$("areaSel").selectedOptions[0];return o&&o.dataset.fee!=null&&o.value!=="__other"?+o.dataset.fee:0;}
 function areaName(){const v=$("areaSel").value;return v==="__other"?$("area").value.trim():v;}
@@ -426,7 +438,7 @@ function renderCart(){
   const box=$("cart");
   box.hidden=!cart.length;
   box.innerHTML=cart.map((l,i)=>{const p=MENU&&MENU.products.find(x=>x.id===l.pid);const fl=(p&&p.flavors)||[];
-    return `<div class="cline"><span class="q">${l.qty} ×</span><span class="nm">${esc(l.name)} ${esc(l.tag)}${l.flavor?" ("+esc(l.flavor)+")":""}</span><span class="pr">${l.price*l.qty} ر</span>
+    return `<div class="cline"><span class="q">${l.qty} ×</span><span class="nm">${esc(l.name)} ${esc(l.tag)}${l.flavor?" ("+esc(l.flavor)+")":""}</span>${isApp(segVal("srcSeg"))?"":`<span class="pr">${l.price*l.qty} ر</span>`}
       ${fl.length?`<div class="flv">${fl.map(f=>`<button type="button" data-fi="${i}" data-flv="${esc(f)}" aria-pressed="${l.flavor===f}">${esc(f)}</button>`).join("")}${l.qty>1&&!l.flavor?`<small>اضغط الحشوة لكل بوكس</small>`:""}</div>`:""}</div>`;}).join("");
   renderSum();
 }
@@ -457,6 +469,7 @@ function renderSum(){
   const el=$("sumLine"); if(textMode()){el.textContent="";return;}
   const sub=subtotal(); const del=segVal("typeSeg")==="del"; const fee=del?areaFee():0; const n=cart.reduce((s,l)=>s+l.qty,0);
   if(!n){el.innerHTML=`<span class="qhint">اضغط على الأصناف لإضافتها</span>`;return;}
+  if(isApp(segVal("srcSeg"))){el.innerHTML=`${n} بوكس · ${SRC[segVal("srcSeg")]}${$("appRef").value?" #"+esc($("appRef").value):""}`;return;}
   let w=""; if(del&&$("areaSel").value&&$("areaSel").value!=="__other"){const mn=minFor(fee);if(mn&&sub<mn)w=` · <span class="warn">أقل من حد التوصيل ${mn} ر</span>`;}
   el.innerHTML=`${n} بوكس · <b>${sub+fee}</b> ريال${del&&fee?` (منها توصيل ${fee})`:""}${w}`;
 }
@@ -473,7 +486,7 @@ function openSheet(o){
   setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"call"); setSeg("typeSeg",o?o.type:"pick");
   setSeg("daySeg",o?(opDayOf(o.due)===dayKey(0)?0:1):S.dayOff);
   if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
-  $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":"";
+  $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":""; $("appRef").value=o?o.appRef||"":"";
   $("areaSel").value=""; $("area").hidden=true; $("area").value="";
   if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=o.area;}}
   $("items").value=o?o.items||"":""; $("total").value=o&&o.total!=null?o.total:""; $("note").value=o?o.note||"":"";
@@ -498,8 +511,9 @@ $("sheet").addEventListener("submit",async e=>{
   if(textMode()){
     items=$("items").value.trim(); total=$("total").value===""?null:+$("total").value;
   }else{
-    items=cart.map(l=>`${l.qty} × ${l.name} ${l.tag}${l.flavor?" ("+l.flavor+")":""} — ${l.price*l.qty} ريال`).join("\n");
-    deliveryFee=del?areaFee():null; total=cart.length?subtotal()+(deliveryFee||0):null;
+    const app=isApp(segVal("srcSeg"));
+    items=cart.map(l=>`${l.qty} × ${l.name} ${l.tag}${l.flavor?" ("+l.flavor+")":""}${app?"":` — ${l.price*l.qty} ريال`}`).join("\n");
+    deliveryFee=del&&!app?areaFee():null; total=cart.length&&!app?subtotal()+(deliveryFee||0):null;
   }
   if(!items){err.textContent=textMode()?"اكتب صنفًا واحدًا على الأقل.":"اضغط على صنف واحد على الأقل.";err.hidden=false;return;}
   if(!tm){err.textContent="اختر وقت التسليم.";err.hidden=false;$("slots").scrollIntoView({block:"nearest"});return;}
@@ -509,6 +523,7 @@ $("sheet").addEventListener("submit",async e=>{
   const area=del?areaName()+(deliveryFee?` (توصيل ${deliveryFee} ر)`:""):"";
   const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),area,items,total,note:$("note").value.trim(),due};
   if(deliveryFee!=null)data.deliveryFee=deliveryFee;
+  if(isApp(segVal("srcSeg"))){data.appRef=normDigits($("appRef").value).trim();data.type="pick";data.area="";}
   const btn=$("saveBtn"); btn.disabled=true;
   try{
     if(S.editing){

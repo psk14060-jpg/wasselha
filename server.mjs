@@ -33,7 +33,8 @@ const pool = new pg.Pool({
 });
 
 const STATUSES = ["pending", "new", "prep", "ready", "out", "done", "cancelled", "dismissed"];
-const SOURCES = ["web", "wa", "call", "shop"];
+const SOURCES = ["web", "wa", "call", "shop", "chefz", "hunger", "keeta", "ninja"];
+const APPS = ["chefz", "hunger", "keeta", "ninja"];
 const TYPES = ["del", "pick"];
 
 // Riyadh is UTC+3 all year. The operating day starts at 06:00 local, because service runs past midnight.
@@ -68,6 +69,7 @@ async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS orders_day_num_uidx ON orders (op_day, num);
   `);
   await migrateWa(pool);
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
 }
 
 // ---------- helpers ----------
@@ -140,7 +142,7 @@ function rowToOrder(r) {
     total: r.total === null ? null : Number(r.total), deliveryFee: r.delivery_fee === null ? null : Number(r.delivery_fee),
     note: r.note, due: Number(r.due), created: Number(r.created), updated: Number(r.updated),
     confirmedAt: r.confirmed_at ? Number(r.confirmed_at) : null, outAt: r.out_at ? Number(r.out_at) : null,
-    waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review,
+    waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review, appRef: r.app_ref || "",
   };
 }
 
@@ -153,11 +155,11 @@ async function insertOrder(o) {
     const { rows: [{ n }] } = await client.query("SELECT COALESCE(MAX(num),0)+1 AS n FROM orders WHERE op_day=$1", [day]);
     const now = Date.now();
     const { rows } = await client.query(
-      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review,app_ref)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
       [day, n, o.ref || null, o.source, o.type, o.status, o.name, o.phone, o.area, o.items, o.total, o.deliveryFee,
         o.note, o.due, now, o.status === "pending" ? null : now, o.raw ? JSON.stringify(o.raw) : null,
-        o.waFrom || null, o.rawText || null, !!o.needsReview]);
+        o.waFrom || null, o.rawText || null, !!o.needsReview, o.appRef || null]);
     await client.query("COMMIT");
     return rowToOrder(rows[0]);
   } catch (e) {
@@ -206,7 +208,8 @@ function fromBoardPayload(b) {
   return {
     order: {
       ref: null, source: SOURCES.includes(b.source) && b.source !== "web" ? b.source : "wa",
-      type: TYPES.includes(b.type) ? b.type : "pick", status: "new",
+      type: APPS.includes(b.source) ? "pick" : TYPES.includes(b.type) ? b.type : "pick", status: "new",
+      appRef: APPS.includes(b.source) ? clip(b.appRef, 30) : null,
       name: clip(b.name, 60), phone: clip(b.phone, 20), area: b.type === "del" ? clip(b.area, 80) : "",
       items, total: num(b.total), deliveryFee: num(b.deliveryFee), note: clip(b.note, 300), due,
     },
@@ -334,6 +337,7 @@ const server = http.createServer(async (req, res) => {
         if (b.area !== undefined) put("area", clip(b.area, 80));
         if (b.items !== undefined) { const it = clip(b.items, 1500); if (!it) return send(res, 400, { error: "no_items" }); put("items", it); }
         if (b.note !== undefined) put("note", clip(b.note, 300));
+        if (b.appRef !== undefined) put("app_ref", clip(b.appRef, 30) || null);
         if (b.total !== undefined) put("total", num(b.total));
         if (b.type !== undefined) { if (!TYPES.includes(b.type)) return send(res, 400, { error: "type" }); put("type", b.type); }
         if (b.source !== undefined) { if (!SOURCES.includes(b.source)) return send(res, 400, { error: "source" }); put("source", b.source); }
