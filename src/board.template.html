@@ -107,6 +107,8 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="pulse" id="pulse"></div>
   </div>
   <div id="banner" class="banner" hidden></div>
+  <button type="button" id="soundWarn" class="soundwarn" hidden>🔇 التنبيه الصوتي مطفأ — اضغط هنا لتشغيله</button>
+  <div id="lateBar" class="latebar" role="alert" hidden></div>
 </header>
 
 <section class="pending" id="pending" hidden aria-label="طلبات بانتظار تأكيدك">
@@ -378,6 +380,9 @@ function render(){
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
   const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&o.due<t);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
+  $("soundWarn").hidden=S.sound;
+  $("lateBar").hidden=!lateNow.length;
+  $("lateBar").textContent=lateNow.length?"متأخر: "+lateNow.map(o=>"#"+o.num+" ("+Math.round((t-o.due)/60000)+" د)").join("، "):"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
   by.new.forEach(o=>{if(startAt(o)-t<20*60000)warm(startPhrase(o));});
   /* spoken reminder when it is time to start: once, then every 3 minutes (3 times) until preparation starts */
@@ -596,8 +601,9 @@ $("delYes").onclick=async()=>{const o=S.editing;if(!o)return;closeSheet();await 
 
 /* ---------- sound, wake lock, misc ---------- */
 let actx=null;
+function ac(){ac();if(actx.state!=="running")try{actx.resume();}catch(e){}return actx;}
 function beep(n){
-  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  try{ac();
     for(let i=0;i<n;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="square";o.frequency.value=880;
       const t=actx.currentTime+i*0.35;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.25,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
       o.connect(g).connect(actx.destination);o.start(t);o.stop(t+0.3);}
@@ -605,7 +611,7 @@ function beep(n){
 }
 /* bell: struck-bell timbre (inharmonic partials, long ring), rung twice = "start preparing" */
 function bell(n){
-  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  try{ac();
     for(let i=0;i<n;i++){const t=actx.currentTime+i*0.75;
       [[1,0.5,1.8],[2.76,0.22,1.1],[5.4,0.12,0.6],[8.9,0.05,0.3]].forEach(([m,v,d])=>{
         const o=actx.createOscillator(),g=actx.createGain();o.type="sine";o.frequency.value=1320*m/2.76;
@@ -618,7 +624,7 @@ function setSound(on){S.sound=on;$("soundBtn").setAttribute("aria-pressed",on);$
   try{localStorage.setItem("mg-sound",on?"1":"0")}catch(e){} if(on){keepAwake();bell(2);}}
 $("soundBtn").onclick=()=>setSound(!S.sound);
 /* browsers allow sound only after a tap: if the sound was on last time, the first tap anywhere turns it back on */
-try{if(localStorage.getItem("mg-sound")==="1"){$("soundBtn").textContent="التنبيه الصوتي: اضغط أي مكان لتشغيله";
+try{if(localStorage.getItem("mg-sound")!=="0"){$("soundBtn").textContent="التنبيه الصوتي: اضغط أي مكان لتشغيله";
   document.addEventListener("pointerdown",function once(e){document.removeEventListener("pointerdown",once,true);if(!S.sound&&e.target.id!=="soundBtn")setSound(true);},true);}}catch(e){}
 let toastT=null;
 function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800);}
@@ -639,13 +645,17 @@ ttsAudio.addEventListener("error",()=>{fetch(ttsAudio.src).then(r=>{if(r.status=
 const warmed=new Set();
 function warm(text){if(!ttsOk||warmed.has(text))return;warmed.add(text);fetch("/api/board/say?t="+encodeURIComponent(text)).then(r=>{if(r.status===503)ttsOk=false;}).catch(()=>{});}
 function alarm(){ /* falling two-tone warning, distinct from the new-order beep */
-  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+  try{ac();
     for(let i=0;i<3;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="sawtooth";
       const t0=actx.currentTime+i*0.5;o.frequency.setValueAtTime(1046,t0);o.frequency.linearRampToValueAtTime(622,t0+0.4);
       g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(0.3,t0+0.03);g.gain.exponentialRampToValueAtTime(0.0001,t0+0.45);
       o.connect(g).connect(actx.destination);o.start(t0);o.stop(t0+0.5);}
   }catch(e){}
 }
+/* every tap also wakes the audio; keep the screen awake while the sound is on */
+document.addEventListener("pointerdown",()=>{if(actx&&actx.state!=="running")try{actx.resume();}catch(e){}},true);
+setInterval(()=>{if(S.sound&&document.visibilityState==="visible")keepAwake();},60000);
+$("soundWarn").onclick=()=>setSound(true);
 render(); load(); startPolling(); loadMenu();
 </script>
 </body>
