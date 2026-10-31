@@ -3,20 +3,7 @@
 // - Other customer text is read by Claude; if it is an order, it becomes a "review and confirm" card.
 // - Several messages from the same customer within 20 minutes update one card instead of creating many.
 
-const MENU = `فطائر مثلثة: 10 قطع 20 ريال، 20 قطعة 35، 30 قطعة 45
-كب بيتزا: 28 قطعة 47، 42 قطعة 65
-قوارب: 18 قطعة 35
-قوارب المسخن: 18 قطعة 39
-تشكيلة قوارب أجبان ومسخن: 49
-كباجي جبن سائل برشة سكر: 10 قطع 20، 20 قطعة 38
-ميني كباجي بالسكر: 35 قطعة 35
-ميني كباجي بالكراميل: 35 قطعة 42
-سمبوسة جنوبية: 10 قطع 20، 20 قطعة 38
-بيتزا: 10 قطع 21، 20 قطعة 39
-مناقيش: 10 قطع 21، 20 قطعة 39
-تشكيلة 48 (تكفي 8–10): 72
-تشكيلة 80 (تكفي 18): 115
-تشكيلة 115 (تكفي 25): 145`;
+import { menuText } from "./menu.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -84,6 +71,7 @@ export function extractMessages(body) {
 }
 
 async function askClaude(apiKey, transcript, nowMs, previous) {
+  const MENU = await menuText();
   const riyadh = new Date(nowMs + 3 * 3600e3);
   const nowTxt = riyadh.toISOString().slice(0, 16).replace("T", " ");
   const system = `أنت تقرأ محادثة واتساب بين عميل ومطعم مينيقيش للمعجنات في الهفوف. المحل اعتمد الطلب للتو برسالة فيها «تم اعتماد طلبك»، ومهمتك استخراج الطلب الذي اعتُمد.

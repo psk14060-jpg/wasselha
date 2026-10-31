@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { migrateWa, handleWebhook } from "./wa.mjs";
+import { getMenu } from "./menu.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -207,7 +208,7 @@ function fromBoardPayload(b) {
       ref: null, source: SOURCES.includes(b.source) && b.source !== "web" ? b.source : "wa",
       type: TYPES.includes(b.type) ? b.type : "pick", status: "new",
       name: clip(b.name, 60), phone: clip(b.phone, 20), area: b.type === "del" ? clip(b.area, 80) : "",
-      items, total: num(b.total), deliveryFee: null, note: clip(b.note, 300), due,
+      items, total: num(b.total), deliveryFee: num(b.deliveryFee), note: clip(b.note, 300), due,
     },
   };
 }
@@ -303,6 +304,7 @@ const server = http.createServer(async (req, res) => {
         const origin = req.headers.origin;
         if (origin && new URL(origin).host !== req.headers.host) return send(res, 403, { error: "origin" });
       }
+      if (p === "/api/board/menu" && req.method === "GET") return send(res, 200, await getMenu());
       if (p === "/api/board/orders" && req.method === "GET") {
         const day = String(url.searchParams.get("day") || opDayOf(Date.now()));
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return send(res, 400, { error: "day" });
