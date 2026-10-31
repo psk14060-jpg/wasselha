@@ -198,6 +198,18 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
       items: customerRows.map(r => ({ text: r.body })).slice(-6), unclear: "راجع الأصناف في المحادثة" };
   }
   const built = priceOrder(p, menu);
+  const matchedItems = (Array.isArray(p.items) ? p.items : []).filter(it => it && typeof it === "object" && it.id).length;
+  if (prev && !matchedItems) {
+    const extra = [p.note, p.unclear].filter(Boolean).join("، ").slice(0, 160) || customerRows.map(r => r.body).join(" ").slice(0, 160);
+    await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · واتساب: ' || $2), updated=$3 WHERE id=$1`, [prev.id, extra, Date.now()]);
+    return `merged_note_into #${prev.num}`;
+  }
+  if (prev && prev.source === "web") {
+    // the same items as the website order already approved: nothing new
+    const norm2 = x => String(x).replace(/\s*—.*$/, "").replace(/\s+/g, " ").trim();
+    const a = built.items.split("\n").map(norm2).sort().join("|"), b = String(prev.items).split("\n").map(norm2).sort().join("|");
+    if (a === b) return `same_as_website_order #${prev.num}`;
+  }
   const { due, timeKnown } = dueFromParsed(p, now);
   const fields = {
     name: String(p.name || m.name || "").slice(0, 60), type: p.type === "del" ? "del" : "pick",
@@ -251,6 +263,23 @@ export async function handleWebhook(body, ctx) {
              confirmed_at=COALESCE(confirmed_at,$2), phone=CASE WHEN phone='' THEN $3 ELSE phone END, wa_from=$4, updated=$2
            WHERE ref=$1 RETURNING num, status`, [ref.toUpperCase(), Date.now(), phone, m.from]);
         result = up.rows.length ? `confirmed ${ref} #${up.rows[0].num}` : `ref_not_found ${ref}`;
+        if (up.rows.length) {
+          const me = (await pool.query("SELECT id, num FROM orders WHERE ref=$1", [ref.toUpperCase()])).rows[0];
+          const others = (await pool.query(
+            `SELECT id, num, status, source FROM orders WHERE wa_from=$1 AND id<>$2 AND status IN ('new','prep','ready')
+               AND confirmed_at > $3 ORDER BY confirmed_at DESC`, [m.from, me.id, Date.now() - 3 * 3600e3])).rows;
+          for (const o of others) {
+            if (o.status === "new" && o.source === "web") {
+              await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · استُبدل بالطلب #' || $2), updated=$3 WHERE id=$1`, [o.id, me.num, Date.now()]);
+              await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · بديل للطلب #' || $2), updated=$3 WHERE id=$1`, [me.id, o.num, Date.now()]);
+              result += ` replaced #${o.num}`;
+            } else {
+              await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || $2), updated=$3 WHERE id=$1`,
+                [me.id, ` · ⚠ نفس العميل عنده طلب #${o.num} ${o.status === "new" ? "مؤكد" : "قيد التحضير"} — تأكد أنه ليس تكرارًا`, Date.now()]);
+              result += ` flagged_dup_of #${o.num}`;
+            }
+          }
+        }
         log(`wa: ${result}`);
       }
       // anything else from the customer is only stored until the owner approves

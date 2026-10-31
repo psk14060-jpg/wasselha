@@ -80,6 +80,8 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 .startnow{justify-self:start;font-weight:700;font-size:15px;color:#fff;background:var(--call);border-radius:8px;padding:4px 12px;animation:startPulse 1.2s ease-in-out infinite}
 @keyframes startPulse{50%{opacity:.55}}
 @media (prefers-reduced-motion:reduce){.startnow{animation:none}}
+.tile.flash{animation:tileFlash .45s ease-out}
+@keyframes tileFlash{0%{background:var(--accent);color:var(--on-accent)}100%{background:var(--accent-soft)}}
 .offline{position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:50%;transform:translateX(-50%);background:var(--late);color:#fff;border-radius:999px;padding:6px 14px;font-weight:700;font-size:13px;z-index:40}
 </style>
 </head>
@@ -142,13 +144,15 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
         </div></div>
     </div>
 
-    <label class="f full" id="appRefWrap" hidden><span>رقم طلب التطبيق</span><input type="text" id="appRef" class="mono" inputmode="numeric" autocomplete="off" placeholder="مثل 300358933"></label>
 
     <section class="quick" id="quick" aria-label="الأصناف">
       <div class="qhead"><h4>الأصناف</h4><span class="qhint" id="menuSrc"></span></div>
       <div class="tiles" id="tiles"><div class="empty">جارٍ تحميل المنيو…</div></div>
       <div class="cart" id="cart" hidden></div>
     </section>
+
+    <label class="f full" id="appRefWrap" hidden><span>رقم طلب التطبيق</span><input type="text" id="appRef" class="mono" inputmode="numeric" autocomplete="off" placeholder="مثل 300358933"></label>
+
 
     <div class="f full" id="areaWrap" hidden><span>الحي</span>
       <select id="areaSel" aria-label="حي التوصيل"></select>
@@ -463,10 +467,15 @@ function renderTiles(){
       <span class="tn">${esc(p.name)}</span><span class="tt">${esc(v.tag)}</span><span class="tp">${v.price} ر</span>
       ${c?`<span class="cnt">${c}</span><button type="button" class="minus" data-minus="1" aria-label="إنقاص">−</button>`:""}</div>`;})).join("");
 }
+let lastBlur=0;
+$("sheet").addEventListener("focusout",e=>{if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))lastBlur=Date.now();});
+try{window.visualViewport&&visualViewport.addEventListener("resize",()=>{lastBlur=Date.now();});}catch(e){}
 $("tiles").addEventListener("click",e=>{
   const t=e.target.closest(".tile"); if(!t)return;
+  if(Date.now()-lastBlur<450)return; /* this tap only closed the keyboard; the layout moved under the finger */
   const p=MENU.products.find(x=>x.id===t.dataset.pid); const v=p&&p.variants.find(x=>x.tag===t.dataset.tag); if(!v)return;
-  if(e.target.closest("[data-minus]"))removeItem(p.id,v.tag);else addItem(p,v);
+  if(e.target.closest("[data-minus]"))removeItem(p.id,v.tag);else{addItem(p,v);
+    const n=$("tiles").querySelector(`.tile[data-pid="${CSS.escape(p.id)}"][data-tag="${CSS.escape(v.tag)}"]`);if(n){n.classList.add("flash");setTimeout(()=>n.classList.remove("flash"),450);}}
 });
 $("tiles").addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.classList.contains("tile")){e.preventDefault();e.target.click();}});
 function renderCart(){
