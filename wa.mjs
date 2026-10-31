@@ -72,7 +72,6 @@ export function extractMessages(body) {
             text: String(msgText(m)).slice(0, 4000), ts: Number(m.timestamp) * 1000 || Date.now() });
         }
       } else if (ch.field === "smb_message_echoes") {
-        console.log("wa: echo shape value_keys=" + Object.keys(v).join("|") + " first=" + JSON.stringify((v.message_echoes || v.messages || [])[0] || {}).slice(0, 400));
         for (const m of v.message_echoes || v.messages || []) {
           if (!m.to) continue;
           out.push({ id: m.id, from: m.to, name: "", type: m.type, dir: "out",
@@ -105,7 +104,9 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب مؤكد ساب�
 - is_order=true دائمًا هنا ما دام في المحادثة طلب أصناف.
 - اكتب السعر من المنيو لكل سطر = العدد × سعر البوكس، والإجمالي مجموع السطور. إذا تعذّر سعر سطر فاتركه بلا سعر واجعل total=null.
 - day=1 فقط إذا قال بكرة أو غدًا. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو بمر آخذه.
-- لا تخترع شيئًا لم يُذكر.`;
+- لا تخترع شيئًا لم يُذكر.
+- unclear للمطبخ فقط: اذكر فيه ما ينقص فعلًا لتجهيز الطلب (صنف غير محدد، عدد غير واضح، وقت غير مذكور) في أقل من 10 كلمات، ولا تشرح افتراضاتك (مثل تحويل الساعة لمساءً). اتركه فارغًا إذا كان الطلب واضحًا.
+- note: ملاحظة العميل للتحضير فقط (مثل: بدون زيتون، حار)، وإلا فاتركه فارغًا.`;
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com") + "/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
