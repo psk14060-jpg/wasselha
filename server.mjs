@@ -11,6 +11,7 @@ import pg from "pg";
 import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
+import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
@@ -72,6 +73,7 @@ async function migrate() {
   await migrateWa(pool);
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
   await migrateTts(pool);
+  await migrateGifts(pool);
 }
 
 // ---------- helpers ----------
@@ -145,6 +147,7 @@ function rowToOrder(r) {
     note: r.note, due: Number(r.due), created: Number(r.created), updated: Number(r.updated),
     confirmedAt: r.confirmed_at ? Number(r.confirmed_at) : null, outAt: r.out_at ? Number(r.out_at) : null,
     waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review, appRef: r.app_ref || "",
+    giftOut: r.gift_out || null, giftIn: r.gift_in || null,
   };
 }
 
@@ -253,6 +256,7 @@ const server = http.createServer(async (req, res) => {
       if (error) return send(res, 400, { error }, cors);
       try {
         const o = await insertOrder(order);
+        await applyGift(pool, o.id, order.note).catch(e => console.log("gift: " + e.message));
         console.log(`web order ${o.ref} #${o.num} day=${o.opDay}`);
         return send(res, 201, { ok: true, ref: o.ref, num: o.num }, cors);
       } catch (e) {
@@ -274,7 +278,7 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "POST") {
         const b = await readBody(req, 512 * 1024);
         send(res, 200, { ok: true });
-        handleWebhook(b, { pool, insertOrder, log: m => console.log(m) }).catch(e => console.error("webhook", e));
+        handleWebhook(b, { pool, insertOrder, applyGift, log: m => console.log(m) }).catch(e => console.error("webhook", e));
         return;
       }
       return send(res, 405, { error: "method" });
@@ -330,12 +334,20 @@ const server = http.createServer(async (req, res) => {
         const b = await readBody(req);
         const { order, error } = fromBoardPayload(b);
         if (error) return send(res, 400, { error });
-        const o = await insertOrder(order);
+        let o = await insertOrder(order);
+        if (await applyGift(pool, o.id, order.note).catch(() => null)) o = rowToOrder((await pool.query("SELECT * FROM orders WHERE id=$1", [o.id])).rows[0]);
         return send(res, 201, { order: o });
       }
       const m = p.match(/^\/api\/board\/orders\/(\d+)$/);
       if (m && req.method === "PATCH") {
         const b = await readBody(req);
+        // return gift: give this order its code and hand back the message to send on WhatsApp
+        if (b.issueGift === true) {
+          const code = await issueGift(pool, m[1]);
+          if (!code) return send(res, 404, { error: "not_found" });
+          const { rows } = await pool.query("SELECT * FROM orders WHERE id=$1", [m[1]]);
+          return send(res, 200, { order: rowToOrder(rows[0]), code, message: giftMessage(code) });
+        }
         const sets = []; const vals = [];
         const put = (col, v) => { vals.push(v); sets.push(`${col}=$${vals.length}`); };
         if (b.status !== undefined) {
@@ -366,6 +378,10 @@ const server = http.createServer(async (req, res) => {
         vals.push(m[1]);
         const { rows } = await pool.query(`UPDATE orders SET ${sets.join(",")} WHERE id=$${vals.length} RETURNING *`, vals);
         if (!rows.length) return send(res, 404, { error: "not_found" });
+        if (b.note !== undefined && await applyGift(pool, m[1], b.note).catch(() => null)) {
+          const again = await pool.query("SELECT * FROM orders WHERE id=$1", [m[1]]);
+          return send(res, 200, { order: rowToOrder(again.rows[0]) });
+        }
         return send(res, 200, { order: rowToOrder(rows[0]) });
       }
       return send(res, 404, { error: "not_found" });

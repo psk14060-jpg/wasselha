@@ -4,6 +4,7 @@
 // - Several messages from the same customer within 20 minutes update one card instead of creating many.
 
 import { getMenu } from "./menu.mjs";
+import { customerLines } from "./gifts.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -262,11 +263,13 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     const note = ["عُدّل بعد الاعتماد", ...baseNote].join(" · ").slice(0, 300);
     await pool.query(`UPDATE orders SET name=CASE WHEN $1<>'' THEN $1 ELSE name END,type=$2,area=$3,items=$4,total=$5,note=$6,due=$7,raw_text=$8,updated=$9,delivery_fee=$11 WHERE id=$10`,
       [fields.name, fields.type, fields.area, fields.items, fields.total, note, fields.due, transcript.slice(-3000), now, prev.id, fields.deliveryFee]);
+    if (ctx.applyGift) await ctx.applyGift(pool, prev.id, customerLines(transcript)).catch(() => null);
     return `order_changed #${prev.num}`;
   }
   const note = [prev && p.is_change ? `تعديل على الطلب #${prev.num} وقد بدأ تجهيزه — راجعهما` : "", ...baseNote].filter(Boolean).join(" · ").slice(0, 300);
   const o = await insertOrder({ ref: null, source: "wa", status: "new", phone, ...fields, note,
     waFrom: m.from, rawText: transcript.slice(-3000), needsReview: false });
+  if (ctx.applyGift) await ctx.applyGift(pool, o.id, customerLines(transcript)).catch(() => null);
   return `approved_order #${o.num}`;
 }
 

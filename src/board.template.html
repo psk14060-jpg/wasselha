@@ -294,6 +294,11 @@ function startAt(o){return o.due-(PREP_MIN+travelMin(o))*60000;}
 function startPhrase(o){return "ابدأ تحضير الطلب رقم "+o.num+(isApp(o.source)?"، "+SRC[o.source]:o.type==="del"?"، توصيل":"، استلام");}
 const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل",chefz:"ذا شيفز",hunger:"هنقرستيشن",keeta:"كيتا",ninja:"نينجا"};
 const APPS=["chefz","hunger","keeta","ninja"]; const isApp=s=>APPS.includes(s);
+/* WhatsApp number for wa.me: 05xxxxxxxx -> 9665xxxxxxxx */
+function waNumber(o){let d=String(o.waFrom||o.phone||"").replace(/[٠-٩]/g,c=>"٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/\D/g,"");
+  if(d.startsWith("00"))d=d.slice(2); if(d.startsWith("05"))d="966"+d.slice(1); else if(/^5\d{8}$/.test(d))d="966"+d; return d.length>=11?d:"";}
+const giftable=o=>!isApp(o.source)&&["out","done"].includes(o.status)&&waNumber(o);
+const giftBtn=o=>giftable(o)?`<button type="button" class="sm gift" data-act="gift">${o.giftOut?"🎁 "+esc(o.giftOut)+" (أعد)":"🎁 هدية العودة"}</button>`:"";
 function ticket(o,t){
   const u=urgency(o,t);
   const items=(o.items||"").split("\n").map(s=>s.trim()).filter(Boolean);
@@ -314,6 +319,7 @@ function ticket(o,t){
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
+        ${giftBtn(o)}
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
         ${next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
@@ -371,6 +377,7 @@ function render(){
     (late?`<span class="chip late">متأخر <b>${late}</b></span>`:"")+
     (drv?`<span class="chip drv">جاهز للمندوب <b>${drv}</b> · اتصل عليه</span>`:"")+
     `<span class="chip">مفتوحة <b>${live.length}</b></span>`+
+    ((()=>{const out=S.orders.filter(o=>o.giftOut).length,inn=S.orders.filter(o=>o.giftIn).length;return out||inn?`<span class="chip">🎁 أُرسلت <b>${out}</b> · رجعت <b>${inn}</b></span>`:"";})())+
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`;
   const fin=all.filter(o=>["done","cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);
   $("finSum").textContent="منتهية وملغاة ("+fin.length+")";
@@ -378,7 +385,7 @@ function render(){
   $("flist").innerHTML=fin.length?fin.map(o=>`<div class="frow ${o.status!=="done"?"cx":""}" data-id="${esc(o.id)}">
       <strong class="num">#${esc(o.num)}</strong><span>${esc(o.name||"بدون اسم")}</span><span class="mono">${fmtClock(o.due)}</span>
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
-      <button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
+      ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
   const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
@@ -414,6 +421,7 @@ document.addEventListener("click",e=>{
     else if(a==="confirm") patch(o,{status:"new",confirm:true},"أُكّد الطلب #"+o.num+" وانتقل للمطبخ");
     else if(a==="dismiss") patch(o,{status:"dismissed"},"أُخفي الطلب "+(o.ref||""));
     else if(a==="edit"||a==="review") openSheet(o);
+    else if(a==="gift") sendGift(o,b);
     return;
   }
   const tab=e.target.closest("[data-tab]"); if(tab){S.tab=tab.dataset.tab;render();return;}
@@ -421,6 +429,14 @@ document.addEventListener("click",e=>{
   const f=e.target.closest("[data-f]"); if(f){S.filter=f.dataset.f;document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===f));render();}
 });
 
+async function sendGift(o,b){
+  b.disabled=true;
+  try{const j=await api("PATCH","/api/board/orders/"+o.id,{issueGift:true});
+    Object.assign(o,j.order); render();
+    window.open("https://wa.me/"+waNumber(o)+"?text="+encodeURIComponent(j.message),"_blank");
+  }catch(e){toast("ما انرسلت الهدية ("+(e.code||e.message)+")");}
+  b.disabled=false;
+}
 /* ---------- sheet ---------- */
 function segVal(id){const b=$(id).querySelector('[aria-pressed="true"]');return b&&b.dataset.v;}
 function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===String(v))));
