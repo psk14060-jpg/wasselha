@@ -383,7 +383,10 @@ migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
   // on start, log today's order timeline (no names or phones) to help trace late orders
   const hm = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16) : "-";
-  pool.query("SELECT num,source,type,status,area,items,due,created,updated FROM orders WHERE op_day=$1 ORDER BY num", [opDayOf(Date.now())])
-    .then(({ rows }) => rows.forEach(o => console.log(`day: #${o.num} ${o.source}/${o.type}/${o.status} due=${hm(o.due)} created=${hm(o.created)} updated=${hm(o.updated)} area=${o.area || "-"} items=${String(o.items || "").replace(/\n/g, " / ").slice(0, 120)}`)))
+  pool.query("SELECT num,source,type,status,area,items,total,note,raw_text,due,created,updated FROM orders WHERE op_day=$1 ORDER BY num", [opDayOf(Date.now())])
+    .then(({ rows }) => rows.forEach(o => {
+      console.log(`day: #${o.num} ${o.source}/${o.type}/${o.status} total=${o.total} due=${hm(o.due)} created=${hm(o.created)} updated=${hm(o.updated)} area=${o.area || "-"} items=${String(o.items || "").replace(/\n/g, " / ").slice(0, 200)} note=${String(o.note || "").slice(0, 120)}`);
+      if (o.source === "wa" && o.raw_text) console.log(`chat: #${o.num} ` + String(o.raw_text).replace(/\n/g, " ⏎ ").slice(-1500));
+    }))
     .catch(e => console.log("day: " + e.message));
 }).catch(e => { console.error("migration failed", e); process.exit(1); });
