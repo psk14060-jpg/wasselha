@@ -543,12 +543,18 @@ function openSheet(o){
   $("areaSel").value=""; $("area").hidden=true; $("area").value="";
   if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=o.area;}}
   $("items").value=o?o.items||"":""; $("total").value=o&&o.total!=null?o.total:""; $("note").value=o?o.note||"":"";
+  S.editBase=o?{items:o.items||"",total:o.total,updated:o.updated,touched:false}:null;
   $("srcSeg").closest(".f").hidden=!!(o&&o.source==="web");
   renderTiles(); renderCart(); renderSlots();
   $("scrim").hidden=false;
   if(o)setTimeout(()=>$("items").focus(),50);
   if(!MENU)loadMenu();
 }
+/* edit: removing or changing a priced line ("— 35 ريال") moves the total by the same amount, unless the total was typed by hand */
+const linesSum=t=>String(t||"").split("\n").reduce((s,l)=>{const m=l.match(/—\s*([\d.]+)\s*ريال/);return s+(m?+m[1]:0);},0);
+$("items").addEventListener("input",()=>{const b=S.editBase;if(!b||b.touched||b.total==null)return;
+  $("total").value=Math.max(0,Math.round((b.total-linesSum(b.items)+linesSum($("items").value))*100)/100);});
+$("total").addEventListener("input",()=>{if(S.editBase)S.editBase.touched=true;});
 function closeSheet(){$("scrim").hidden=true;S.editing=null;}
 $("newBtn").onclick=()=>openSheet(null);
 $("closeBtn").onclick=closeSheet;
@@ -581,6 +587,9 @@ $("sheet").addEventListener("submit",async e=>{
   try{
     if(S.editing){
       const o=S.editing;
+      /* the order changed (e.g. a new WhatsApp approval) while this form was open: reload it instead of overwriting */
+      const fresh=findOrder(o.id);
+      if(fresh&&S.editBase&&fresh.updated>S.editBase.updated){openSheet(fresh);$("formErr").textContent="تغيّر الطلب #"+o.num+" وأنت تعدّل (وصل تعديل من الواتساب). هذي النسخة الجديدة، راجعها واحفظ.";$("formErr").hidden=false;btn.disabled=false;return;}
       if(o.source!=="web")data.source=segVal("srcSeg");
       delete data.deliveryFee;
       if(opDayOf(due)!==o.opDay){err.textContent="نقل الطلب ليوم آخر غير متاح من التعديل. ألغِه وأضفه من جديد.";err.hidden=false;btn.disabled=false;return;}
