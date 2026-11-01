@@ -297,7 +297,7 @@ const APPS=["chefz","hunger","keeta","ninja"]; const isApp=s=>APPS.includes(s);
 /* WhatsApp number for wa.me: 05xxxxxxxx -> 9665xxxxxxxx */
 function waNumber(o){let d=String(o.waFrom||o.phone||"").replace(/[٠-٩]/g,c=>"٠١٢٣٤٥٦٧٨٩".indexOf(c)).replace(/\D/g,"");
   if(d.startsWith("00"))d=d.slice(2); if(d.startsWith("05"))d="966"+d.slice(1); else if(/^5\d{8}$/.test(d))d="966"+d; return d.length>=11?d:"";}
-const giftable=o=>!isApp(o.source)&&["out","done"].includes(o.status)&&waNumber(o);
+const giftable=o=>false; /* return gift switched off by Hassan (2026-11-01); codes already sent are still honoured by the server */
 const giftBtn=o=>giftable(o)?`<button type="button" class="sm gift" data-act="gift">${o.giftOut?"🎁 "+esc(o.giftOut)+" (أعد)":"🎁 هدية العودة"}</button>`:"";
 function ticket(o,t){
   const u=urgency(o,t);
@@ -377,7 +377,7 @@ function render(){
     (late?`<span class="chip late">متأخر <b>${late}</b></span>`:"")+
     (drv?`<span class="chip drv">جاهز للمندوب <b>${drv}</b> · اتصل عليه</span>`:"")+
     `<span class="chip">مفتوحة <b>${live.length}</b></span>`+
-    ((()=>{const out=S.orders.filter(o=>o.giftOut).length,inn=S.orders.filter(o=>o.giftIn).length;return out||inn?`<span class="chip">🎁 أُرسلت <b>${out}</b> · رجعت <b>${inn}</b></span>`:"";})())+
+
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`;
   const fin=all.filter(o=>["done","cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);
   $("finSum").textContent="منتهية وملغاة ("+fin.length+")";
