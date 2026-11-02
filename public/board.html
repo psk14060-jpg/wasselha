@@ -668,15 +668,19 @@ function batchCheck(to){
   if(presses.filter(x=>x.to===to).length>=3&&t-batchWarnAt>30*60000){batchWarnAt=t;
     setTimeout(()=>toast("انتبه: ٣ طلبات انضغطت بنفس الدقيقة. اضغط الزر وقت ما يصير كل طلب، عشان تحليل التأخير يطلع صح"),2900);}
 }
-/* "لديك طلب جديد": a recorded clip if one is installed (public/sounds/new-order.mp3), otherwise the device voice */
-const newOrderClip=new Audio("/sounds/new-order.mp3"); let clipOk=true;
+/* new order: the airport-style chime Hassan chose, then "لديك طلب جديد"
+   (a recorded clip if public/sounds/new-order.mp3 is installed, otherwise the device voice) */
+const chime=new Audio("/sounds/chime.mp3"), newOrderClip=new Audio("/sounds/new-order.mp3"); let clipOk=true, chimeOk=true;
 newOrderClip.addEventListener("error",()=>{clipOk=false;});
+chime.addEventListener("error",()=>{chimeOk=false;});
+function speakNew(){
+  if(clipOk){newOrderClip.currentTime=0;newOrderClip.play().catch(()=>sayDevice("لديك طلب جديد"));}
+  else sayDevice("لديك طلب جديد");
+}
 function announceNew(){
-  beep(1);
-  setTimeout(()=>{
-    if(clipOk){newOrderClip.currentTime=0;newOrderClip.play().catch(()=>sayDevice("لديك طلب جديد"));}
-    else sayDevice("لديك طلب جديد");
-  },400);
+  if(!chimeOk){beep(1);setTimeout(speakNew,400);return;}
+  chime.currentTime=0; chime.onended=()=>{chime.onended=null;speakNew();};
+  chime.play().catch(()=>{chime.onended=null;beep(1);setTimeout(speakNew,400);});
 }
 function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
 async function muteLate(ids){
