@@ -333,6 +333,15 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true }, { "Set-Cookie": "mg_s=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0" });
     }
 
+    // short voice clips for the board alerts (public/sounds/<name>.mp3)
+    const snd = p.match(/^\/sounds\/([a-z0-9-]{1,40})\.mp3$/);
+    if (snd) {
+      const f = path.join(__dirname, "public", "sounds", snd[1] + ".mp3");
+      if (!fs.existsSync(f)) return send(res, 404, { error: "not_found" });
+      const buf = fs.readFileSync(f);
+      res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": buf.length, "Cache-Control": "public, max-age=3600" });
+      return res.end(buf);
+    }
     // board page
     if (p === "/" || p === "/board") {
       if (!isAuthed(req)) { res.writeHead(302, { Location: "/login" }); return res.end(); }

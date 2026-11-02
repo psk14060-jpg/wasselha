@@ -255,7 +255,7 @@ async function load(){
       if(fresh.length){
         const web=fresh.filter(o=>o.status==="pending").length;
         toast(web?"طلب جديد بانتظار تأكيدك":(fresh.length===1?"أُضيف طلب جديد":"أُضيفت "+fresh.length+" طلبات"));
-        if(S.sound)beep(2);
+        if(S.sound)announceNew();
       }
     }
     S.known=ids; S.dayKnown=day; S.orders=j.orders; S.ready=true; fails=0;
@@ -444,6 +444,17 @@ function batchCheck(to){
   if(presses.filter(x=>x.to===to).length>=3&&t-batchWarnAt>30*60000){batchWarnAt=t;
     setTimeout(()=>toast("انتبه: ٣ طلبات انضغطت بنفس الدقيقة. اضغط الزر وقت ما يصير كل طلب، عشان تحليل التأخير يطلع صح"),2900);}
 }
+/* "لديك طلب جديد": a recorded clip if one is installed (public/sounds/new-order.mp3), otherwise the device voice */
+const newOrderClip=new Audio("/sounds/new-order.mp3"); let clipOk=true;
+newOrderClip.addEventListener("error",()=>{clipOk=false;});
+function announceNew(){
+  beep(1);
+  setTimeout(()=>{
+    if(clipOk){newOrderClip.currentTime=0;newOrderClip.play().catch(()=>sayDevice("لديك طلب جديد"));}
+    else sayDevice("لديك طلب جديد");
+  },400);
+}
+function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
 async function muteLate(ids){
   ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
   try{await Promise.all(ids.map(id=>api("PATCH","/api/board/orders/"+id,{muteAlert:true})));toast("انوقف تنبيه التأخير على كل الأجهزة");}
