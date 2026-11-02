@@ -74,6 +74,9 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
   await migrateTts(pool);
   await migrateGifts(pool);
+  // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
+  await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
 }
 
 // ---------- helpers ----------
@@ -147,7 +150,7 @@ function rowToOrder(r) {
     note: r.note, due: Number(r.due), created: Number(r.created), updated: Number(r.updated),
     confirmedAt: r.confirmed_at ? Number(r.confirmed_at) : null, outAt: r.out_at ? Number(r.out_at) : null,
     waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review, appRef: r.app_ref || "",
-    giftOut: r.gift_out || null, giftIn: r.gift_in || null,
+    giftOut: r.gift_out || null, giftIn: r.gift_in || null, alertMuted: !!r.alert_muted,
   };
 }
 
@@ -328,7 +331,14 @@ const server = http.createServer(async (req, res) => {
         const day = String(url.searchParams.get("day") || opDayOf(Date.now()));
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return send(res, 400, { error: "day" });
         const { rows } = await pool.query("SELECT * FROM orders WHERE op_day=$1 ORDER BY due ASC", [day]);
-        return send(res, 200, { now: Date.now(), day, orders: rows.map(rowToOrder) });
+        const st = await pool.query("SELECT value FROM board_settings WHERE key='sound'");
+        return send(res, 200, { now: Date.now(), day, orders: rows.map(rowToOrder), settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
+      }
+      if (p === "/api/board/settings" && req.method === "POST") {
+        const b = await readBody(req);
+        if (typeof b.sound !== "boolean") return send(res, 400, { error: "sound" });
+        await pool.query("INSERT INTO board_settings (key,value) VALUES ('sound',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [JSON.stringify(b.sound)]);
+        return send(res, 200, { settings: { sound: b.sound } });
       }
       if (p === "/api/board/orders" && req.method === "POST") {
         const b = await readBody(req);
@@ -355,6 +365,7 @@ const server = http.createServer(async (req, res) => {
           put("status", b.status);
           if (b.status === "out") put("out_at", Date.now());
         }
+        if (b.muteAlert !== undefined) put("alert_muted", !!b.muteAlert);
         if (b.confirm === true) { put("confirmed_at", Date.now()); put("needs_review", false); }
         if (b.name !== undefined) put("name", clip(b.name, 60));
         if (b.phone !== undefined) put("phone", clip(b.phone, 20));

@@ -455,7 +455,7 @@ const COLS=[
   {k:"out",t:"مع المندوب"}];
 const NEXT={new:["prep","ابدأ التحضير"],prep:["ready","جاهز"],ready:null,out:["done","وصل للعميل"]};
 const PREV={prep:"new",ready:"prep",out:"ready"};
-const S={muted:(()=>{try{return new Set(JSON.parse(localStorage.getItem("mg-muted")||"[]"))}catch(e){return new Set()}})(),dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
+const S={master:true,unlocked:false,dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
 
 /* ---------- API ---------- */
 async function api(method,url,body){
@@ -483,6 +483,7 @@ async function load(){
       }
     }
     S.known=ids; S.dayKnown=day; S.orders=j.orders; S.ready=true; fails=0;
+    if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     $("offline").hidden=true; render();
   }catch(e){
     if(e.message!=="auth"){fails++; if(fails>=2)$("offline").hidden=false;}
@@ -543,7 +544,7 @@ function ticket(o,t){
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
-        ${u.cls.startsWith("late")&&!S.muted.has(o.id)?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
+        ${u.cls.startsWith("late")&&!o.alertMuted?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
         ${next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
@@ -612,9 +613,8 @@ function render(){
       ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
   const lateAll=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t);
-  const lateNow=lateAll.filter(o=>!S.muted.has(o.id));
+  const lateNow=lateAll.filter(o=>!o.alertMuted);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
-  $("soundWarn").hidden=S.sound;
   $("lateBar").hidden=!lateNow.length;
   $("lateBar").innerHTML=lateNow.length?`<span>متأخر: ${lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، ")}</span><button type="button" data-act="muteall">🔕 إيقاف التنبيه</button>`:"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
@@ -656,7 +656,11 @@ document.addEventListener("click",e=>{
   const f=e.target.closest("[data-f]"); if(f){S.filter=f.dataset.f;document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===f));render();}
 });
 
-function muteLate(ids){ids.forEach(id=>S.muted.add(id));try{localStorage.setItem("mg-muted",JSON.stringify([...S.muted].slice(-200)))}catch(e){}render();toast("انوقف تنبيه التأخير");}
+async function muteLate(ids){
+  ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
+  try{await Promise.all(ids.map(id=>api("PATCH","/api/board/orders/"+id,{muteAlert:true})));toast("انوقف تنبيه التأخير على كل الأجهزة");}
+  catch(e){toast("ما انحفظ الإيقاف، حاول مرة ثانية");load();}
+}
 async function sendGift(o,b){
   b.disabled=true;
   try{const j=await api("PATCH","/api/board/orders/"+o.id,{issueGift:true});
@@ -875,12 +879,25 @@ function bell(n){
   }catch(e){}
 }
 async function keepAwake(){try{if("wakeLock" in navigator&&document.visibilityState==="visible")await navigator.wakeLock.request("screen");}catch(e){}}
-function setSound(on){S.sound=on;$("soundBtn").setAttribute("aria-pressed",on);$("soundBtn").textContent="التنبيه الصوتي: "+(on?"شغّال":"مطفأ");
-  try{localStorage.setItem("mg-sound",on?"1":"0")}catch(e){} if(on){keepAwake();bell(2);}}
-$("soundBtn").onclick=()=>setSound(!S.sound);
+/* the sound switch is shared: turning it off or on here does it on every device.
+   Each device still needs one tap after opening, because browsers block sound until the page is touched. */
+function syncSound(){
+  S.sound=S.master&&S.unlocked;
+  $("soundBtn").setAttribute("aria-pressed",S.master);
+  $("soundBtn").textContent="التنبيه الصوتي (كل الأجهزة): "+(S.master?"شغّال":"مطفأ");
+  const w=$("soundWarn");
+  w.hidden=S.master&&S.unlocked;
+  w.textContent=!S.master?"🔇 التنبيه الصوتي مطفأ على كل الأجهزة — اضغط هنا لتشغيله":"🔇 الصوت ما اشتغل على هذا الجهاز — اضغط هنا";
+}
+function unlock(){if(!S.unlocked){S.unlocked=true;try{ac();}catch(e){}syncSound();if(S.master){keepAwake();bell(2);}}}
+async function setMaster(on){
+  S.master=on; unlock(); syncSound();
+  try{await api("POST","/api/board/settings",{sound:on});toast(on?"شغّلت التنبيه على كل الأجهزة":"طفّيت التنبيه على كل الأجهزة");}
+  catch(e){toast("ما انحفظ، حاول مرة ثانية");load();}
+}
+$("soundBtn").onclick=()=>setMaster(!S.master);
 /* browsers allow sound only after a tap: if the sound was on last time, the first tap anywhere turns it back on */
-try{if(localStorage.getItem("mg-sound")!=="0"){$("soundBtn").textContent="التنبيه الصوتي: اضغط أي مكان لتشغيله";
-  document.addEventListener("pointerdown",function once(e){document.removeEventListener("pointerdown",once,true);if(!S.sound&&e.target.id!=="soundBtn")setSound(true);},true);}}catch(e){}
+document.addEventListener("pointerdown",e=>{if(e.target.id!=="soundBtn"&&e.target.id!=="soundWarn")unlock();},true);
 let toastT=null;
 function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800);}
 function tick(){$("clock").textContent=fmtClock(now());}
@@ -910,7 +927,8 @@ function alarm(){ /* falling two-tone warning, distinct from the new-order beep 
 /* every tap also wakes the audio; keep the screen awake while the sound is on */
 document.addEventListener("pointerdown",()=>{if(actx&&actx.state!=="running")try{actx.resume();}catch(e){}},true);
 setInterval(()=>{if(S.sound&&document.visibilityState==="visible")keepAwake();},60000);
-$("soundWarn").onclick=()=>setSound(true);
+$("soundWarn").onclick=()=>{if(!S.master)setMaster(true);else unlock();};
+syncSound();
 render(); load(); startPolling(); loadMenu();
 </script>
 </body>
