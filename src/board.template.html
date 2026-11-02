@@ -417,7 +417,7 @@ document.addEventListener("click",e=>{
   if(b){
     const host=b.closest("[data-id]"); const o=host&&findOrder(host.dataset.id); if(!o)return;
     const a=b.dataset.act;
-    if(a==="go") patch(o,{status:b.dataset.to});
+    if(a==="go"){patch(o,{status:b.dataset.to});batchCheck(b.dataset.to);}
     else if(a==="back"){const p=o.status==="done"?(o.type==="del"?"out":"ready"):PREV[o.status];if(p)patch(o,{status:p});}
     else if(a==="restore") patch(o,{status:o.status==="dismissed"?"pending":"new"});
     else if(a==="confirm") patch(o,{status:"new",confirm:true},"أُكّد الطلب #"+o.num+" وانتقل للمطبخ");
@@ -432,6 +432,14 @@ document.addEventListener("click",e=>{
   const f=e.target.closest("[data-f]"); if(f){S.filter=f.dataset.f;document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===f));render();}
 });
 
+/* the timing analysis needs each button pressed when it happens: gently flag several presses in one minute */
+const presses=[]; let batchWarnAt=0;
+function batchCheck(to){
+  if(!["prep","ready","out","done"].includes(to))return;
+  const t=Date.now(); presses.push({to,t}); while(presses.length&&t-presses[0].t>60000)presses.shift();
+  if(presses.filter(x=>x.to===to).length>=3&&t-batchWarnAt>30*60000){batchWarnAt=t;
+    setTimeout(()=>toast("انتبه: ٣ طلبات انضغطت بنفس الدقيقة. اضغط الزر وقت ما يصير كل طلب، عشان تحليل التأخير يطلع صح"),2900);}
+}
 async function muteLate(ids){
   ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
   try{await Promise.all(ids.map(id=>api("PATCH","/api/board/orders/"+id,{muteAlert:true})));toast("انوقف تنبيه التأخير على كل الأجهزة");}
@@ -675,7 +683,7 @@ $("soundBtn").onclick=()=>setMaster(!S.master);
 /* browsers allow sound only after a tap: if the sound was on last time, the first tap anywhere turns it back on */
 document.addEventListener("pointerdown",e=>{if(e.target.id!=="soundBtn"&&e.target.id!=="soundWarn")unlock();},true);
 let toastT=null;
-function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2800);}
+function toast(m){const t=$("toast");t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,Math.max(2800,m.length*70));}
 function tick(){$("clock").textContent=fmtClock(now());}
 setInterval(()=>{tick();if(S.ready)render();},15000);tick();
 let arVoice=null;

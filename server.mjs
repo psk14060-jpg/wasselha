@@ -77,6 +77,37 @@ async function migrate() {
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
+  // timeline of every order for the preparation analysis: each status change, plus item and time edits,
+  // with how busy the kitchen was at that moment. Written by a trigger so every path (board, WhatsApp, website) is covered.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_events (
+      id BIGSERIAL PRIMARY KEY, order_id BIGINT NOT NULL, op_day DATE NOT NULL, at BIGINT NOT NULL,
+      kind TEXT NOT NULL, from_status TEXT, to_status TEXT, due BIGINT, items TEXT,
+      open_new INT, open_prep INT, open_ready INT)`);
+  await pool.query("CREATE INDEX IF NOT EXISTS order_events_day ON order_events (op_day, at)");
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION log_order_event() RETURNS trigger AS $f$
+    DECLARE n INT; pr INT; rd INT; ms BIGINT := (extract(epoch from clock_timestamp())*1000)::bigint;
+    BEGIN
+      SELECT count(*) FILTER (WHERE status='new'), count(*) FILTER (WHERE status='prep'), count(*) FILTER (WHERE status='ready')
+        INTO n, pr, rd FROM orders WHERE op_day=NEW.op_day AND id<>NEW.id;
+      IF TG_OP='INSERT' THEN
+        INSERT INTO order_events (order_id,op_day,at,kind,to_status,due,items,open_new,open_prep,open_ready)
+          VALUES (NEW.id,NEW.op_day,ms,'created',NEW.status,NEW.due,NEW.items,n,pr,rd);
+      ELSE
+        IF NEW.status IS DISTINCT FROM OLD.status THEN
+          INSERT INTO order_events (order_id,op_day,at,kind,from_status,to_status,due,items,open_new,open_prep,open_ready)
+            VALUES (NEW.id,NEW.op_day,ms,'status',OLD.status,NEW.status,NEW.due,NEW.items,n,pr,rd);
+        END IF;
+        IF NEW.items IS DISTINCT FROM OLD.items OR NEW.due IS DISTINCT FROM OLD.due THEN
+          INSERT INTO order_events (order_id,op_day,at,kind,from_status,to_status,due,items,open_new,open_prep,open_ready)
+            VALUES (NEW.id,NEW.op_day,ms,'edited',OLD.status,NEW.status,NEW.due,NEW.items,n,pr,rd);
+        END IF;
+      END IF;
+      RETURN NEW;
+    END $f$ LANGUAGE plpgsql`);
+  await pool.query("DROP TRIGGER IF EXISTS orders_log_event ON orders");
+  await pool.query("CREATE TRIGGER orders_log_event AFTER INSERT OR UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION log_order_event()");
 }
 
 // ---------- helpers ----------
