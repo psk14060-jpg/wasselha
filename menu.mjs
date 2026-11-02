@@ -103,6 +103,20 @@ async function refresh() {
   return current;
 }
 
+// Items sold in the shop but not listed on the website. Nutella only comes as kabaji:
+// 10/20 pieces are priced like the sugar kabaji, 35 pieces like the mini kabaji (Hassan, 2026-11-02).
+function withShopOnly(products) {
+  const out = [...products];
+  const has = re => out.some(p => re.test(p.name));
+  const like = id => out.find(p => p.id === id);
+  if (!has(/نوتيلا/)) {
+    const k = like("kabajiSugar"), m = like("miniSugar");
+    if (k) out.push({ id: "kabajiNutella", name: "كباجي نوتيلا", description: "", variants: k.variants.map(v => ({ ...v })) });
+    if (m) out.push({ id: "miniNutella", name: "ميني كباجي نوتيلا", description: "", variants: m.variants.map(v => ({ ...v })) });
+  }
+  return out;
+}
+
 export async function getMenu() {
   if (Date.now() - current.fetchedAt > REFRESH_MS && !inflight) {
     inflight = refresh().catch(e => { console.log("menu: refresh failed " + e.message); current.fetchedAt = Date.now() - REFRESH_MS + 5 * 60e3; })
@@ -110,7 +124,7 @@ export async function getMenu() {
     if (current.source === "snapshot") await inflight; // first call waits so the board starts with the live menu
   }
   return {
-    products: current.products.map(p => ({ ...p, flavors: flavorsOf(p) })),
+    products: withShopOnly(current.products).map(p => ({ ...p, flavors: flavorsOf(p) })),
     areas: current.areas, rules: current.rules, source: current.source, fetchedAt: current.fetchedAt,
   };
 }
