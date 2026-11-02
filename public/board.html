@@ -159,6 +159,9 @@ textarea{resize:vertical;min-height:84px}
 .latebar{margin-top:10px;padding:12px;border-radius:10px;background:var(--late);color:#fff;font-weight:800;font-size:18px;text-align:center;animation:lateBar 1s steps(2,start) infinite}
 @keyframes lateBar{50%{opacity:.55}}
 @media (prefers-reduced-motion:reduce){.latebar{animation:none}}
+.latebar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.latebar button{border:2px solid #fff;background:transparent;color:#fff;border-radius:8px;padding:6px 12px;font:inherit;font-weight:700;cursor:pointer}
+.sm.mute{border-color:var(--late);color:var(--late)}
 </style>
 
 <style>
@@ -452,7 +455,7 @@ const COLS=[
   {k:"out",t:"مع المندوب"}];
 const NEXT={new:["prep","ابدأ التحضير"],prep:["ready","جاهز"],ready:null,out:["done","وصل للعميل"]};
 const PREV={prep:"new",ready:"prep",out:"ready"};
-const S={dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
+const S={muted:(()=>{try{return new Set(JSON.parse(localStorage.getItem("mg-muted")||"[]"))}catch(e){return new Set()}})(),dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
 
 /* ---------- API ---------- */
 async function api(method,url,body){
@@ -540,7 +543,7 @@ function ticket(o,t){
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
-        ${giftBtn(o)}
+        ${u.cls.startsWith("late")&&!S.muted.has(o.id)?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
         ${next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
@@ -608,11 +611,12 @@ function render(){
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
       ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
-  const lateNow=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t);
+  const lateAll=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t);
+  const lateNow=lateAll.filter(o=>!S.muted.has(o.id));
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
   $("soundWarn").hidden=S.sound;
   $("lateBar").hidden=!lateNow.length;
-  $("lateBar").textContent=lateNow.length?"متأخر: "+lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، "):"";
+  $("lateBar").innerHTML=lateNow.length?`<span>متأخر: ${lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، ")}</span><button type="button" data-act="muteall">🔕 إيقاف التنبيه</button>`:"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
   by.new.forEach(o=>{if(startAt(o)-t<20*60000)warm(startPhrase(o));});
   /* spoken reminder when it is time to start: once, then every 3 minutes (3 times) until preparation starts */
@@ -632,6 +636,7 @@ async function patch(o,body,okMsg){
   catch(e){toast("ما انحفظ التغيير، حاول مرة ثانية");}
 }
 document.addEventListener("click",e=>{
+  if(e.target.closest('[data-act="muteall"]')){muteLate(S.orders.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<now()).map(o=>o.id));return;}
   const b=e.target.closest("[data-act]");
   if(b){
     const host=b.closest("[data-id]"); const o=host&&findOrder(host.dataset.id); if(!o)return;
@@ -643,6 +648,7 @@ document.addEventListener("click",e=>{
     else if(a==="dismiss") patch(o,{status:"dismissed"},"أُخفي الطلب "+(o.ref||""));
     else if(a==="edit"||a==="review") openSheet(o);
     else if(a==="gift") sendGift(o,b);
+    else if(a==="mute") muteLate([o.id]);
     return;
   }
   const tab=e.target.closest("[data-tab]"); if(tab){S.tab=tab.dataset.tab;render();return;}
@@ -650,6 +656,7 @@ document.addEventListener("click",e=>{
   const f=e.target.closest("[data-f]"); if(f){S.filter=f.dataset.f;document.querySelectorAll("[data-f]").forEach(x=>x.setAttribute("aria-pressed",x===f));render();}
 });
 
+function muteLate(ids){ids.forEach(id=>S.muted.add(id));try{localStorage.setItem("mg-muted",JSON.stringify([...S.muted].slice(-200)))}catch(e){}render();toast("انوقف تنبيه التأخير");}
 async function sendGift(o,b){
   b.disabled=true;
   try{const j=await api("PATCH","/api/board/orders/"+o.id,{issueGift:true});
@@ -849,7 +856,7 @@ $("delYes").onclick=async()=>{const o=S.editing;if(!o)return;closeSheet();await 
 
 /* ---------- sound, wake lock, misc ---------- */
 let actx=null;
-function ac(){ac();if(actx.state!=="running")try{actx.resume();}catch(e){}return actx;}
+function ac(){actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state!=="running")try{actx.resume();}catch(e){}return actx;}
 function beep(n){
   try{ac();
     for(let i=0;i<n;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="square";o.frequency.value=880;
