@@ -273,12 +273,16 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const visible=o=>S.filter==="all"||o.type===S.filter;
 function handoverAt(o){return o.due-travelMin(o)*60000;}
+/* a pickup by our own customer that is ready is waiting on the customer, not the kitchen: no late alert */
+const awaitsCustomer=o=>o.status==="ready"&&o.type==="pick"&&!isApp(o.source);
+const isLate=(o,t)=>["new","prep","ready"].includes(o.status)&&!awaitsCustomer(o)&&handoverAt(o)<t;
 function urgency(o,t){
   const h=handoverAt(o);
   const mins=Math.round((h-t)/60000);
   /* until it is handed to the customer or the courier: green with time to spare, orange in the last 5 minutes, red once late */
   let cls="";
-  if(["new","prep","ready"].includes(o.status)) cls=h<t?"late over":h-t<=5*60000?"warn":"ok";
+  if(awaitsCustomer(o)) cls="ok";
+  else if(["new","prep","ready"].includes(o.status)) cls=h<t?"late over":h-t<=5*60000?"warn":"ok";
   return {mins,cls};
 }
 /* when to start: delivery time minus preparation (and travel for delivery) */
@@ -310,7 +314,7 @@ function ticket(o,t){
       <span class="no">#${esc(o.num)}</span>
       <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}${o.appRef?" "+esc(o.appRef):""}</span>
       <span class="type ${o.type==="del"?"del":""}">${isApp(o.source)?"مندوب التطبيق":o.type==="del"?"توصيل":"استلام"}</span>
-      <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):(travelMin(o)?"يطلع مع المندوب "+fmtClock(handoverAt(o))+" · ":"")+minsLeftText(u.mins)}</span></div>
+      <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):(awaitsCustomer(o)?"بانتظار العميل":(travelMin(o)?"يطلع مع المندوب "+fmtClock(handoverAt(o))+" · ":"")+minsLeftText(u.mins))}</span></div>
     </div>
     ${o.status==="new"?(t>=startAt(o)?`<div class="startnow">ابدأ الآن</div>`:`<div class="startat">ابدأ التحضير <span class="num">${fmtClock(startAt(o))}</span>${travelMin(o)?` <small>(توصيل ${travelMin(o)} د)</small>`:""}</div>`):""}
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
@@ -370,7 +374,7 @@ function render(){
       ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما تكتب للعميل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
     </section>`).join("");
   $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
-  const late=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t).length;
+  const late=live.filter(o=>isLate(o,t)).length;
   const drv=by.ready.filter(o=>o.type==="del").length;
   const sales=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)).reduce((s,o)=>s+(+o.total||0),0);
   $("pulse").innerHTML=
@@ -388,7 +392,7 @@ function render(){
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
       ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
-  const lateAll=live.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<t);
+  const lateAll=live.filter(o=>isLate(o,t));
   const lateNow=lateAll.filter(o=>!o.alertMuted);
   let fresh=false; lateNow.forEach(o=>{if(!S.alerted.has(o.id)){S.alerted.add(o.id);fresh=true;}});
   $("lateBar").hidden=!lateNow.length;
@@ -412,7 +416,7 @@ async function patch(o,body,okMsg){
   catch(e){toast("ما انحفظ التغيير، حاول مرة ثانية");}
 }
 document.addEventListener("click",e=>{
-  if(e.target.closest('[data-act="muteall"]')){muteLate(S.orders.filter(o=>["new","prep","ready"].includes(o.status)&&handoverAt(o)<now()).map(o=>o.id));return;}
+  if(e.target.closest('[data-act="muteall"]')){muteLate(S.orders.filter(o=>isLate(o,now())).map(o=>o.id));return;}
   const b=e.target.closest("[data-act]");
   if(b){
     const host=b.closest("[data-id]"); const o=host&&findOrder(host.dataset.id); if(!o)return;
