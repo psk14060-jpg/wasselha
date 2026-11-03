@@ -97,6 +97,12 @@ async function refresh() {
     rules = { minSubtotal: numberAfter(djs, "MIN_SUBTOTAL"), midMinSubtotal: numberAfter(djs, "MID_MIN_SUBTOTAL"), midMinFee: numberAfter(djs, "MID_MIN_FEE"),
       farMinSubtotal: numberAfter(djs, "FAR_MIN_SUBTOTAL"), farMinFee: numberAfter(djs, "FAR_MIN_FEE"),
       timeFactor: numberAfter(djs, "TIME_FACTOR") };
+    // delivery by map point, exactly as the website prices it: shop location, distance zones, road-distance fallback
+    const shop = djs.match(/SHOP\s*:\s*\{\s*lat\s*:\s*([\d.]+)\s*,\s*lng\s*:\s*([\d.]+)/);
+    const zt = literalAfter(djs, "ZONES:");
+    if (shop) rules.shop = { lat: +shop[1], lng: +shop[2] };
+    if (zt) rules.zones = evalLiteral(zt).map(z => ({ name: String(z.name), maxKm: Number(z.maxKm), fee: Number(z.customerFee) }));
+    rules.maxKm = numberAfter(djs, "MAX_KM"); rules.fallbackFactor = numberAfter(djs, "FALLBACK_FACTOR"); rules.fallbackSpeed = numberAfter(djs, "FALLBACK_SPEED_KMH");
   } catch {}
   if (!areas.length) areas = current.areas;
   current = { products, areas, rules, source: "site", fetchedAt: Date.now() };

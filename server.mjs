@@ -11,6 +11,7 @@ import pg from "pg";
 import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
+import { migrateLocation } from "./location.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
@@ -88,6 +89,7 @@ async function migrate() {
      "1 × سمبوسة جنوبية 20 قطعة (مشكل) — 38 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال"]);
   if (fix12.rowCount) console.log("fix: order #12 of 2026-11-03 corrected");
   await migratePrefs(pool);
+  await migrateLocation(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
@@ -196,6 +198,7 @@ function rowToOrder(r) {
     confirmedAt: r.confirmed_at ? Number(r.confirmed_at) : null, outAt: r.out_at ? Number(r.out_at) : null,
     waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review, appRef: r.app_ref || "",
     giftOut: r.gift_out || null, giftIn: r.gift_in || null, alertMuted: !!r.alert_muted,
+    travelMin: r.travel_min == null ? null : Number(r.travel_min), dest: r.dest || null,
   };
 }
 

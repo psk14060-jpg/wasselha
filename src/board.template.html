@@ -299,6 +299,7 @@ function urgency(o,t){
 const PREP_MIN=25, COURIER_MIN=10, DEFAULT_TRAVEL_MIN=20;
 function travelMin(o){
   if(o.type!=="del"||isApp(o.source))return 0;
+  if(o.travelMin!=null)return o.travelMin+COURIER_MIN; /* measured from the customer's map location */
   const name=String(o.area||"").replace(/\s*\(.*\)\s*$/,"").trim();
   const a=MENU&&MENU.areas.find(x=>x.name===name);
   const f=(MENU&&MENU.rules&&MENU.rules.timeFactor)||1.4;
@@ -314,6 +315,8 @@ function waNumber(o){let d=String(o.waFrom||o.phone||"").replace(/[٠-٩]/g,c=>"
   if(d.startsWith("00"))d=d.slice(2); if(d.startsWith("05"))d="966"+d.slice(1); else if(/^5\d{8}$/.test(d))d="966"+d; return d.length>=11?d:"";}
 const giftable=o=>false; /* return gift switched off by Hassan (2026-11-01); codes already sent are still honoured by the server */
 const giftBtn=o=>giftable(o)?`<button type="button" class="sm gift" data-act="gift">${o.giftOut?"🎁 "+esc(o.giftOut)+" (أعد)":"🎁 هدية العودة"}</button>`:"";
+/* note text, with the customer's map location as a link for the driver */
+const noteHtml=n=>esc(n).replace(/📍 الموقع: (https:\/\/www\.google\.com\/maps\?q=[-\d.,]+)/,'📍 <a href="$1" target="_blank" rel="noopener">موقع العميل على الخريطة</a>');
 function ticket(o,t){
   const u=urgency(o,t);
   const items=(o.items||"").split("\n").map(s=>s.trim()).filter(Boolean);
@@ -330,7 +333,7 @@ function ticket(o,t){
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
     ${o.type==="del"&&o.area?`<div class="area">${esc(o.area)}</div>`:""}
     ${items.length?`<ul class="items">${items.map(i=>`<li><span>${esc(i)}</span></li>`).join("")}</ul>`:""}
-    ${o.note?`<div class="note">${esc(o.note)}</div>`:""}
+    ${o.note?`<div class="note">${noteHtml(o.note)}</div>`:""}
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
@@ -350,7 +353,7 @@ function pendingCard(o,t){
       <span class="refchip">${esc(o.phone)}</span><span class="refchip">قبل ${age} د</span></div>
     <div><strong>${esc(o.name||"بدون اسم")}</strong>${o.type==="del"&&o.area?` · <span class="area">${esc(o.area)}</span>`:""} · <span class="refchip">${fmtClock(o.due)}</span></div>
     <div class="sum">${esc(items.join(" · "))}${o.total!=null?" — "+esc(o.total)+" ريال":""}</div>
-    ${o.note?`<div class="note">${esc(o.note)}</div>`:""}
+    ${o.note?`<div class="note">${noteHtml(o.note)}</div>`:""}
     ${o.rawText?`<details class="rawt"><summary>نص رسالة العميل</summary><div>${esc(o.rawText).replace(/\n/g,"<br>")}</div></details>`:""}
     <div class="row">
       <button type="button" class="go" data-act="review">راجع وأكّد للمطبخ</button>
