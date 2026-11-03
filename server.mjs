@@ -11,6 +11,7 @@ import pg from "pg";
 import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
+import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,6 +75,7 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
   await migrateTts(pool);
   await migrateGifts(pool);
+  await migratePrefs(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
@@ -380,6 +382,10 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n,
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
+      if (p === "/api/board/taste" && req.method === "GET") {
+        const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days"), 10) || 15));
+        return send(res, 200, await tasteReport(pool, days));
+      }
       if (p === "/api/board/settings" && req.method === "POST") {
         const b = await readBody(req);
         if (typeof b.sound !== "boolean") return send(res, 400, { error: "sound" });
@@ -464,6 +470,13 @@ const server = http.createServer(async (req, res) => {
 
 migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
+  startTasteJob(pool);
+  // on start, log the taste report (no names or phones) so it can be read from the service logs
+  tasteReport(pool, 15).then(r => {
+    console.log(`taste-report: from=${r.from} days=${r.analysedDays} orders=${r.orders}`);
+    for (const c of r.changes.slice(0, 25)) console.log(`taste-change: ${c.product} | ${c.ingredient} | ${c.change} | customers=${c.customers} requests=${c.requests} of product_orders=${c.product_orders} product_customers=${c.product_customers} | ${(c.examples || []).join(" ؛ ").slice(0, 160)}`);
+    for (const l of r.lost.slice(0, 15)) console.log(`taste-lost: ${l.product} | ${l.ingredient || "-"} | ${l.reason} | customers=${l.customers} | ${(l.examples || []).join(" ؛ ").slice(0, 160)}`);
+  }).catch(e => console.log("taste-report: " + e.message));
   // on start, log today's order timeline (no names or phones) to help trace late orders
   const hm = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16) : "-";
   pool.query("SELECT num,source,type,status,area,items,total,note,raw_text,due,created,updated FROM orders WHERE op_day=$1 ORDER BY num", [opDayOf(Date.now())])
