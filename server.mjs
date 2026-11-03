@@ -81,6 +81,12 @@ async function migrate() {
     ["1 × كباجي جبن سائل برشة سكر 20 قطعة — 38 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال\n1 × فطائر مثلثة 30 قطعة — 45 ريال\n1 × كب بيتزا 28 قطعة — 47 ريال", Date.now(),
      "2 × كباجي جبن سائل برشة سكر 20 قطعة — 76 ريال\n1 × فطائر مثلثة 30 قطعة — 45 ريال\n1 × كب بيتزا 28 قطعة — 47 ريال"]);
   if (fix8.rowCount) console.log("fix: order #8 of 2026-11-03 corrected");
+  // one-off fix (2026-11-03): order #12 "سمبوسه مشكل ٢٠" meant triangles, not the southern samosa
+  const fix12 = await pool.query(`UPDATE orders SET items=$1, total=total-38+35, note=TRIM(BOTH ' ·' FROM note || ' · صُحّح: السمبوسة = فطائر مثلثة'), updated=$2
+    WHERE op_day='2026-11-03' AND num=12 AND items=$3`,
+    ["1 × فطائر مثلثة 20 قطعة (مشكل) — 35 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال", Date.now(),
+     "1 × سمبوسة جنوبية 20 قطعة (مشكل) — 38 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال"]);
+  if (fix12.rowCount) console.log("fix: order #12 of 2026-11-03 corrected");
   await migratePrefs(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
