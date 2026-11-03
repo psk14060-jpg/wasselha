@@ -633,12 +633,11 @@ function render(){
   $("lateBar").innerHTML=lateNow.length?`<span>متأخر: ${lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، ")}</span><button type="button" data-act="muteall">🔕 إيقاف التنبيه</button>`:"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
   by.new.forEach(o=>{if(startAt(o)-t<20*60000)warm(startPhrase(o));});
-  /* spoken reminder when it is time to start: once, then every 3 minutes (3 times) until preparation starts */
+  /* "start now" alert (Hassan's clip): when an order reaches its start time, then every minute until «ابدأ التحضير» is pressed */
   S.spoken=S.spoken||{};
   if(S.sound&&S.ready&&S.dayOff===0){
-    const due=by.new.filter(o=>t>=startAt(o)&&(!S.spoken[o.id]||(S.spoken[o.id].n<3&&t-S.spoken[o.id].at>=180000)));
-    due.slice(0,2).forEach((o,i)=>{S.spoken[o.id]={n:(S.spoken[o.id]?S.spoken[o.id].n:0)+1,at:t};
-      setTimeout(()=>say(startPhrase(o)),i*4500);});
+    const due=by.new.filter(o=>t>=startAt(o)&&(!S.spoken[o.id]||t-S.spoken[o.id].at>=60000));
+    if(due.length){due.forEach(o=>{S.spoken[o.id]={n:(S.spoken[o.id]?S.spoken[o.id].n:0)+1,at:t};});playStart();}
   }
   S.rendered=S.ready;
 }
@@ -939,6 +938,8 @@ function pickVoice(){try{const v=speechSynthesis.getVoices();arVoice=v.find(x=>/
 try{pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}catch(e){}
 /* Saudi voice from the server (ElevenLabs, cached); falls back to the device voice */
 const ttsAudio=new Audio(); let ttsOk=true;
+const startClip=new Audio("/sounds/start-prep.mp3");
+function playStart(){startClip.currentTime=0;startClip.play().catch(()=>bell(3));}
 function say(text){
   bell(3);
   if(!ttsOk)return;
