@@ -75,6 +75,12 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
   await migrateTts(pool);
   await migrateGifts(pool);
+  // one-off fix (2026-11-03): order #8 read "30 kabaji" as 2 × 20; it is 20 + 10 pieces
+  const fix8 = await pool.query(`UPDATE orders SET items=$1, total=total-76+58, note=TRIM(BOTH ' ·' FROM note || ' · صُحّح: الكباجي ٣٠ = ٢٠ + ١٠'), updated=$2
+    WHERE op_day='2026-11-03' AND num=8 AND items=$3`,
+    ["1 × كباجي جبن سائل برشة سكر 20 قطعة — 38 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال\n1 × فطائر مثلثة 30 قطعة — 45 ريال\n1 × كب بيتزا 28 قطعة — 47 ريال", Date.now(),
+     "2 × كباجي جبن سائل برشة سكر 20 قطعة — 76 ريال\n1 × فطائر مثلثة 30 قطعة — 45 ريال\n1 × كب بيتزا 28 قطعة — 47 ريال"]);
+  if (fix8.rowCount) console.log("fix: order #8 of 2026-11-03 corrected");
   await migratePrefs(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
