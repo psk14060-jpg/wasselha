@@ -65,7 +65,7 @@ export async function migrateLocation(pool) {
 }
 
 // Put the drive on the order: delivery, area label with distance, fee from the zone, total adjusted, map link for the driver.
-export async function applyLocation(pool, orderId, point, log = console.log) {
+export async function applyLocation(pool, orderId, point, log = console.log, sourceNote = "") {
   const d = await deliveryFor(point);
   const { rows: [o] } = await pool.query("SELECT id, num, total, delivery_fee, note, area FROM orders WHERE id=$1", [orderId]);
   if (!o) return null;
@@ -78,7 +78,7 @@ export async function applyLocation(pool, orderId, point, log = console.log) {
     .replace(/\s*·?\s*📍 الموقع: \S+/g, "")
     .split("·").map(x => x.trim()).filter(x => x && !/^(?:الحي|العنوان|الموقع)\s+غير\s+(?:مذكور|محدد)|^المسافة تقريبية$|^⚠ الموقع أبعد/.test(x)).join(" · ")
     .replace(/(⚠ ناقص: [^·]*?)(?:،\s*)?(?:الحي|رسوم الحي)(?=،|\s*·|$)/g, "$1").replace(/⚠ ناقص:\s*(?:·|$)/g, "").replace(/^\s*·\s*|\s*·\s*$/g, "").trim();
-  const note2 = [note, `📍 الموقع: ${d.mapsUrl}`, d.inRange ? "" : `⚠ الموقع أبعد من نطاق التوصيل (${d.km} كم)`, d.approx ? "المسافة تقريبية" : ""].filter(Boolean).join(" · ").slice(0, 300);
+  const note2 = [note.replace(/\s*·?\s*📍 الموقع من طلب سابق[^·]*/g, ""), `📍 الموقع: ${d.mapsUrl}`, sourceNote, d.inRange ? "" : `⚠ الموقع أبعد من نطاق التوصيل (${d.km} كم)`, d.approx ? "المسافة تقريبية" : ""].filter(Boolean).join(" · ").slice(0, 300);
   await pool.query(`UPDATE orders SET type='del', area=$1, delivery_fee=$2, total=$3, note=$4, travel_min=$5, dest=$6, updated=$7 WHERE id=$8`,
     [area.slice(0, 80), fee, total, note2, d.minutes, `${point.lat},${point.lng}`, Date.now(), orderId]);
   log(`wa: location on #${o.num}: ${d.km} km, ${d.minutes} min, fee ${fee}${d.approx ? " (approx)" : ""}`);
