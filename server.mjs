@@ -11,6 +11,7 @@ import pg from "pg";
 import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
+import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
@@ -76,6 +77,7 @@ async function migrate() {
   await migrateTts(pool);
   await migrateGifts(pool);
   await migratePrefs(pool);
+  await migrateReports(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
@@ -267,6 +269,7 @@ function corsHeaders(req) {
 // ---------- static board ----------
 const boardHtml = () => fs.readFileSync(path.join(__dirname, "public", "board.html"));
 const loginHtml = () => fs.readFileSync(path.join(__dirname, "public", "login.html"));
+let previewCache = null;
 const pageHeaders = {
   "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
   "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
@@ -382,6 +385,22 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n,
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
+      if (p === "/api/board/reports" && req.method === "GET") {
+        const weeks = (await pool.query("SELECT week_start::text AS w, created FROM weekly_reports ORDER BY week_start DESC LIMIT 26")).rows;
+        const want = url.searchParams.get("week");
+        if (want === "current") {
+          // this week so far; one fresh build per 30 minutes
+          const k = weekStartOf(opDayOf(Date.now()));
+          if (!previewCache || previewCache.week !== k || Date.now() - previewCache.at > 30 * 60e3) previewCache = { week: k, at: Date.now(), r: await buildWeek(pool, k, { save: false }) };
+          return send(res, 200, { weeks, report: { ...previewCache.r, partial: true } });
+        }
+        const w = want && /^\d{4}-\d{2}-\d{2}$/.test(want) ? want : weeks[0]?.w;
+        const r = w ? (await pool.query("SELECT week_start::text AS \"weekStart\", data, brief FROM weekly_reports WHERE week_start=$1", [w])).rows[0] : null;
+        return send(res, 200, { weeks, report: r || null });
+      }
+      if (p === "/api/board/customers" && req.method === "GET") {
+        return send(res, 200, await customers(pool, Math.max(7, Math.min(90, parseInt(url.searchParams.get("lapse"), 10) || 21))));
+      }
       if (p === "/api/board/taste" && req.method === "GET") {
         const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days"), 10) || 15));
         return send(res, 200, await tasteReport(pool, days));
@@ -471,6 +490,7 @@ const server = http.createServer(async (req, res) => {
 migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
   startTasteJob(pool);
+  startWeeklyJob(pool);
   // on start, log the taste report (no names or phones) so it can be read from the service logs
   tasteReport(pool, 15).then(r => {
     console.log(`taste-report: from=${r.from} days=${r.analysedDays} orders=${r.orders}`);

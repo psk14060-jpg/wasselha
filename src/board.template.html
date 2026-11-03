@@ -92,6 +92,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <h1 class="brand">مينيقيش <small>لوحة الطلبات</small></h1>
     <span class="clock" id="clock">--:--</span>
     <button class="btn ghost" id="soundBtn" type="button" aria-pressed="false">التنبيه الصوتي: مطفأ</button>
+    <button class="btn ghost" id="repBtn" type="button">📊 التقارير</button>
     <button class="btn primary" id="newBtn" type="button">+ طلب جديد</button>
   </div>
   <div class="row2">
@@ -199,6 +200,18 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     </div>
   </form>
 </div>
+<section class="rep" id="rep" hidden aria-label="التقارير">
+  <div class="rephead">
+    <h2>التقارير</h2>
+    <div class="seg" id="repSeg" role="group" aria-label="نوع التقرير">
+      <button type="button" data-v="week" aria-pressed="true">تقرير الأسبوع</button>
+      <button type="button" data-v="cust" aria-pressed="false">العملاء</button>
+    </div>
+    <select id="repWeek" aria-label="الأسبوع"></select>
+    <button class="btn ghost" id="repClose" type="button">إغلاق</button>
+  </div>
+  <div class="repbody" id="repBody"><div class="empty">جارٍ التحميل…</div></div>
+</section>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -457,6 +470,60 @@ function batchCheck(to){
 const newOrderClip=new Audio("/sounds/new-order.mp3");
 function announceNew(){newOrderClip.currentTime=0;newOrderClip.play().catch(()=>beep(2));}
 function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
+/* ---------- reports: weekly brief and customers ---------- */
+const fmtN=n=>Number(n||0).toLocaleString("en-US");
+function delta(cur,prev){if(!prev)return "";const d=Math.round(100*(cur-prev)/prev);return `<small class="${d>=0?"up":"down"}">${d>=0?"▲":"▼"} ${Math.abs(d)}٪</small>`;}
+function bars(obj,order){const ent=(order||Object.keys(obj)).filter(k=>obj[k]).map(k=>[k,obj[k]]);const max=Math.max(1,...ent.map(e=>+e[1]||0));
+  return `<div class="bars">${ent.map(([k,v])=>`<div class="bar"><span class="bl">${esc(k)}</span><span class="bt"><i style="width:${Math.round(100*v/max)}%"></i></span><b class="mono">${fmtN(v)}</b></div>`).join("")}</div>`;}
+function briefHtml(t){return esc(t||"").split("\n").map(l=>l.trim()).filter(Boolean).map(l=>/^[-•*]/.test(l)?`<li>${l.replace(/^[-•*]\s*/,"").replace(/\*\*/g,"")}</li>`:`<p>${l.replace(/\*\*/g,"").replace(/^#+\s*/,"")}</p>`).join("").replace(/(<li>.*?<\/li>)+/g,m=>`<ul>${m}</ul>`);}
+function weekHtml(r){
+  if(!r)return `<div class="empty">ما فيه تقرير أسبوعي بعد. أول تقرير يصدر الأحد الساعة ٨ الصبح، وتقدر تشوف الأسبوع الحالي من القائمة فوق.</div>`;
+  const d=r.data,c=d.current,p=d.previous;
+  const tiles=[["المبيعات",fmtN(c.sales)+" ر",delta(c.sales,p.sales)],["الطلبات",fmtN(c.orders),delta(c.orders,p.orders)],["متوسط الفاتورة",fmtN(c.avgTicket)+" ر",delta(c.avgTicket,p.avgTicket)],
+    ["عملاء جدد",fmtN(d.newCustomers),""],["حصة التطبيقات",c.appShare+"٪",""],["التأخير",c.late.pct==null?"—":c.late.pct+"٪",`<small>${c.late.late} من ${c.late.measured}</small>`]];
+  const wd=["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
+  const hours={};Object.keys(c.byHour).sort((a,b)=>((+a+18)%24)-((+b+18)%24)).forEach(h=>{const hh=+h;hours[((hh%12)||12)+(hh<12?" ص":" م")]=c.byHour[h];});
+  return `${r.partial?`<div class="banner" data-kind="info">الأسبوع الحالي إلى الآن (${esc(d.week.from)} ←). التقرير النهائي يصدر الأحد.</div>`:""}
+  <div class="tiles">${tiles.map(t=>`<div class="tile"><span>${t[0]}</span><b>${t[1]}</b>${t[2]}</div>`).join("")}</div>
+  ${r.brief?`<div class="card brief"><h3>الخلاصة والقرارات</h3>${briefHtml(r.brief)}</div>`:""}
+  <div class="grid2">
+    <div class="card"><h3>الأصناف الأكثر طلبًا (بوكس)</h3>${bars(Object.fromEntries(c.topProducts.map(x=>[x.name,x.boxes])))}</div>
+    <div class="card"><h3>المصادر (طلبات)</h3>${bars(Object.fromEntries(Object.entries(c.bySource).map(([k,v])=>[k,v.orders])))}</div>
+    <div class="card"><h3>الأيام</h3>${bars(c.byWeekday,wd)}</div>
+    <div class="card"><h3>الساعات</h3>${bars(hours)}</div>
+    <div class="card"><h3>أحياء التوصيل</h3>${Object.keys(c.byArea).length?bars(Object.fromEntries(Object.entries(c.byArea).sort((a,b)=>b[1]-a[1]).slice(0,10))):`<div class="empty">لا يوجد</div>`}</div>
+    <div class="card"><h3>العملاء</h3><p>عندك <b>${fmtN(d.customers.total)}</b> عميل برقم منذ ${esc(d.customers.since)}، رجع منهم <b>${fmtN(d.customers.repeat)}</b> مرة ثانية أو أكثر، و<b>${fmtN(d.customers.lapsed)}</b> صار لهم ٢١ يوم أو أكثر بدون طلب.</p>
+      <p class="muted">طلبات الأسبوع المسجّل لها رقم: ${fmtN(c.withPhone)} من ${fmtN(c.orders)}.</p></div>
+  </div>
+  ${d.taste&&(d.taste.changes.length||d.taste.lost.length)?`<div class="card"><h3>أذواق العملاء هذا الأسبوع</h3><ul>${d.taste.changes.map(t=>`<li>${esc(t.product)}: ${esc(t.ingredient)} (${esc({remove:"حذف",replace:"تبديل",extra:"زيادة",less:"تقليل",add:"إضافة",other:"ملاحظة"}[t.change]||t.change)}) — ${t.customers} عميل${t.productCustomers?` من ${t.productCustomers} طلبوا الصنف`:""}</li>`).join("")}${d.taste.lost.map(l=>`<li>ضاعت مبيعة: ${esc(l.product)} — ${esc(l.reason)} (${l.customers} عميل)</li>`).join("")}</ul></div>`:""}`;
+}
+function custHtml(c){
+  const row=x=>`<tr><td>${esc(x.name||"—")}</td><td class="mono">0${esc(String(x.key).slice(3))}</td><td class="mono">${x.orders}</td><td class="mono">${fmtN(x.spend)} ر</td><td>${x.daysSince===0?"اليوم":x.daysSince+" يوم"}</td><td>${esc(x.lastItems)}</td><td><a class="btn sm" href="https://wa.me/${esc(x.key)}" target="_blank" rel="noopener">واتساب</a></td></tr>`;
+  const table=(list,empty)=>list.length?`<div class="tblwrap"><table><thead><tr><th>الاسم</th><th>الجوال</th><th>الطلبات</th><th>صرف</th><th>آخر طلب</th><th>آخر صنف</th><th></th></tr></thead><tbody>${list.map(row).join("")}</tbody></table></div>`:`<div class="empty">${empty}</div>`;
+  return `<div class="tiles"><div class="tile"><span>عملاء برقم</span><b>${fmtN(c.total)}</b><small>منذ ${esc(c.since)}</small></div>
+    <div class="tile"><span>رجعوا مرة ثانية</span><b>${fmtN(c.repeat)}</b><small>${c.total?Math.round(100*c.repeat/c.total):0}٪</small></div>
+    <div class="tile"><span>منقطعون (${c.lapseDays} يوم+)</span><b>${fmtN(c.lapsed.length)}</b></div>
+    <div class="tile"><span>طلبات بدون رقم</span><b>${fmtN(c.noPhoneOrders)}</b><small>ما تنحسب لعميل</small></div></div>
+  <div class="card"><h3>المنقطعون (الأعلى صرفًا أولًا)</h3>${table(c.lapsed,"ما فيه عميل منقطع إلى الآن — البيانات بدأت قريب.")}</div>
+  <div class="card"><h3>أفضل ٢٠ عميل</h3>${table(c.top,"لا يوجد")}</div>`;
+}
+const R={tab:"week",week:null};
+async function loadRep(){
+  const body=$("repBody"); body.innerHTML=`<div class="empty">جارٍ التحميل…</div>`;
+  try{
+    if(R.tab==="cust"){$("repWeek").hidden=true;body.innerHTML=custHtml(await api("GET","/api/board/customers"));return;}
+    $("repWeek").hidden=false;
+    const j=await api("GET","/api/board/reports"+(R.week?"?week="+encodeURIComponent(R.week):""));
+    $("repWeek").innerHTML=`<option value="current">الأسبوع الحالي إلى الآن</option>`+j.weeks.map(w=>`<option value="${esc(w.w)}">أسبوع ${esc(w.w)}</option>`).join("");
+    $("repWeek").value=R.week||(j.weeks[0]?j.weeks[0].w:"current");
+    if(!R.week&&!j.weeks.length){R.week="current";return loadRep();}
+    body.innerHTML=weekHtml(j.report);
+  }catch(e){body.innerHTML=`<div class="empty">ما قدرت أحمّل التقرير (${esc(e.code||e.message)}).</div>`;}
+}
+$("repBtn").onclick=()=>{$("rep").hidden=false;loadRep();};
+$("repClose").onclick=()=>{$("rep").hidden=true;};
+$("repSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;R.tab=b.dataset.v;$("repSeg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));loadRep();});
+$("repWeek").addEventListener("change",()=>{R.week=$("repWeek").value;loadRep();});
 async function muteLate(ids){
   ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
   try{await Promise.all(ids.map(id=>api("PATCH","/api/board/orders/"+id,{muteAlert:true})));toast("انوقف تنبيه التأخير على كل الأجهزة");}
