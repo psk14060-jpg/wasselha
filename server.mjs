@@ -88,6 +88,13 @@ async function migrate() {
     ["1 × فطائر مثلثة 20 قطعة (مشكل) — 35 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال", Date.now(),
      "1 × سمبوسة جنوبية 20 قطعة (مشكل) — 38 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال"]);
   if (fix12.rowCount) console.log("fix: order #12 of 2026-11-03 corrected");
+  // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
+  const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
+    WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);
+  if (fix17.rowCount) {
+    await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · الدفع تحويل'), updated=$1 WHERE op_day='2026-11-03' AND num=5 AND note NOT LIKE '%الدفع تحويل%'`, [Date.now()]);
+    console.log("fix: #17 of 2026-11-03 cancelled as duplicate of #5");
+  }
   await migratePrefs(pool);
   await migrateLocation(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute

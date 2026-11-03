@@ -219,9 +219,9 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   // last order already approved for this customer (website or WhatsApp) that the kitchen has not finished
   const prev = (await pool.query(
     `SELECT id, num, items, source, ref, confirmed_at, status, type, area, due, note, delivery_fee FROM orders
-      WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND confirmed_at > $2 ORDER BY confirmed_at DESC LIMIT 1`,
-    [m.from, now - APPROVAL_WINDOW])).rows[0];
-  const since = prev && !pendingWeb ? Number(prev.confirmed_at) - 5000 : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
+      WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND (confirmed_at > $2 OR due > $3) ORDER BY confirmed_at DESC LIMIT 1`,
+    [m.from, now - APPROVAL_WINDOW, now - 3 * 3600e3])).rows[0]; // also a booking approved earlier (e.g. last night) that is still to come
+  const since = prev && !pendingWeb ? Math.max(Number(prev.confirmed_at) - 5000, now - 24 * 3600e3) : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
   const all = (await pool.query(
     `SELECT id, dir, body, at FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
     [m.from, since, m.ts + 1000])).rows;
