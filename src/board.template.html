@@ -161,6 +161,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="f full" id="areaWrap" hidden><span>الحي</span>
       <select id="areaSel" aria-label="حي التوصيل"></select>
       <input type="text" id="area" autocomplete="off" placeholder="اكتب الحي أو العنوان" hidden>
+      <label class="feef"><span>رسوم التوصيل (ريال)</span><input type="number" id="feeIn" inputmode="decimal" min="0" step="1" placeholder="0"></label>
     </div>
 
     <div class="f full"><span>وقت التسليم</span>
@@ -528,8 +529,14 @@ function fillAreas(){
     `<option value="__other">حي آخر (اكتبه)</option>`;
 }
 $("appRef").addEventListener("input",()=>renderSum());
-$("areaSel").addEventListener("change",()=>{$("area").hidden=$("areaSel").value!=="__other";if(!$("area").hidden)$("area").focus();renderSum();});
-function areaFee(){const o=$("areaSel").selectedOptions[0];return o&&o.dataset.fee!=null&&o.value!=="__other"?+o.dataset.fee:0;}
+$("areaSel").addEventListener("change",()=>{$("area").hidden=$("areaSel").value!=="__other";if(!$("area").hidden)$("area").focus();setFee(listFee());renderSum();});
+/* the fee box: changing it moves the total in the typed (edit) form too */
+let feeShown=0;
+function setFee(v){const old=feeShown;feeShown=v;$("feeIn").value=v?String(v):"";if(textMode()&&S.editBase&&!S.editBase.touched&&$("total").value!==""){$("total").value=Math.max(0,+$("total").value-old+v);}}
+$("feeIn").addEventListener("input",()=>{const v=Math.max(0,+$("feeIn").value||0);const old=feeShown;feeShown=v;
+  if(textMode()&&S.editBase&&!S.editBase.touched&&$("total").value!=="")$("total").value=Math.max(0,+$("total").value-old+v);renderSum();});
+function listFee(){const o=$("areaSel").selectedOptions[0];return o&&o.dataset.fee!=null&&o.value!=="__other"?+o.dataset.fee:0;}
+function areaFee(){const v=$("feeIn").value;return v===""?listFee():Math.max(0,+v||0);}
 function areaName(){const v=$("areaSel").value;return v==="__other"?$("area").value.trim():v;}
 
 /* cart: lines of {pid,name,tag,price,qty,flavor} */
@@ -628,7 +635,8 @@ function openSheet(o){
   if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
   $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":""; $("appRef").value=o?o.appRef||"":"";
   $("areaSel").value=""; $("area").hidden=true; $("area").value="";
-  if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=o.area;}}
+  if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=a;}}
+  {const m=String(o&&o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);feeShown=o?(o.deliveryFee!=null?+o.deliveryFee:m?+m[1]:0):0;$("feeIn").value=feeShown?String(feeShown):"";}
   $("items").value=o?o.items||"":""; $("total").value=o&&o.total!=null?o.total:""; $("note").value=o?o.note||"":"";
   S.editBase=o?{items:o.items||"",total:o.total,updated:o.updated,touched:false}:null;
   $("srcSeg").closest(".f").hidden=!!(o&&o.source==="web");
@@ -656,6 +664,7 @@ $("sheet").addEventListener("submit",async e=>{
   let items, total, deliveryFee=null;
   if(textMode()){
     items=$("items").value.trim(); total=$("total").value===""?null:+$("total").value;
+    deliveryFee=del&&!isApp(segVal("srcSeg"))?areaFee():null;
   }else{
     const app=isApp(segVal("srcSeg"));
     items=cart.map(l=>`${l.qty} × ${l.name} ${l.tag}${l.flavor?" ("+l.flavor+")":""}${app?"":` — ${l.price*l.qty} ريال`}`).join("\n");
@@ -679,7 +688,7 @@ $("sheet").addEventListener("submit",async e=>{
       const fresh=findOrder(o.id);
       if(fresh&&S.editBase&&fresh.updated>S.editBase.updated){openSheet(fresh);$("formErr").textContent="تغيّر الطلب #"+o.num+" وأنت تعدّل (وصل تعديل من الواتساب). هذي النسخة الجديدة، راجعها واحفظ.";$("formErr").hidden=false;btn.disabled=false;return;}
       if(o.source!=="web")data.source=segVal("srcSeg");
-      delete data.deliveryFee;
+      if(!del||isApp(segVal("srcSeg")))data.deliveryFee=null;
       const moved=opDayOf(due)!==o.opDay;
       if(o.status==="pending"){data.status="new";data.confirm=true;}
       await patch(o,data,moved?null:(o.status==="pending"?"أُكّد الطلب #"+o.num+" وانتقل للمطبخ":"انحفظ تعديل الطلب #"+o.num)); closeSheet();

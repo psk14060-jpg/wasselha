@@ -465,6 +465,7 @@ const server = http.createServer(async (req, res) => {
         if (b.note !== undefined) put("note", clip(b.note, 300));
         if (b.appRef !== undefined) put("app_ref", clip(b.appRef, 30) || null);
         if (b.total !== undefined) put("total", num(b.total));
+        if (b.deliveryFee !== undefined) put("delivery_fee", b.deliveryFee === null ? null : num(b.deliveryFee));
         if (b.type !== undefined) { if (!TYPES.includes(b.type)) return send(res, 400, { error: "type" }); put("type", b.type); }
         if (b.source !== undefined) { if (!SOURCES.includes(b.source)) return send(res, 400, { error: "source" }); put("source", b.source); }
         if (b.due !== undefined) {
