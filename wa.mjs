@@ -194,12 +194,19 @@ function priceOrder(p, menu) {
 async function approveFromConversation(m, phone, ctx, apiKey) {
   const { pool, insertOrder, log } = ctx;
   const now = Date.now();
+  const pendingWeb = (await pool.query(
+    `SELECT id, num FROM orders WHERE wa_from=$1 AND source='web' AND status='pending' AND created > $2 ORDER BY created DESC LIMIT 1`,
+    [m.from, now - 24 * 3600e3])).rows[0];
+  if (pendingWeb) {
+    await pool.query(`UPDATE orders SET status='new', confirmed_at=$2, updated=$2 WHERE id=$1`, [pendingWeb.id, now]);
+    log(`wa: website order #${pendingWeb.num} approved`);
+  }
   // last order already approved for this customer (website or WhatsApp) that the kitchen has not finished
   const prev = (await pool.query(
-    `SELECT id, num, items, source, ref, confirmed_at, status FROM orders
+    `SELECT id, num, items, source, ref, confirmed_at, status, type, area, due, note, delivery_fee FROM orders
       WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND confirmed_at > $2 ORDER BY confirmed_at DESC LIMIT 1`,
     [m.from, now - APPROVAL_WINDOW])).rows[0];
-  const since = prev ? Number(prev.confirmed_at) - 5000 : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
+  const since = prev && !pendingWeb ? Number(prev.confirmed_at) - 5000 : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
   const all = (await pool.query(
     `SELECT id, dir, body, at FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
     [m.from, since, m.ts + 1000])).rows;
@@ -215,7 +222,8 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   }
   const rows = all.slice(start).filter(r => !/MG-[A-Z0-9]{4,8}/i.test(r.body));
   const customerRows = rows.filter(r => r.dir !== "out");
-  if (prev && !customerRows.length) return `already_approved #${prev.num}`; // e.g. approving a website order that was confirmed by its MG number
+  if (pendingWeb && !customerRows.length) return `approved_website_order #${pendingWeb.num}`;
+  if (prev && !customerRows.length) return `already_approved #${prev.num}`;
   if (!customerRows.length) return "approval_without_customer_text";
   const transcript = rows.map(r => (r.dir === "out" ? "[المحل] " : "[العميل] ") + r.body).join("\n").slice(-7000);
 
@@ -260,8 +268,15 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   const baseNote = [missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
 
   // approved again before the kitchen finished: it is a change to that order, not a new one
-  if (prev && p.is_change && ["new", "prep"].includes(prev.status) && prev.source === "wa") {
-    const note = ["عُدّل بعد الاعتماد", ...baseNote].join(" · ").slice(0, 300);
+  if (prev && p.is_change && ["new", "prep"].includes(prev.status) && ["wa", "web"].includes(prev.source)) {
+    let note = ["عُدّل بعد الاعتماد", ...baseNote].join(" · ").slice(0, 300);
+    if (prev.source === "web") {
+      // a website order keeps what the customer filled in the form unless the chat says otherwise
+      if (p.type !== "del" && p.type !== "pick") { fields.type = prev.type; fields.area = prev.area; fields.deliveryFee = prev.delivery_fee;
+        if (fields.total != null && prev.delivery_fee) fields.total += Number(prev.delivery_fee); }
+      if (!timeKnown) fields.due = Number(prev.due);
+      note = ["عُدّل في الواتساب بعد طلب الموقع", prev.note, ...baseNote.filter(x => !/الوقت|استلام أو توصيل/.test(x))].filter(Boolean).join(" · ").slice(0, 300);
+    }
     await pool.query(`UPDATE orders SET name=CASE WHEN $1<>'' THEN $1 ELSE name END,type=$2,area=$3,items=$4,total=$5,note=$6,due=$7,raw_text=$8,updated=$9,delivery_fee=$11 WHERE id=$10`,
       [fields.name, fields.type, fields.area, fields.items, fields.total, note, fields.due, transcript.slice(-3000), now, prev.id, fields.deliveryFee]);
     if (ctx.applyGift) await ctx.applyGift(pool, prev.id, customerLines(transcript)).catch(() => null);
@@ -296,29 +311,23 @@ export async function handleWebhook(body, ctx) {
         if (APPROVAL.test(m.text)) { result = await approveFromConversation(m, phone, ctx, apiKey); log("wa: " + result); }
         continue;
       }
-      // a customer message carrying a website order number confirms that order
+      // a customer message carrying a website order number links that order to this chat.
+      // It stays off the board (pending) until the shop writes its approval phrase in the chat (Hassan, 2026-11-03).
       const ref = (m.text.match(/MG-[A-Z0-9]{4,8}/i) || [])[0];
       if (ref) {
         const up = await pool.query(
-          `UPDATE orders SET status=CASE WHEN status IN ('pending','dismissed') THEN 'new' ELSE status END,
-             confirmed_at=COALESCE(confirmed_at,$2), phone=CASE WHEN phone='' THEN $3 ELSE phone END, wa_from=$4, updated=$2
-           WHERE ref=$1 RETURNING num, status`, [ref.toUpperCase(), Date.now(), phone, m.from]);
-        result = up.rows.length ? `confirmed ${ref} #${up.rows[0].num}` : `ref_not_found ${ref}`;
+          `UPDATE orders SET status=CASE WHEN status='dismissed' THEN 'pending' ELSE status END,
+             phone=CASE WHEN phone='' THEN $3 ELSE phone END, wa_from=$4, updated=$2
+           WHERE ref=$1 RETURNING id, num, status`, [ref.toUpperCase(), Date.now(), phone, m.from]);
+        result = up.rows.length ? `linked ${ref} #${up.rows[0].num} (${up.rows[0].status})` : `ref_not_found ${ref}`;
         if (up.rows.length) {
-          const me = (await pool.query("SELECT id, num FROM orders WHERE ref=$1", [ref.toUpperCase()])).rows[0];
-          const others = (await pool.query(
-            `SELECT id, num, status, source FROM orders WHERE wa_from=$1 AND id<>$2 AND status IN ('new','prep','ready')
-               AND confirmed_at > $3 ORDER BY confirmed_at DESC`, [m.from, me.id, Date.now() - 3 * 3600e3])).rows;
-          for (const o of others) {
-            if (o.status === "new" && o.source === "web") {
-              await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · استُبدل بالطلب #' || $2), updated=$3 WHERE id=$1`, [o.id, me.num, Date.now()]);
-              await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · بديل للطلب #' || $2), updated=$3 WHERE id=$1`, [me.id, o.num, Date.now()]);
-              result += ` replaced #${o.num}`;
-            } else {
-              await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || $2), updated=$3 WHERE id=$1`,
-                [me.id, ` · ⚠ نفس العميل عنده طلب #${o.num} ${o.status === "new" ? "مؤكد" : "قيد التحضير"} — تأكد أنه ليس تكرارًا`, Date.now()]);
-              result += ` flagged_dup_of #${o.num}`;
-            }
+          // the customer sent the website form again: the older unapproved one is replaced
+          const older = (await pool.query(
+            `SELECT id, num FROM orders WHERE wa_from=$1 AND id<>$2 AND source='web' AND status='pending' AND created > $3`,
+            [m.from, up.rows[0].id, Date.now() - 24 * 3600e3])).rows;
+          for (const o of older) {
+            await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · استُبدل بالطلب #' || $2), updated=$3 WHERE id=$1`, [o.id, up.rows[0].num, Date.now()]);
+            result += ` replaced #${o.num}`;
           }
         }
         log(`wa: ${result}`);

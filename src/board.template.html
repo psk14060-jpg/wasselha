@@ -258,12 +258,13 @@ async function load(){
     S.upcoming=j.upcoming||0; $("laterTab").textContent="الحجوزات"+(S.upcoming?" ("+S.upcoming+")":"");
     skew=j.now-Math.round((t0+Date.now())/2);
     if(day!==dayKey(S.dayOff)){inflight=false;return;}
+    /* website orders stay off the board until the shop approves them in WhatsApp; they then arrive as new orders */
+    j.orders=j.orders.filter(o=>!(o.source==="web"&&o.status==="pending"));
     const ids=new Set(j.orders.map(o=>o.id));
     if(S.known&&S.dayKnown===day){
       const fresh=j.orders.filter(o=>!S.known.has(o.id));
       if(fresh.length){
-        const web=fresh.filter(o=>o.status==="pending").length;
-        toast(web?"طلب جديد بانتظار تأكيدك":(fresh.length===1?"أُضيف طلب جديد":"أُضيفت "+fresh.length+" طلبات"));
+        toast(fresh.length===1?"أُضيف طلب جديد #"+fresh[0].num:"أُضيفت "+fresh.length+" طلبات");
         if(S.sound)announceNew();
       }
     }
