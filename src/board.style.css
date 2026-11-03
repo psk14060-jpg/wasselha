@@ -152,4 +152,6 @@ textarea{resize:vertical;min-height:84px}
 .latebar{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
 .latebar button{border:2px solid #fff;background:transparent;color:#fff;border-radius:8px;padding:6px 12px;font:inherit;font-weight:700;cursor:pointer}
 .sm.mute{border-color:var(--late);color:var(--late)}
+.updbar{display:block;width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);font:inherit;font-weight:700;font-size:15px;cursor:pointer}
+.chip.screens{white-space:normal}
 </style>

@@ -108,6 +108,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="pulse" id="pulse"></div>
   </div>
   <div id="banner" class="banner" hidden></div>
+  <button type="button" id="updBar" class="updbar" hidden onclick="location.reload()">⟳ فيه تحديث جديد للوحة — اضغط هنا للتحديث (وبعدها المس الشاشة لتشغيل الصوت)</button>
   <button type="button" id="soundWarn" class="soundwarn" hidden>🔇 التنبيه الصوتي مطفأ — اضغط هنا لتشغيله</button>
   <div id="lateBar" class="latebar" role="alert" hidden></div>
 </header>
@@ -206,6 +207,13 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 
 /* ---------- time (Riyadh, UTC+3 all year; operating day starts 06:00) ---------- */
 let skew=0; /* server clock minus device clock */
+const BOARD_VER="__BOARD_VER__";
+/* this screen: a stable id, a readable name, and what it last played — sent every minute so the owner can see every screen */
+const DEV=(()=>{let id;try{id=localStorage.getItem("mg-dev");if(!id){id=Math.random().toString(36).slice(2,10);localStorage.setItem("mg-dev",id);}}catch(e){id=Math.random().toString(36).slice(2,10);}
+  const u=navigator.userAgent;const name=/iPad/.test(u)?"آيباد":/iPhone/.test(u)?"آيفون":/Android/.test(u)?(/Mobile/.test(u)?"جوال أندرويد":"تابلت أندرويد"):/Windows/.test(u)?"كمبيوتر ويندوز":/Mac/.test(u)?"ماك":"جهاز";return{id,name};})();
+let lastPlay=null;
+function notePlay(kind,ok,err){lastPlay={kind,at:Date.now(),ok,err:err||""};if(!ok)beat();}
+function beat(){api("POST","/api/board/heartbeat",{id:DEV.id,name:DEV.name,ver:BOARD_VER,unlocked:S.unlocked,master:S.master,visible:document.visibilityState==="visible",lastPlay}).catch(()=>{});}
 const now=()=>Date.now()+skew;
 const RIYADH=3*3600e3, CUT=6*3600e3;
 const pad=n=>String(n).padStart(2,"0");
@@ -270,6 +278,8 @@ async function load(){
     }
     S.known=ids; S.dayKnown=day; S.orders=j.orders; S.ready=true; fails=0;
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
+    if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
+    S.screens=j.screens||[];
     $("offline").hidden=true; render();
   }catch(e){
     if(e.message!=="auth"){fails++; if(fails>=2)$("offline").hidden=false;}
@@ -394,6 +404,7 @@ function render(){
     (late?`<span class="chip late">متأخر <b>${late}</b></span>`:"")+
     (drv?`<span class="chip drv">جاهز للمندوب <b>${drv}</b> · اتصل عليه</span>`:"")+
     `<span class="chip">مفتوحة <b>${live.length}</b></span>`+
+    ((S.screens||[]).length?`<span class="chip screens" title="الشاشات المفتوحة الآن">${S.screens.map(x=>`${x.id===DEV.id?"(هذا) ":""}${esc(x.name)} ${!x.master?"🔇":x.unlocked?"🔊":"⚠ يحتاج لمسة"}${x.ver!==BOARD_VER?" ⟳":""}${x.lastPlay&&!x.lastPlay.ok?" ✗ صوت":""}`).join(" · ")}</span>`:"")+
 
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`;
   const fin=all.filter(o=>["done","cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);
@@ -457,7 +468,8 @@ function batchCheck(to){
 }
 /* new order: Hassan's announcement clip (public/sounds/new-order.mp3), played as is; a beep only if it cannot play */
 const newOrderClip=new Audio("/sounds/new-order.mp3");
-function announceNew(){newOrderClip.currentTime=0;newOrderClip.play().catch(()=>beep(2));}
+function playClip(a,kind,fallback){a._real=true;a.muted=false;a.onended=()=>{a._real=false;};a.currentTime=0;a.play().then(()=>notePlay(kind,true)).catch(e=>{notePlay(kind,false,e&&e.name||"blocked");fallback();});}
+function announceNew(){playClip(newOrderClip,"new",()=>beep(2));}
 function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
 async function muteLate(ids){
   ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
@@ -698,7 +710,10 @@ function syncSound(){
   w.hidden=S.master&&S.unlocked;
   w.textContent=!S.master?"🔇 التنبيه الصوتي مطفأ على كل الأجهزة — اضغط هنا لتشغيله":"🔇 الصوت ما اشتغل على هذا الجهاز — اضغط هنا";
 }
-function unlock(){if(!S.unlocked){S.unlocked=true;try{ac();}catch(e){}syncSound();if(S.master){keepAwake();bell(2);}}}
+function unlock(){if(!S.unlocked){S.unlocked=true;try{ac();}catch(e){}
+  /* some browsers (iPad/iPhone) allow each clip only after it was started by a tap: start them silently now */
+  [newOrderClip,startClip].forEach(a=>{try{a.muted=true;a.play().then(()=>{if(!a._real){a.pause();a.currentTime=0;}a.muted=false;}).catch(()=>{a.muted=false;});}catch(e){}});
+  syncSound();if(S.master){keepAwake();bell(2);}beat();}}
 async function setMaster(on){
   S.master=on; unlock(); syncSound();
   try{await api("POST","/api/board/settings",{sound:on});toast(on?"شغّلت التنبيه على كل الأجهزة":"طفّيت التنبيه على كل الأجهزة");}
@@ -717,7 +732,7 @@ try{pickVoice();speechSynthesis.onvoiceschanged=pickVoice;}catch(e){}
 /* Saudi voice from the server (ElevenLabs, cached); falls back to the device voice */
 const ttsAudio=new Audio(); let ttsOk=true;
 const startClip=new Audio("/sounds/start-prep.mp3");
-function playStart(){startClip.currentTime=0;startClip.play().catch(()=>bell(3));}
+function playStart(){playClip(startClip,"start",()=>bell(3));}
 function say(text){
   bell(3);
   if(!ttsOk)return;
@@ -740,6 +755,7 @@ document.addEventListener("pointerdown",()=>{if(actx&&actx.state!=="running")try
 setInterval(()=>{if(S.sound&&document.visibilityState==="visible")keepAwake();},60000);
 $("soundWarn").onclick=()=>{if(!S.master)setMaster(true);else unlock();};
 syncSound();
+setInterval(beat,60000); setTimeout(beat,3000);
 render(); load(); startPolling(); loadMenu();
 </script>
 </body>

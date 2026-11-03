@@ -287,7 +287,11 @@ function corsHeaders(req) {
 }
 
 // ---------- static board ----------
-const boardHtml = () => fs.readFileSync(path.join(__dirname, "public", "board.html"));
+// the board page carries its version, so open screens can tell when a newer one is deployed
+const BOARD_VER = crypto.createHash("sha1").update(fs.readFileSync(path.join(__dirname, "public", "board.html"))).digest("hex").slice(0, 10);
+const boardHtml = () => fs.readFileSync(path.join(__dirname, "public", "board.html"), "utf8").replace("__BOARD_VER__", BOARD_VER);
+// screens currently open (in memory): sound state and the last alert each one played, so the owner can check them remotely
+const screens = new Map();
 const loginHtml = () => fs.readFileSync(path.join(__dirname, "public", "login.html"));
 const pageHeaders = {
   "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
@@ -401,12 +405,25 @@ const server = http.createServer(async (req, res) => {
         const st = await pool.query("SELECT value FROM board_settings WHERE key='sound'");
         const later = new Date(Date.parse(opDayOf(Date.now())) + 2 * 864e5).toISOString().slice(0, 10);
         const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
-        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n,
+        const seen = [...screens.values()].filter(x => Date.now() - x.at < 3 * 60e3);
+        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, screens: seen,
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
       if (p === "/api/board/taste" && req.method === "GET") {
         const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days"), 10) || 15));
         return send(res, 200, await tasteReport(pool, days));
+      }
+      if (p === "/api/board/heartbeat" && req.method === "POST") {
+        const b = await readBody(req, 4096);
+        const id = String(b.id || "").slice(0, 20); if (!id) return send(res, 400, { error: "id" });
+        const cl = v => String(v ?? "").slice(0, 60);
+        const prev = screens.get(id);
+        const x = { id, name: cl(b.name), ver: cl(b.ver), unlocked: !!b.unlocked, master: !!b.master, visible: !!b.visible,
+          lastPlay: b.lastPlay ? { kind: cl(b.lastPlay.kind), at: Number(b.lastPlay.at) || 0, ok: !!b.lastPlay.ok, err: cl(b.lastPlay.err) } : null, at: Date.now() };
+        screens.set(id, x);
+        if (x.lastPlay && !x.lastPlay.ok && (!prev?.lastPlay || prev.lastPlay.at !== x.lastPlay.at)) console.log(`sound: ${x.name} could not play ${x.lastPlay.kind}: ${x.lastPlay.err}`);
+        if (screens.size > 50) for (const [k, v] of screens) if (Date.now() - v.at > 3600e3) screens.delete(k);
+        return send(res, 200, { ok: true });
       }
       if (p === "/api/board/settings" && req.method === "POST") {
         const b = await readBody(req);
