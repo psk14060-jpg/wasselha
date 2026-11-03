@@ -54,7 +54,7 @@ export async function deliveryFor(point) {
     km = haversineKm(shop, point) * (r.fallbackFactor || 1.35); minutes = km / (r.fallbackSpeed || 30) * 60; approx = true;
   }
   const zone = zones.find(z => km <= z.maxKm);
-  return { km: Math.round(km * 10) / 10, minutes: Math.ceil(minutes * (r.timeFactor || 1.4)), approx,
+  return { km: Math.round(km * 10) / 10, minutes: Math.ceil(minutes), approx, // plain map time; the board adds 5 minutes for the road
     zone: zone ? zone.name : null, fee: zone ? zone.fee : null, inRange: !!zone && km <= (r.maxKm || 20),
     mapsUrl: `https://www.google.com/maps?q=${point.lat.toFixed(6)},${point.lng.toFixed(6)}` };
 }

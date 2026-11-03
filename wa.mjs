@@ -143,14 +143,13 @@ const ORDER_TOOL = {
 };
 
 // "As soon as possible" (or no time said): pickup in 30 minutes; delivery after preparation plus the drive,
-// using the same numbers as the board (25 min prep, area minutes × time factor, 10 min for the courier).
+// using the same numbers as the board (25 min prep, the area's map minutes + 5 for the road; unknown area 20).
 function asapDue(p, nowMs, menu) {
   if (!p || p.type !== "del") return nowMs + 30 * 60e3;
   const norm = x => String(x || "").replace(/\s+/g, " ").trim();
   const a = menu && menu.areas.find(x => norm(x.name) === norm(p.area));
-  const f = (menu && menu.rules && menu.rules.timeFactor) || 1.4;
-  const drive = a && a.minutes != null ? Math.ceil(a.minutes * f) : 20;
-  return nowMs + (25 + drive + 10) * 60e3;
+  const drive = a && a.minutes != null ? Math.ceil(a.minutes) + 5 : 20;
+  return nowMs + (25 + drive) * 60e3;
 }
 function dueFromParsed(p, nowMs, menu) {
   if (!p || !p.time || p.time === "asap") return { due: asapDue(p, nowMs, menu), timeKnown: p?.time === "asap" };

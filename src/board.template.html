@@ -296,15 +296,14 @@ function urgency(o,t){
   return {mins,cls};
 }
 /* when to start: delivery time minus preparation (and travel for delivery) */
-const PREP_MIN=25, COURIER_MIN=10, DEFAULT_TRAVEL_MIN=20;
+/* drive = the map time + 5 minutes for the road (Hassan, 2026-11-03); unknown area: 20 minutes */
+const PREP_MIN=25, ROAD_BUFFER=5, DEFAULT_TRAVEL_MIN=20;
 function travelMin(o){
   if(o.type!=="del"||isApp(o.source))return 0;
-  if(o.travelMin!=null)return o.travelMin+COURIER_MIN; /* measured from the customer's map location */
+  if(o.travelMin!=null)return o.travelMin+ROAD_BUFFER; /* measured from the customer's map location */
   const name=String(o.area||"").replace(/\s*\(.*\)\s*$/,"").trim();
   const a=MENU&&MENU.areas.find(x=>x.name===name);
-  const f=(MENU&&MENU.rules&&MENU.rules.timeFactor)||1.4;
-  const m=a&&a.minutes!=null?Math.ceil(a.minutes*f):DEFAULT_TRAVEL_MIN;
-  return m+COURIER_MIN;
+  return a&&a.minutes!=null?Math.ceil(a.minutes)+ROAD_BUFFER:DEFAULT_TRAVEL_MIN;
 }
 function startAt(o){return o.due-(PREP_MIN+travelMin(o))*60000;}
 function startPhrase(o){return "ابدأ تحضير الطلب رقم "+o.num+(isApp(o.source)?"، "+SRC[o.source]:o.type==="del"?"، توصيل":"، استلام");}
