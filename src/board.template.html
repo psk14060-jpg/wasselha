@@ -398,7 +398,11 @@ function render(){
   $("tabs").innerHTML=COLS.map(c=>`<button type="button" role="tab" data-tab="${c.k}" aria-selected="${S.tab===c.k}">${c.t}<span class="n">${by[c.k].length}</span></button>`).join("");
   const late=live.filter(o=>isLate(o,t)).length;
   const drv=by.ready.filter(o=>o.type==="del").length;
-  const sales=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)).reduce((s,o)=>s+(+o.total||0),0);
+  /* sales exclude cancelled orders and the delivery fee, which goes to the outside couriers */
+  const counted=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status));
+  const feeOf=o=>{if(o.deliveryFee!=null)return +o.deliveryFee||0;const m=String(o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);return m?+m[1]:0;};
+  const fees=counted.reduce((s,o)=>s+feeOf(o),0);
+  const sales=counted.reduce((s,o)=>s+Math.max(0,(+o.total||0)-(o.total!=null?feeOf(o):0)),0);
   $("pulse").innerHTML=
     (pend.length?`<span class="chip drv">بانتظار تأكيد <b>${pend.length}</b></span>`:"")+
     (late?`<span class="chip late">متأخر <b>${late}</b></span>`:"")+
@@ -406,14 +410,18 @@ function render(){
     `<span class="chip">مفتوحة <b>${live.length}</b></span>`+
     ((S.screens||[]).length?`<span class="chip screens" title="الشاشات المفتوحة الآن">${S.screens.map(x=>`${x.id===DEV.id?"(هذا) ":""}${esc(x.name)} ${!x.master?"🔇":x.unlocked?"🔊":"⚠ يحتاج لمسة"}${x.ver!==BOARD_VER?" ⟳":""}${x.lastPlay&&!x.lastPlay.ok?" ✗ صوت":""}`).join(" · ")}</span>`:"")+
 
-    `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`;
-  const fin=all.filter(o=>["done","cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);
-  $("finSum").textContent="منتهية وملغاة ("+fin.length+")";
+    `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`+
+    `<span class="chip">رسوم التوصيل <b>${Math.round(fees)}</b> ر</span>`;
+  const doneL=all.filter(o=>o.status==="done").sort((a,b)=>b.updated-a.updated);
+  const cxL=all.filter(o=>["cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);
+  $("finSum").textContent="المنتهية ("+doneL.length+") · الملغاة ("+cxL.length+")";
   const finLabel=o=>o.status==="cancelled"?"ملغي":o.status==="dismissed"?"لم تصل رسالته":(o.type==="del"?"وصل":"استُلم");
-  $("flist").innerHTML=fin.length?fin.map(o=>`<div class="frow ${o.status!=="done"?"cx":""}" data-id="${esc(o.id)}">
+  const frow=o=>`<div class="frow ${o.status!=="done"?"cx":""}" data-id="${esc(o.id)}">
       <strong class="num">#${esc(o.num)}</strong><span>${esc(o.name||"بدون اسم")}</span><span class="mono">${fmtClock(o.due)}</span>
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
-      ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`).join(""):`<div class="empty">لا يوجد</div>`;
+      ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`;
+  $("flist").innerHTML=`<h3 class="fhead">المنتهية (${doneL.length})</h3>${doneL.length?doneL.map(frow).join(""):`<div class="empty">لا يوجد</div>`}
+    <h3 class="fhead">الملغاة (${cxL.length}) <small>ما تدخل في المبيعات</small></h3>${cxL.length?cxL.map(frow).join(""):`<div class="empty">لا يوجد</div>`}`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
   const lateAll=live.filter(o=>isLate(o,t));
   const lateNow=lateAll.filter(o=>!o.alertMuted);

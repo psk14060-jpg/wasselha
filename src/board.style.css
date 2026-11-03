@@ -154,4 +154,5 @@ textarea{resize:vertical;min-height:84px}
 .sm.mute{border-color:var(--late);color:var(--late)}
 .updbar{display:block;width:100%;margin-top:10px;padding:12px;border:0;border-radius:10px;background:var(--accent);color:var(--on-accent);font:inherit;font-weight:700;font-size:15px;cursor:pointer}
 .chip.screens{white-space:normal}
+.fhead{font-size:14px;margin:12px 0 6px;color:var(--muted)}.fhead small{font-weight:400}
 </style>
