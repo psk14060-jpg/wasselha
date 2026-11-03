@@ -210,7 +210,7 @@ async function insertOrder(o) {
 function cleanDue(v) {
   const now = Date.now();
   const d = Number(v);
-  if (!isFinite(d) || d < now - 12 * 3600e3 || d > now + 8 * 864e5) return null;
+  if (!isFinite(d) || d < now - 12 * 3600e3 || d > now + 62 * 864e5) return null; // bookings up to two months ahead
   return Math.round(d);
 }
 
@@ -369,10 +369,16 @@ const server = http.createServer(async (req, res) => {
       }
       if (p === "/api/board/orders" && req.method === "GET") {
         const day = String(url.searchParams.get("day") || opDayOf(Date.now()));
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return send(res, 400, { error: "day" });
-        const { rows } = await pool.query("SELECT * FROM orders WHERE op_day=$1 ORDER BY due ASC", [day]);
+        const from = url.searchParams.get("from"); // bookings view: every day from this date on
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || (from && !/^\d{4}-\d{2}-\d{2}$/.test(from))) return send(res, 400, { error: "day" });
+        const { rows } = from
+          ? await pool.query("SELECT * FROM orders WHERE op_day>=$1 ORDER BY due ASC", [from])
+          : await pool.query("SELECT * FROM orders WHERE op_day=$1 ORDER BY due ASC", [day]);
         const st = await pool.query("SELECT value FROM board_settings WHERE key='sound'");
-        return send(res, 200, { now: Date.now(), day, orders: rows.map(rowToOrder), settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
+        const later = new Date(Date.parse(opDayOf(Date.now())) + 2 * 864e5).toISOString().slice(0, 10);
+        const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
+        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n,
+          settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
       if (p === "/api/board/settings" && req.method === "POST") {
         const b = await readBody(req);
@@ -421,7 +427,17 @@ const server = http.createServer(async (req, res) => {
           const cur = await pool.query("SELECT op_day FROM orders WHERE id=$1", [m[1]]);
           if (!cur.rows.length) return send(res, 404, { error: "not_found" });
           const curDay = cur.rows[0].op_day instanceof Date ? cur.rows[0].op_day.toISOString().slice(0, 10) : String(cur.rows[0].op_day);
-          if (opDayOf(d) !== curDay) return send(res, 400, { error: "day_change" });
+          if (opDayOf(d) !== curDay) {
+            // moving a booking to another day: it takes the next number of that day
+            const nd = opDayOf(d); const client = await pool.connect();
+            try {
+              await client.query("BEGIN");
+              await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", ["day:" + nd]);
+              const { rows: [{ n }] } = await client.query("SELECT COALESCE(MAX(num),0)+1 AS n FROM orders WHERE op_day=$1", [nd]);
+              await client.query("UPDATE orders SET op_day=$1, num=$2 WHERE id=$3", [nd, n, m[1]]);
+              await client.query("COMMIT");
+            } catch (e) { await client.query("ROLLBACK").catch(() => {}); throw e; } finally { client.release(); }
+          }
           put("due", d);
         }
         if (!sets.length) return send(res, 400, { error: "empty" });

@@ -76,7 +76,7 @@ async function askClaude(apiKey, transcript, nowMs, previous, menu) {
     p.variants.map(v => `«${v.tag}» ${v.price} ريال`).join("، ")).join("\n");
   const AREAS = menu.areas.map(a => a.name).join("، ");
   const riyadh = new Date(nowMs + 3 * 3600e3);
-  const nowTxt = riyadh.toISOString().slice(0, 16).replace("T", " ");
+  const nowTxt = riyadh.toISOString().slice(0, 16).replace("T", " ") + " (" + ["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"][riyadh.getUTCDay()] + ")";
   const system = `أنت تقرأ محادثة واتساب بين عميل ومطعم مينيقيش للمعجنات في الهفوف. المحل اعتمد الطلب للتو برسالة مثل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، ومهمتك استخراج الطلب الذي اعتُمد.
 السطور التي تبدأ بـ [العميل] كتبها العميل، والتي تبدأ بـ [المحل] ردود المطعم.
 الوقت الآن في الرياض: ${nowTxt}. ساعات الطلب من 3:30 عصرًا حتى 12:30 بعد منتصف الليل، فأي ساعة بلا ص/م تعني مساءً، و12 تعني منتصف الليل.
@@ -94,7 +94,7 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
 - إذا تعذّرت مطابقة صنف مع المنيو فاكتبه في text مختصرًا (اسم الصنف وعدده فقط) بدل id.
 - items أصناف فقط: لا تضع فيها كلام الدفع (شبكة، سحب، تحويل) ولا الحشوات الزائدة ولا الأسئلة؛ طلبات التحضير مثل «حمّرها زيادة» تذهب إلى note.
 - area: اسم الحي مطابقًا حرفيًا لقائمة الأحياء إن أمكن، وإلا كما قاله العميل.
-- day=1 فقط إذا قال بكرة أو غدًا. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو يمر يأخذه، وunknown إن لم يتضح.
+- day: عدد الأيام من اليوم إلى يوم التسليم: 0 اليوم، 1 بكرة أو غدًا، ولحجز يوم محدد (مثل «الجمعة» أو «٦ نوفمبر») احسب الأيام من تاريخ اليوم أعلاه. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو يمر يأخذه، وunknown إن لم يتضح.
 - note: ملاحظة التحضير والدفع باختصار (مثل: حمّرها زيادة · الدفع شبكة عند الاستلام).
 - unclear: ما ينقص فعلًا لتجهيز الطلب في أقل من 10 كلمات، أو فارغ. لا تشرح افتراضاتك.
 - لا تخترع شيئًا لم يُذكر.`;
@@ -122,7 +122,7 @@ const ORDER_TOOL = {
       name: { type: "string" },
       type: { type: "string", enum: ["del", "pick", "unknown"] },
       area: { type: "string" },
-      day: { type: "integer", enum: [0, 1] },
+      day: { type: "integer", minimum: 0, maximum: 60 },
       time: { type: "string", description: "HH:MM بنظام 24 ساعة، أو asap، أو فارغ إن لم يُذكر" },
       items: { type: "array", items: { type: "object", properties: {
         id: { type: "string", description: "معرّف الصنف من المنيو" }, tag: { type: "string", description: "الحجم حرفيًا من المنيو" },
@@ -151,7 +151,7 @@ function dueFromParsed(p, nowMs, menu) {
   if (!mm) return { due: asapDue(p, nowMs, menu), timeKnown: false };
   const h = +mm[1], mi = +mm[2];
   const opDay = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3);          // Riyadh operating day
-  let ms = Date.UTC(opDay.getUTCFullYear(), opDay.getUTCMonth(), opDay.getUTCDate() + (p.day === 1 ? 1 : 0), h, mi) - 3 * 3600e3;
+  let ms = Date.UTC(opDay.getUTCFullYear(), opDay.getUTCMonth(), opDay.getUTCDate() + Math.max(0, Math.min(60, parseInt(p.day, 10) || 0)), h, mi) - 3 * 3600e3;
   if (h * 60 + mi < 6 * 60) ms += 864e5;
   return { due: ms, timeKnown: true };
 }

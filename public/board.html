@@ -253,6 +253,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="seg" role="group" aria-label="اليوم">
       <button type="button" data-day="0" aria-pressed="true">اليوم</button>
       <button type="button" data-day="1" aria-pressed="false">بكرة</button>
+      <button type="button" data-day="2" aria-pressed="false" id="laterTab">الحجوزات</button>
     </div>
     <div class="seg" role="group" aria-label="نوع الطلب">
       <button type="button" data-f="all" aria-pressed="true">الكل</button>
@@ -321,7 +322,9 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
         <div class="seg" id="daySeg" role="group" aria-label="يوم التسليم">
           <button type="button" data-v="0" aria-pressed="true">اليوم</button>
           <button type="button" data-v="1" aria-pressed="false">بكرة</button>
+          <button type="button" data-v="x" aria-pressed="false">يوم آخر</button>
         </div>
+        <input type="date" id="dueDate" aria-label="تاريخ الحجز" hidden>
         <input type="time" id="dueTime" aria-label="وقت آخر">
       </div>
       <div class="slots" id="slots" role="group" aria-label="الأوقات المتاحة"></div>
@@ -433,6 +436,10 @@ const pad=n=>String(n).padStart(2,"0");
 const rParts=ms=>{const d=new Date(ms+RIYADH);return{y:d.getUTCFullYear(),mo:d.getUTCMonth(),d:d.getUTCDate(),h:d.getUTCHours(),mi:d.getUTCMinutes()};};
 const opDayOf=ms=>new Date(ms+RIYADH-CUT).toISOString().slice(0,10);
 function dayKey(offset){return opDayOf(now()+offset*864e5);}
+const daysFromToday=k=>Math.round((Date.parse(k)-Date.parse(dayKey(0)))/864e5);
+function fmtDay(k){try{return new Date(k+"T00:00:00Z").toLocaleDateString("ar-SA-u-nu-latn-ca-gregory",{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"});}catch(e){return k;}}
+/* selected delivery day in the form, as days from today ("x" = the date picker) */
+function selOff(){const v=segVal("daySeg");if(v!=="x")return +v;const d=$("dueDate").value;return d?daysFromToday(d):NaN;}
 function dueFrom(offset,h,m){
   const k=dayKey(offset); /* operating date */
   let ms=Date.UTC(+k.slice(0,4),+k.slice(5,7)-1,+k.slice(8,10),h,m)-RIYADH;
@@ -441,6 +448,7 @@ function dueFrom(offset,h,m){
 }
 function fmtClock(ms){const p=rParts(ms);const ap=p.h<12?"ص":"م";return ((p.h%12)||12)+":"+pad(p.mi)+" "+ap;}
 function minsLeftText(mins){
+  if(mins>=24*60){const d=Math.round(mins/1440);return "بعد "+(d===1?"يوم":d===2?"يومين":d+" أيام");}
   if(mins>=60){const h=Math.floor(mins/60),m=mins%60;return "بعد "+h+" س"+(m?" "+m+" د":"");}
   if(mins>0) return "بعد "+mins+" د";
   if(mins===0) return "الآن";
@@ -470,7 +478,8 @@ async function load(){
   if(inflight)return; inflight=true;
   const day=dayKey(S.dayOff);
   try{
-    const t0=Date.now(); const j=await api("GET","/api/board/orders?day="+day);
+    const t0=Date.now(); const j=await api("GET","/api/board/orders?"+(S.dayOff===2?"from=":"day=")+day);
+    S.upcoming=j.upcoming||0; $("laterTab").textContent="الحجوزات"+(S.upcoming?" ("+S.upcoming+")":"");
     skew=j.now-Math.round((t0+Date.now())/2);
     if(day!==dayKey(S.dayOff)){inflight=false;return;}
     const ids=new Set(j.orders.map(o=>o.id));
@@ -535,7 +544,7 @@ function ticket(o,t){
   if(o.status==="ready") next=o.type==="del"?["out","سلّمته للمندوب"]:["done",isApp(o.source)?"استلمه مندوب التطبيق":"استلمه العميل"];
   return `<article class="tk ${u.cls?"st-"+u.cls.split(" ")[0]:""}" data-id="${esc(o.id)}">
     <div class="tkhead">
-      <span class="no">#${esc(o.num)}</span>
+      <span class="no">#${esc(o.num)}</span>${o.opDay&&o.opDay!==dayKey(0)&&o.opDay!==dayKey(1)?`<span class="refchip daychip">${esc(fmtDay(o.opDay))}</span>`:""}
       <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}${o.appRef?" "+esc(o.appRef):""}</span>
       <span class="type ${o.type==="del"?"del":""}">${isApp(o.source)?"مندوب التطبيق":o.type==="del"?"توصيل":"استلام"}</span>
       <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):(awaitsCustomer(o)?"بانتظار العميل":(travelMin(o)?"يطلع مع المندوب "+fmtClock(handoverAt(o))+" · ":"")+minsLeftText(u.mins))}</span></div>
@@ -592,7 +601,7 @@ function render(){
   const by=Object.fromEntries(COLS.map(c=>[c.k,live.filter(o=>o.status===c.k)]));
   by.new.sort((a,b)=>startAt(a)-startAt(b));
   const rail=$("rail");
-  if(!S.ready) rail.innerHTML=`<div class="empty" style="grid-column:1/-1">جارٍ تحميل طلبات ${S.dayOff?"بكرة":"اليوم"}…</div>`;
+  if(!S.ready) rail.innerHTML=`<div class="empty" style="grid-column:1/-1">جارٍ تحميل ${["طلبات اليوم","طلبات بكرة","الحجوزات"][S.dayOff]}…</div>`;
   else rail.innerHTML=COLS.map(c=>`<section class="col ${S.tab===c.k?"on":""}" role="tabpanel" aria-label="${c.t}">
       <div class="colhead"><h2>${c.t}</h2><span class="n">${by[c.k].length}</span>${c.hint?`<span class="hint">${c.hint}</span>`:""}</div>
       ${by[c.k].length?by[c.k].map(o=>ticket(o,t)).join(""):`<div class="empty">${c.k==="new"&&!live.length?"لا توجد طلبات مفتوحة. الواتساب يدخل هنا عندما تكتب للعميل «تم اعتماد طلبك» أو «تم تأكيد الطلب»، والاتصال والمحل من «+ طلب جديد».":"لا شيء هنا"}</div>`}
@@ -690,6 +699,7 @@ function segVal(id){const b=$(id).querySelector('[aria-pressed="true"]');return 
 function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===String(v))));
   if(id==="srcSeg"){const app=isApp(v);$("appRefWrap").hidden=!app;$("typeWrap").hidden=app;if(app){setSeg("typeSeg","pick");if(!$("dueTime").value&&!S.editing)setAsap();}if(typeof renderCart==="function"&&MENU)renderCart();}
   if(id==="typeSeg"){$("areaWrap").hidden=v!=="del";renderSlots();renderSum();}
+  if(id==="daySeg"){const x=String(v)==="x";$("dueDate").hidden=!x;$("dueDate").min=dayKey(2);$("dueDate").max=dayKey(60);if(x&&!$("dueDate").value)$("dueDate").value=dayKey(2);}
   if(id==="daySeg")renderSlots();}
 ["srcSeg","typeSeg","daySeg"].forEach(id=>$(id).addEventListener("click",e=>{const b=e.target.closest("button");if(b)setSeg(id,b.dataset.v);}));
 
@@ -764,7 +774,8 @@ $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(
 /* time slots every 30 minutes, like the website */
 let pickedSlot=null;
 function renderSlots(){
-  const box=$("slots"); const off=+segVal("daySeg"); const del=segVal("typeSeg")==="del";
+  const box=$("slots"); const off=selOff(); const del=segVal("typeSeg")==="del";
+  if(isNaN(off)){box.innerHTML=`<span class="qhint">اختر التاريخ.</span>`;return;}
   const t=now(); const k=dayKey(off);
   const base=Date.UTC(+k.slice(0,4),+k.slice(5,7)-1,+k.slice(8,10))-RIYADH; /* 00:00 of the operating date */
   const open=base+15.5*3600e3, close=base+24.5*3600e3; /* 3:30 م to 12:30 ص */
@@ -778,6 +789,7 @@ function renderSlots(){
 $("slots").addEventListener("click",e=>{const b=e.target.closest("button[data-ms]");if(!b)return;
   pickedSlot={ms:+b.dataset.ms,asap:b.classList.contains("asap")};const p=rParts(pickedSlot.ms);$("dueTime").value=pad(p.h)+":"+pad(p.mi);renderSlots();});
 $("dueTime").addEventListener("input",()=>{pickedSlot=null;renderSlots();});
+$("dueDate").addEventListener("input",()=>{pickedSlot=null;renderSlots();});
 
 /* totals and delivery minimums from the website rules */
 function subtotal(){return cart.reduce((s,l)=>s+l.price*l.qty,0);}
@@ -801,7 +813,8 @@ function openSheet(o){
   $("delConfirm").hidden=true; $("formErr").hidden=true;
   setTextMode(!!o);
   setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"call"); setSeg("typeSeg",o?o.type:"pick");
-  setSeg("daySeg",o?(opDayOf(o.due)===dayKey(0)?0:1):S.dayOff);
+  {const k=o?opDayOf(o.due):dayKey(Math.min(S.dayOff,2));const n=daysFromToday(k);
+   if(n===0||n===1)setSeg("daySeg",n);else{$("dueDate").value=k;setSeg("daySeg","x");}}
   if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
   $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":""; $("appRef").value=o?o.appRef||"":"";
   $("areaSel").value=""; $("area").hidden=true; $("area").value="";
@@ -841,7 +854,8 @@ $("sheet").addEventListener("submit",async e=>{
   if(!items){err.textContent=textMode()?"اكتب صنفًا واحدًا على الأقل.":"اضغط على صنف واحد على الأقل.";err.hidden=false;return;}
   if(!tm){err.textContent="اختر وقت التسليم.";err.hidden=false;$("slots").scrollIntoView({block:"nearest"});return;}
   if(del&&!areaName()){err.textContent="اختر حي التوصيل.";err.hidden=false;return;}
-  const [h,mi]=tm.split(":").map(Number); const off=+segVal("daySeg");
+  const [h,mi]=tm.split(":").map(Number); const off=selOff();
+  if(isNaN(off)||off<0){err.textContent="اختر تاريخ الحجز.";err.hidden=false;return;}
   const due=pickedSlot?pickedSlot.ms:dueFrom(off,h,mi);
   const area=del?areaName()+(deliveryFee?` (توصيل ${deliveryFee} ر)`:""):"";
   const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),area,items,total,note:$("note").value.trim(),due};
@@ -856,15 +870,16 @@ $("sheet").addEventListener("submit",async e=>{
       if(fresh&&S.editBase&&fresh.updated>S.editBase.updated){openSheet(fresh);$("formErr").textContent="تغيّر الطلب #"+o.num+" وأنت تعدّل (وصل تعديل من الواتساب). هذي النسخة الجديدة، راجعها واحفظ.";$("formErr").hidden=false;btn.disabled=false;return;}
       if(o.source!=="web")data.source=segVal("srcSeg");
       delete data.deliveryFee;
-      if(opDayOf(due)!==o.opDay){err.textContent="نقل الطلب ليوم آخر غير متاح من التعديل. ألغِه وأضفه من جديد.";err.hidden=false;btn.disabled=false;return;}
+      const moved=opDayOf(due)!==o.opDay;
       if(o.status==="pending"){data.status="new";data.confirm=true;}
-      await patch(o,data,o.status==="pending"?"أُكّد الطلب #"+o.num+" وانتقل للمطبخ":"انحفظ تعديل الطلب #"+o.num); closeSheet();
+      await patch(o,data,moved?null:(o.status==="pending"?"أُكّد الطلب #"+o.num+" وانتقل للمطبخ":"انحفظ تعديل الطلب #"+o.num)); closeSheet();
+      if(moved&&o.opDay===opDayOf(due)){toast("انتقل الطلب إلى "+fmtDay(o.opDay)+" برقم #"+o.num);load();}
     }else{
       data.source=segVal("srcSeg");
       const j=await api("POST","/api/board/orders",data);
-      const sameDay=j.order.opDay===dayKey(S.dayOff);
+      const sameDay=S.dayOff===2?off>=2:j.order.opDay===dayKey(S.dayOff);
       if(sameDay){S.orders.push(j.order);if(S.known)S.known.add(j.order.id);render();}
-      toast("أُضيف الطلب #"+j.order.num+(sameDay?"":" إلى لوحة "+(off?"بكرة":"اليوم")));
+      toast("أُضيف الطلب #"+j.order.num+(sameDay?"":" إلى "+(off===0?"لوحة اليوم":off===1?"لوحة بكرة":"الحجوزات: "+fmtDay(j.order.opDay))));
       closeSheet();
     }
   }catch(ex){err.textContent="ما انحفظ الطلب ("+(ex.code||ex.message)+"). تأكد من الاتصال وحاول مرة ثانية.";err.hidden=false;}
