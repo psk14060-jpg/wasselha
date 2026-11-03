@@ -120,6 +120,13 @@ function withShopOnly(products) {
     if (k) out.push({ id: "kabajiNutella", name: "كباجي نوتيلا", description: "", variants: k.variants.map(v => ({ ...v })) });
     if (m) out.push({ id: "miniNutella", name: "ميني كباجي نوتيلا", description: "", variants: m.variants.map(v => ({ ...v })) });
   }
+  // sold in the shop, not on the website (Hassan, 2026-11-03): 5-piece pizza or manaqeesh 12 SAR, soft drink 3, water 1
+  for (const id of ["pizza", "manaqeesh"]) {
+    const i = out.findIndex(p => p.id === id);
+    if (i >= 0 && !out[i].variants.some(v => /^5\s/.test(v.tag))) out[i] = { ...out[i], variants: [{ tag: "5 قطع", price: 12 }, ...out[i].variants] };
+  }
+  if (!has(/مشروب|غاز/)) out.push({ id: "softDrink", name: "مشروب غازي", description: "", variants: [{ tag: "علبة", price: 3 }] });
+  if (!has(/^ماء|مياه/)) out.push({ id: "water", name: "ماء", description: "", variants: [{ tag: "قارورة", price: 1 }] });
   return out;
 }
 
