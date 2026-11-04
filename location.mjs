@@ -67,12 +67,16 @@ export async function migrateLocation(pool) {
 // Put the drive on the order: delivery, area label with distance, fee from the zone, total adjusted, map link for the driver.
 export async function applyLocation(pool, orderId, point, log = console.log, sourceNote = "") {
   const d = await deliveryFor(point);
-  const { rows: [o] } = await pool.query("SELECT id, num, total, delivery_fee, note, area FROM orders WHERE id=$1", [orderId]);
+  const { rows: [o] } = await pool.query("SELECT id, num, source, total, delivery_fee, note, area FROM orders WHERE id=$1", [orderId]);
   if (!o) return null;
   const oldFee = Number(o.delivery_fee) || 0;
-  const fee = d.inRange ? d.fee : null;
+  // the fee of a neighbourhood from the website's list wins (as on the website); a website order keeps the fee it was sent with.
+  // The map point then only sets the drive time and the driver's link.
+  const areaName = String(o.area || "").replace(/^📍\s*/, "").replace(/\s*·.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+  const listed = ((await getMenu()).areas || []).find(a => a.name === areaName);
+  const fee = listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
   const total = o.total == null ? null : Number(o.total) - oldFee + (fee || 0);
-  const keepArea = String(o.area || "").replace(/\s*\(.*\)\s*$/, "").replace(/^📍.*$/, "").trim();
+  const keepArea = areaName;
   const area = `📍 ${keepArea ? keepArea + " · " : ""}${d.km} كم${fee != null ? ` (توصيل ${fee} ر)` : " (خارج النطاق)"}`;
   const note = String(o.note || "")
     .replace(/\s*·?\s*📍 الموقع: \S+/g, "")

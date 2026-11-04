@@ -88,6 +88,10 @@ async function migrate() {
     ["1 × فطائر مثلثة 20 قطعة (مشكل) — 35 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال", Date.now(),
      "1 × سمبوسة جنوبية 20 قطعة (مشكل) — 38 ريال\n1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال"]);
   if (fix12.rowCount) console.log("fix: order #12 of 2026-11-03 corrected");
+  // one-off fix (2026-11-04): #10 (website, غرناطة) kept the website fee of 10, not the distance fee of 5
+  const fix10 = await pool.query(`UPDATE orders SET delivery_fee=10, total=total-5+10, area='📍 غرناطة · 3.7 كم (توصيل 10 ر)', updated=$1
+    WHERE op_day='2026-11-04' AND num=10 AND source='web' AND delivery_fee=5`, [Date.now()]);
+  if (fix10.rowCount) console.log("fix: #10 of 2026-11-04 fee restored to 10");
   // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
   const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
     WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);
