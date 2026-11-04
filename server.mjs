@@ -12,7 +12,7 @@ import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation } from "./location.mjs";
-import { migrateBlacklist, listBlacklist, markNoShow, recentPings } from "./blacklist.mjs";
+import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
@@ -114,6 +114,12 @@ async function migrate() {
     console.log("fix: 2026-11-05 #1 merged into #2");
   }
   await pool.query(`UPDATE orders SET area=REPLACE(area, '<UNKNOWN> · ', '') WHERE op_day>='2026-11-04' AND area LIKE '%<UNKNOWN>%'`);
+  // requested by Hassan (2026-11-04): Maryam's pickup was cancelled by mistake instead of marked no-show — put her number on the list
+  for (const o of (await pool.query(`SELECT id, num, phone, wa_from FROM orders WHERE op_day='2026-11-04' AND name LIKE '%مريم%' AND status='cancelled'`)).rows) {
+    const k = keyOf(o.wa_from, o.phone);
+    if (k && !(await pool.query("SELECT 1 FROM blacklist WHERE key=$1", [k])).rows.length) { await markNoShow(pool, o.id); console.log(`fix: #${o.num} (مريم) added to the no-show list`); }
+    else if (!k) console.log(`fix: #${o.num} (مريم) has no phone number`);
+  }
   // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
   const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
     WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);

@@ -682,7 +682,7 @@ function render(){
   const frow=o=>`<div class="frow ${o.status!=="done"?"cx":""}" data-id="${esc(o.id)}">
       <strong class="num">#${esc(o.num)}</strong><span>${esc(o.name||"بدون اسم")}</span><span class="mono">${fmtClock(o.due)}</span>
       <span>${finLabel(o)}</span>${o.total!=null?`<span class="mono">${esc(o.total)} ر</span>`:""}
-      ${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`;
+      ${o.status==="cancelled"&&waNumber(o)&&!blackOf(o)?`<button type="button" class="sm noshow" data-act="noshow">🚫 ما جاء</button>`:""}${giftBtn(o)}<button type="button" class="sm" data-act="${o.status==="done"?"back":"restore"}">${o.status==="done"?"رجوع":"استرجاع"}</button></div>`;
   $("flist").innerHTML=`<h3 class="fhead">المنتهية (${doneL.length})</h3>${doneL.length?doneL.map(frow).join(""):`<div class="empty">لا يوجد</div>`}
     <h3 class="fhead">الملغاة (${cxL.length}) <small>ما تدخل في المبيعات</small></h3>${cxL.length?cxL.map(frow).join(""):`<div class="empty">لا يوجد</div>`}`;
   /* warning sound: once when an order turns late, then every 2 minutes while any order is still late */
