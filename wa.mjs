@@ -444,4 +444,4 @@ export async function handleWebhook(body, ctx) {
   }
   return msgs.length;
 }
-export { askClaude };
+export { askClaude, fixSamosa, shopQuote, priceOrder };
