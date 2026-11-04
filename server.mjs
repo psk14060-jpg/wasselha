@@ -92,6 +92,11 @@ async function migrate() {
   const fix10 = await pool.query(`UPDATE orders SET delivery_fee=10, total=total-5+10, area='📍 غرناطة · 3.7 كم (توصيل 10 ر)', updated=$1
     WHERE op_day='2026-11-04' AND num=10 AND source='web' AND delivery_fee=5`, [Date.now()]);
   if (fix10.rowCount) console.log("fix: #10 of 2026-11-04 fee restored to 10");
+  // one-off fix (2026-11-04): #13 "٣٠ حبه سمبوسة بالفرن جبن و دجاج" = one box of 30 baked triangles (the shop quoted 125 with delivery)
+  const fix13 = await pool.query(`UPDATE orders SET items=$1, total=125, note=TRIM(BOTH ' ·' FROM note || ' · صُحّح: السمبوسة بالفرن = فطائر مثلثة ٣٠'), updated=$2
+    WHERE op_day='2026-11-04' AND num=13 AND items LIKE '%سمبوسة جنوبية%'`,
+    ["1 × كب بيتزا 42 قطعة — 65 ريال\n1 × فطائر مثلثة 30 قطعة (جبن ودجاج) — 45 ريال", Date.now()]);
+  if (fix13.rowCount) console.log("fix: #13 of 2026-11-04 corrected");
   // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
   const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
     WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);

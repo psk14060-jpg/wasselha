@@ -95,7 +95,7 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
 - رسالة الاعتماد من [المحل] هي المرجع الأقوى: إذا كتب فيها ملخصًا للأصناف أو الوقت فخذ به.
 - items: لكل صنف id و tag مطابقين حرفيًا لما في المنيو أعلاه، و qty عدد البوكسات، و flavor الحشوة إن ذُكرت (وإلا ""). إذا طلب حشوتين لنفس الصنف فاجعل كل حشوة عنصرًا مستقلًا.
 - «نوتيلا» وحدها تعني دائمًا كباجي نوتيلا: 10 أو 20 حبة = kabajiNutella، و35 حبة = miniNutella. وإذا قال «ميني» فهي miniNutella.
-- «سمبوسة» أو «سمبوسك» عند العملاء تعني الفطائر المثلثة (triangles)، إلا إذا قال «جنوبية» أو «بالبر» فهي السمبوسة الجنوبية (samosa). «سمبوسة مشكل 20» = فطائر مثلثة «20 قطعة» flavor=مشكل.
+- «سمبوسة» أو «سمبوسك» عند العملاء تعني الفطائر المثلثة (triangles)، حتى لو ذكر حشوة دجاج أو جبن أو قال «بالفرن»، إلا إذا قال «جنوبية» أو «مقلية» أو «بالبر» فهي السمبوسة الجنوبية (samosa). «سمبوسة مشكل 20» = فطائر مثلثة «20 قطعة» flavor=مشكل.
 - المشروبات: «بيبسي، كولا، سفن، ميرندا، حمضيات، غازي» = softDrink (qty بعدد العلب)، و«ماء، موية، مويه» = water (qty بعدد القوارير).
 - العدد قد يكون بالقطع: «10 بيتزا» = بيتزا بحجم «10 قطع» qty=1، و«20 فطاير» = فطائر مثلثة «20 قطعة» qty=1، و«40 فطاير» = «20 قطعة» qty=2.
 - إذا كان عدد القطع غير موجود كحجم واحد فركّبه من الأحجام المتاحة ليساوي العدد بالضبط، بأقل عدد بوكسات: «30 كباجي» = حجم «20 قطعة» qty=1 + حجم «10 قطع» qty=1 (وليس 2 × 20)، و«50 فطاير» = «30 قطعة» + «20 قطعة». لا تقرّب للأعلى. إن تعذّر المجموع بالضبط فاكتب ذلك في unclear.
@@ -198,6 +198,37 @@ function priceOrder(p, menu) {
 }
 
 // Build the order from this customer's chat, triggered by the owner's approval message.
+// «سمبوسة» in a customer's mouth means the baked triangles; only fried / southern / whole-wheat means the southern samosa.
+// The pieces asked for are rebuilt from the triangle sizes (30 pieces = one box of 30), with the fillings kept as one note.
+function fixSamosa(p, customerText, menu) {
+  if (!p || !Array.isArray(p.items) || /جنوب|مقلي|مقليه|مقليّة|قلي|بالبر|البر/.test(customerText)) return;
+  const sam = p.items.filter(it => it && it.id === "samosa");
+  const tri = menu.products.find(x => x.id === "triangles");
+  if (!sam.length || !tri) return;
+  const pieces = sam.reduce((n, it) => n + (parseInt(String(it.tag), 10) || 10) * (parseInt(it.qty, 10) || 1), 0);
+  const asked = (customerText.match(/(\d+|[٠-٩]+)\s*(?:حبه|حبة|قطعه|قطعة|حبات)?\s*(?:سمبوس)/) || [])[1];
+  const want = asked ? Number(String(asked).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d))) : pieces;
+  const flavors = [...new Set(sam.map(it => it.flavor).filter(Boolean))].join(" و");
+  const sizes = tri.variants.map(v => ({ v, n: parseInt(v.tag, 10) || 0 })).filter(x => x.n).sort((a, b) => b.n - a.n);
+  const out = []; let left = want;
+  for (const x of sizes) while (left >= x.n) { out.push(x.v.tag); left -= x.n; }
+  if (left > 0 || !out.length) return; // cannot be built exactly: leave it for the kitchen to check
+  const counts = out.reduce((m, t) => (m[t] = (m[t] || 0) + 1, m), {});
+  p.items = p.items.filter(it => !(it && it.id === "samosa"))
+    .concat(Object.entries(counts).map(([tag, qty]) => ({ id: "triangles", tag, qty, flavor: flavors })));
+}
+
+// the last total the shop wrote in the chat ("125 مع التوصيل", "الحساب 82 ريال")
+function shopQuote(rows) {
+  for (const r of rows.slice().reverse()) {
+    if (r.dir !== "out") continue;
+    const t = String(r.body).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+    const m = t.match(/(\d{2,4})\s*(?:ريال|ر\b|رس|مع التوصيل|شامل)/) || t.match(/^(?:الحساب|المجموع|الاجمالي|الإجمالي|المبلغ)\D{0,6}(\d{2,4})/);
+    if (m) return Number(m[1]);
+  }
+  return null;
+}
+
 // the latest location the customer sent in the conversation (map pin or maps link) sets the drive and fee.
 // A returning customer who did not send one this time (and did not ask for pickup) gets the last location they used before.
 async function locationFromChat(pool, orderId, customerRows, log, opts = {}) {
@@ -273,7 +304,9 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
       items: apiKey ? [{ text: "تعذّرت قراءة الأصناف — افتح المحادثة" }] : customerRows.map(r => ({ text: r.body })).slice(-6),
       unclear: apiKey ? "" : "راجع الأصناف في المحادثة" };
   }
+  fixSamosa(p, customerRows.map(r => r.body).join("\n"), menu);
   const built = priceOrder(p, menu);
+  const quoted = shopQuote(rows);
   const matchedItems = (Array.isArray(p.items) ? p.items : []).filter(it => it && typeof it === "object" && it.id).length;
   if (prev && !matchedItems) {
     const extra = String(p.note || "").trim().slice(0, 160);
@@ -295,7 +328,9 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   const missing = [...built.missing];
   if (!timeKnown) missing.push("الوقت");
   if (p.type !== "del" && p.type !== "pick") missing.push("استلام أو توصيل");
-  const baseNote = [missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
+  // the shop told the customer a total in the chat: if the board's total differs, say so loudly
+  const quoteWarn = quoted && built.total != null && Math.abs(quoted - built.total) >= 1 ? `⚠ المحل قال للعميل ${quoted} ريال والنظام حسب ${built.total} — راجع الأصناف` : "";
+  const baseNote = [quoteWarn, missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
 
   // approved again before the kitchen finished: it is a change to that order, not a new one
   if (prev && p.is_change && ["new", "prep"].includes(prev.status) && ["wa", "web"].includes(prev.source)) {
