@@ -92,8 +92,11 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <h1 class="brand">مينيقيش <small>لوحة الطلبات</small></h1>
     <span class="clock" id="clock">--:--</span>
     <button class="btn ghost" id="soundBtn" type="button" aria-pressed="false">التنبيه الصوتي: مطفأ</button>
-    <button class="btn ghost" id="blBtn" type="button">🚫 القائمة السوداء</button>
-    <button class="btn ghost" id="testBtn" type="button" title="تشغيل أصوات التنبيه للتأكد منها">🔔 جرّب الأصوات</button>
+    <div class="more"><button class="btn ghost" id="moreBtn" type="button" aria-expanded="false" aria-label="المزيد">⋯</button>
+      <div class="moremenu" id="moreMenu" hidden>
+        <button type="button" id="blBtn">🚫 القائمة السوداء</button>
+        <button type="button" id="testBtn">🔔 جرّب الأصوات</button>
+      </div></div>
     <button class="btn primary" id="newBtn" type="button">+ طلب جديد</button>
   </div>
   <div class="row2">
@@ -355,11 +358,13 @@ function ticket(o,t){
     ${o.type==="del"&&o.area?`<div class="area">${esc(o.area)}</div>`:""}
     ${items.length?`<ul class="items">${items.map(i=>`<li><span>${esc(i)}</span></li>`).join("")}</ul>`:""}
     ${o.note?`<div class="note">${noteHtml(o.note)}</div>`:""}
+    ${(awaitsCustomer(o)&&waNumber(o))||(u.cls.startsWith("late")&&!o.alertMuted)?`<div class="acts2">
+        ${awaitsCustomer(o)&&waNumber(o)?`<button type="button" class="sm notify" data-act="notify">📩 بلّغ العميل</button><button type="button" class="sm noshow" data-act="noshow">🚫 ما جاء</button>`:""}
+        ${u.cls.startsWith("late")&&!o.alertMuted?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
+      </div>`:""}
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
-        ${awaitsCustomer(o)&&waNumber(o)?`<button type="button" class="sm notify" data-act="notify">📩 بلّغ العميل</button><button type="button" class="sm noshow" data-act="noshow">🚫 ما جاء</button>`:""}
-        ${u.cls.startsWith("late")&&!o.alertMuted?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
         ${next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
@@ -510,11 +515,13 @@ function playClip(a,kind,fallback){
 function announceNew(){playClip(newOrderClip,"new",()=>beep(2));}
 function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
 /* test: the new-order clip, then the start clip, then the late alarm — also tells the device that sound is allowed */
-$("testBtn").onclick=async()=>{unlock();await loadClip("new-order");await loadClip("start-prep");toast("تشغيل: لديك طلب جديد ← ابدأ الآن ← صفارة التأخير");
+$("testBtn").onclick=async()=>{$("moreMenu").hidden=true;unlock();await loadClip("new-order");await loadClip("start-prep");toast("تشغيل: لديك طلب جديد ← ابدأ الآن ← صفارة التأخير");
   announceNew();setTimeout(playStart,8500);setTimeout(alarm,13500);};
 function renderBlack(){const l=S.blackList||[];
   $("blList").innerHTML=l.length?l.map(x=>`<div class="blrow"><b class="mono">0${esc(x.key.slice(3))}</b><span>${esc(x.name||"—")}</span><span>طلب #${esc(x.orderNum)} · ${esc(x.opDay)}${x.times>1?` · ${x.times} مرات`:""}</span><button type="button" class="sm" data-unbl="${esc(x.key)}">شيله من القائمة</button></div>`).join(""):`<div class="empty">القائمة فاضية.</div>`;}
-$("blBtn").onclick=()=>{renderBlack();$("blPanel").hidden=false;};
+$("blBtn").onclick=()=>{$("moreMenu").hidden=true;renderBlack();$("blPanel").hidden=false;};
+$("moreBtn").onclick=e=>{e.stopPropagation();const h=!$("moreMenu").hidden;$("moreMenu").hidden=h;$("moreBtn").setAttribute("aria-expanded",String(!h));};
+document.addEventListener("click",e=>{if(!e.target.closest(".more"))$("moreMenu").hidden=true;});
 $("blClose").onclick=()=>{$("blPanel").hidden=true;};
 $("blList").addEventListener("click",async e=>{const b=e.target.closest("[data-unbl]");if(!b)return;
   try{await api("DELETE","/api/board/blacklist/"+b.dataset.unbl);toast("انشال من القائمة");await load();renderBlack();}catch(x){toast("ما انحفظ");}});
