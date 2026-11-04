@@ -125,6 +125,9 @@ function withShopOnly(products) {
     const i = out.findIndex(p => p.id === id);
     if (i >= 0 && !out[i].variants.some(v => /^5\s/.test(v.tag))) out[i] = { ...out[i], variants: [{ tag: "5 قطع", price: 12 }, ...out[i].variants] };
   }
+  // one-day offer (Hassan, 2026-11-04): «بوكس المشاركة» 69 SAR, until midnight tonight
+  if (Date.now() < Date.parse("2026-11-05T00:00:00+03:00") && !has(/بوكس المشاركة/))
+    out.push({ id: "shareBox", name: "بوكس المشاركة", description: "18 قطعة قوارب · 5 قطع مناقيش · 10 قطع بيتزا (عرض اليوم فقط)", variants: [{ tag: "بوكس", price: 69 }] });
   if (!has(/مشروب|غاز/)) out.push({ id: "softDrink", name: "مشروب غازي", description: "", variants: [{ tag: "علبة", price: 3 }] });
   if (!has(/^ماء|مياه/)) out.push({ id: "water", name: "ماء", description: "", variants: [{ tag: "قارورة", price: 1 }] });
   return out;

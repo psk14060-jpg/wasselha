@@ -42,7 +42,8 @@ const msgText = m => {
   if (m.type === "text") return m.text?.body || "";
   if (m.type === "button") return m.button?.text || "";
   if (m.type === "interactive") return m.interactive?.button_reply?.title || m.interactive?.list_reply?.title || "";
-  if (m.type === "image" || m.type === "video" || m.type === "document") return m[m.type]?.caption || "";
+  if (m.type === "image" || m.type === "video" || m.type === "document")
+    return (m.type === "image" ? "[صورة]" : m.type === "video" ? "[فيديو]" : "[ملف]") + (m[m.type]?.caption ? " " + m[m.type].caption : "");
   if (m.type === "location" && m.location) {
     const l = m.location;
     return `[موقع] ${Number(l.latitude).toFixed(6)},${Number(l.longitude).toFixed(6)}${l.name || l.address ? " " + [l.name, l.address].filter(Boolean).join(" - ") : ""}`;
@@ -61,7 +62,7 @@ export function extractMessages(body) {
       if (!ch.field || ch.field === "messages") {
         const names = Object.fromEntries((v.contacts || []).map(c => [c.wa_id, c.profile?.name || ""]));
         for (const m of v.messages || []) {
-          out.push({ id: m.id, from: m.from, name: names[m.from] || "", type: m.type, dir: "in",
+          out.push({ id: m.id, from: m.from, name: names[m.from] || "", type: m.type, dir: "in", raw: m.type === "image" ? m.image : undefined,
             text: String(msgText(m)).slice(0, 4000), ts: Number(m.timestamp) * 1000 || Date.now() });
         }
       } else if (ch.field === "smb_message_echoes") {
@@ -95,6 +96,8 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
 - رسالة الاعتماد من [المحل] هي المرجع الأقوى: إذا كتب فيها ملخصًا للأصناف أو الوقت فخذ به.
 - items: لكل صنف id و tag مطابقين حرفيًا لما في المنيو أعلاه، و qty عدد البوكسات، و flavor الحشوة إن ذُكرت (وإلا ""). إذا طلب حشوتين لنفس الصنف فاجعل كل حشوة عنصرًا مستقلًا.
 - «نوتيلا» وحدها تعني دائمًا كباجي نوتيلا: 10 أو 20 حبة = kabajiNutella، و35 حبة = miniNutella. وإذا قال «ميني» فهي miniNutella.
+- «بوكس المشاركة» أو «المشاركة» = shareBox (عرض اليوم إن كان في المنيو).
+- إذا كتب العميل [صورة] وقال «ابي نفس هذي/هذا» أو «مثل الصورة» ولم يتضح الصنف من الكلام، فلا تخمّن: اكتب في unclear «العميل طلب مثل الصورة — شوف الصورة في المحادثة».
 - «سمبوسة» أو «سمبوسك» عند العملاء تعني الفطائر المثلثة (triangles)، حتى لو ذكر حشوة دجاج أو جبن أو قال «بالفرن»، إلا إذا قال «جنوبية» أو «مقلية» أو «بالبر» فهي السمبوسة الجنوبية (samosa). «سمبوسة مشكل 20» = فطائر مثلثة «20 قطعة» flavor=مشكل.
 - المشروبات: «بيبسي، كولا، سفن، ميرندا، حمضيات، غازي» = softDrink (qty بعدد العلب)، و«ماء، موية، مويه» = water (qty بعدد القوارير).
 - العدد قد يكون بالقطع: «10 بيتزا» = بيتزا بحجم «10 قطع» qty=1، و«20 فطاير» = فطائر مثلثة «20 قطعة» qty=1، و«40 فطاير» = «20 قطعة» qty=2.
@@ -330,7 +333,8 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (p.type !== "del" && p.type !== "pick") missing.push("استلام أو توصيل");
   // the shop told the customer a total in the chat: if the board's total differs, say so loudly
   const quoteWarn = quoted && built.total != null && Math.abs(quoted - built.total) >= 1 ? `⚠ المحل قال للعميل ${quoted} ريال والنظام حسب ${built.total} — راجع الأصناف` : "";
-  const baseNote = [quoteWarn, missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
+  const photoNote = customerRows.some(r => /^\[صورة\]/.test(r.body)) ? "📷 العميل أرسل صورة — راجعها في المحادثة" : "";
+  const baseNote = [quoteWarn, photoNote, missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
 
   // approved again before the kitchen finished: it is a change to that order, not a new one
   if (prev && p.is_change && ["new", "prep"].includes(prev.status) && ["wa", "web"].includes(prev.source)) {
@@ -365,6 +369,7 @@ export async function handleWebhook(body, ctx) {
   log(`wa: webhook received fields=${fields || "-"} messages=${msgs.length}`);
   for (const m of msgs) {
     if (!m.text && (m.type === "audio" || m.type === "voice")) m.text = "[رسالة صوتية]";
+    if (m.type === "image" && m.raw) log("wa: image fields " + Object.keys(m.raw).join(","));
     // de-duplicate (providers retry)
     const ins = await pool.query("INSERT INTO wa_messages (id, wa_from, kind, body, at, dir) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING RETURNING id",
       [m.id, m.from, m.type, m.text, m.ts, m.dir]);
