@@ -113,6 +113,7 @@ async function migrate() {
     await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: دُمج في الطلب #2'), updated=$2 WHERE id=$1`, [dupA.id, Date.now()]);
     console.log("fix: 2026-11-05 #1 merged into #2");
   }
+  await pool.query(`UPDATE orders SET area=REPLACE(area, '<UNKNOWN> · ', '') WHERE op_day>='2026-11-04' AND area LIKE '%<UNKNOWN>%'`);
   // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
   const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
     WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);

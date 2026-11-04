@@ -76,7 +76,7 @@ export async function applyLocation(pool, orderId, point, log = console.log, sou
   const listed = ((await getMenu()).areas || []).find(a => a.name === areaName);
   const fee = listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
   const total = o.total == null ? null : Number(o.total) - oldFee + (fee || 0);
-  const keepArea = areaName;
+  const keepArea = /unknown|غير معروف|غير مذكور|^-$/i.test(areaName) ? "" : areaName;
   const area = `📍 ${keepArea ? keepArea + " · " : ""}${d.km} كم${fee != null ? ` (توصيل ${fee} ر)` : " (خارج النطاق)"}`;
   const note = String(o.note || "")
     .replace(/\s*·?\s*📍 الموقع: \S+/g, "")
