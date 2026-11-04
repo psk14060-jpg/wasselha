@@ -12,6 +12,7 @@ import { migrateWa, handleWebhook } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation } from "./location.mjs";
+import { migrateBlacklist, listBlacklist, markNoShow, recentPings } from "./blacklist.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
@@ -111,6 +112,7 @@ async function migrate() {
   }
   await migratePrefs(pool);
   await migrateLocation(pool);
+  await migrateBlacklist(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
@@ -421,11 +423,22 @@ const server = http.createServer(async (req, res) => {
         const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
         const seen = [...screens.values()].filter(x => Date.now() - x.at < 3 * 60e3);
         return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, screens: seen,
+          blacklist: await listBlacklist(pool), blackPings: recentPings(),
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
       if (p === "/api/board/taste" && req.method === "GET") {
         const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days"), 10) || 15));
         return send(res, 200, await tasteReport(pool, days));
+      }
+      if (p === "/api/board/blacklist" && req.method === "POST") {
+        const b = await readBody(req, 2048);
+        const r = await markNoShow(pool, String(b.orderId || ""));
+        return send(res, r.error ? 400 : 200, r);
+      }
+      const bl = p.match(/^\/api\/board\/blacklist\/(\d{11,15})$/);
+      if (bl && req.method === "DELETE") {
+        await pool.query("DELETE FROM blacklist WHERE key=$1", [bl[1]]);
+        return send(res, 200, { ok: true });
       }
       if (p === "/api/board/heartbeat" && req.method === "POST") {
         const b = await readBody(req, 4096);

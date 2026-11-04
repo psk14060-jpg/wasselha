@@ -92,6 +92,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <h1 class="brand">مينيقيش <small>لوحة الطلبات</small></h1>
     <span class="clock" id="clock">--:--</span>
     <button class="btn ghost" id="soundBtn" type="button" aria-pressed="false">التنبيه الصوتي: مطفأ</button>
+    <button class="btn ghost" id="blBtn" type="button">🚫 القائمة السوداء</button>
     <button class="btn ghost" id="testBtn" type="button" title="تشغيل أصوات التنبيه للتأكد منها">🔔 جرّب الأصوات</button>
     <button class="btn primary" id="newBtn" type="button">+ طلب جديد</button>
   </div>
@@ -109,6 +110,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="pulse" id="pulse"></div>
   </div>
   <div id="banner" class="banner" hidden></div>
+  <div id="blBar" class="blbar" role="alert" hidden></div>
   <button type="button" id="updBar" class="updbar" hidden onclick="location.reload()">⟳ فيه تحديث جديد للوحة — اضغط هنا للتحديث (وبعدها المس الشاشة لتشغيل الصوت)</button>
   <button type="button" id="soundWarn" class="soundwarn" hidden>🔇 التنبيه الصوتي مطفأ — اضغط هنا لتشغيله</button>
   <div id="lateBar" class="latebar" role="alert" hidden></div>
@@ -202,6 +204,11 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     </div>
   </form>
 </div>
+<section class="blpanel" id="blPanel" hidden aria-label="القائمة السوداء">
+  <div class="blhead"><h2>🚫 القائمة السوداء</h2><button class="btn ghost" id="blClose" type="button">إغلاق</button></div>
+  <p class="muted">عملاء طلبوا استلام وما جوا. إذا رجعوا يطلبون يطلع تنبيه على طلبهم وعند مراسلتهم.</p>
+  <div id="blList"></div>
+</section>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -282,6 +289,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
+    S.black=Object.fromEntries((j.blacklist||[]).map(x=>[x.key,x])); S.blackList=j.blacklist||[]; S.blackPings=j.blackPings||[];
     $("offline").hidden=true; render();
   }catch(e){
     if(e.message!=="auth"){fails++; if(fails>=2)$("offline").hidden=false;}
@@ -328,6 +336,7 @@ const giftable=o=>false; /* return gift switched off by Hassan (2026-11-01); cod
 const giftBtn=o=>giftable(o)?`<button type="button" class="sm gift" data-act="gift">${o.giftOut?"🎁 "+esc(o.giftOut)+" (أعد)":"🎁 هدية العودة"}</button>`:"";
 /* note text, with the customer's map location as a link for the driver */
 const noteHtml=n=>esc(n).replace(/📍 الموقع: (https:\/\/www\.google\.com\/maps\?q=[-\d.,]+)/,'📍 <a href="$1" target="_blank" rel="noopener">موقع العميل على الخريطة</a>');
+const blackOf=o=>{const k=waNumber(o);return k&&S.black?S.black[k]:null;};
 function ticket(o,t){
   const u=urgency(o,t);
   const items=(o.items||"").split("\n").map(s=>s.trim()).filter(Boolean);
@@ -342,13 +351,14 @@ function ticket(o,t){
     </div>
     ${o.status==="new"?(t>=startAt(o)?`<div class="startnow">ابدأ الآن</div>`:`<div class="startat">ابدأ التحضير <span class="num">${fmtClock(startAt(o))}</span>${travelMin(o)?` <small>(توصيل ${travelMin(o)} د)</small>`:""}</div>`):""}
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
+    ${blackOf(o)?`<div class="blnote">🚫 في القائمة السوداء: ما جاء لطلب #${esc(blackOf(o).orderNum)} (${esc(blackOf(o).opDay)})${blackOf(o).times>1?` — ${blackOf(o).times} مرات`:""}. اعتذروا منه.</div>`:""}
     ${o.type==="del"&&o.area?`<div class="area">${esc(o.area)}</div>`:""}
     ${items.length?`<ul class="items">${items.map(i=>`<li><span>${esc(i)}</span></li>`).join("")}</ul>`:""}
     ${o.note?`<div class="note">${noteHtml(o.note)}</div>`:""}
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
-        ${awaitsCustomer(o)&&waNumber(o)?`<button type="button" class="sm notify" data-act="notify">📩 بلّغ العميل</button>`:""}
+        ${awaitsCustomer(o)&&waNumber(o)?`<button type="button" class="sm notify" data-act="notify">📩 بلّغ العميل</button><button type="button" class="sm noshow" data-act="noshow">🚫 ما جاء</button>`:""}
         ${u.cls.startsWith("late")&&!o.alertMuted?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
@@ -432,6 +442,8 @@ function render(){
   /* the system can suspend sound (screen off, another app); say so until someone taps */
   if(S.master&&S.unlocked&&actx&&actx.state!=="running"){$("soundWarn").hidden=false;$("soundWarn").textContent="🔇 الصوت متوقف على هذا الجهاز — المس الشاشة لتشغيله";}
   else if(S.master&&S.unlocked)$("soundWarn").hidden=true;
+  const bp=S.blackPings||[]; $("blBar").hidden=!bp.length;
+  $("blBar").textContent=bp.length?"🚫 عميل في القائمة السوداء يراسلكم الآن: "+bp.map(x=>"0"+x.key.slice(3)+(x.name?" ("+x.name+")":"")).join("، ")+" — ما جاء لطلب سابق، اعتذروا منه":"";
   $("lateBar").hidden=!lateNow.length;
   $("lateBar").innerHTML=lateNow.length?`<span>متأخر: ${lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، ")}</span><button type="button" data-act="muteall">🔕 إيقاف التنبيه</button>`:"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
@@ -465,6 +477,8 @@ document.addEventListener("click",e=>{
     else if(a==="edit"||a==="review") openSheet(o);
     else if(a==="gift") sendGift(o,b);
     else if(a==="mute") muteLate([o.id]);
+    else if(a==="noshow"){ if(b.dataset.sure!=="1"){b.dataset.sure="1";b.textContent="متأكد؟ اضغط مرة ثانية";setTimeout(()=>{if(b.isConnected){b.dataset.sure="";b.textContent="🚫 ما جاء";}},4000);return;}
+      api("POST","/api/board/blacklist",{orderId:o.id}).then(()=>{toast("انضاف للقائمة السوداء وانلغى الطلب #"+o.num);load();}).catch(()=>toast("ما انحفظ، حاول مرة ثانية")); }
     else if(a==="notify") window.open("https://wa.me/"+waNumber(o)+"?text="+encodeURIComponent("مرحبا\nطلبكم صار جاهز بانتظاركم"),"_blank");
     return;
   }
@@ -498,6 +512,12 @@ function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesi
 /* test: the new-order clip, then the start clip, then the late alarm — also tells the device that sound is allowed */
 $("testBtn").onclick=async()=>{unlock();await loadClip("new-order");await loadClip("start-prep");toast("تشغيل: لديك طلب جديد ← ابدأ الآن ← صفارة التأخير");
   announceNew();setTimeout(playStart,8500);setTimeout(alarm,13500);};
+function renderBlack(){const l=S.blackList||[];
+  $("blList").innerHTML=l.length?l.map(x=>`<div class="blrow"><b class="mono">0${esc(x.key.slice(3))}</b><span>${esc(x.name||"—")}</span><span>طلب #${esc(x.orderNum)} · ${esc(x.opDay)}${x.times>1?` · ${x.times} مرات`:""}</span><button type="button" class="sm" data-unbl="${esc(x.key)}">شيله من القائمة</button></div>`).join(""):`<div class="empty">القائمة فاضية.</div>`;}
+$("blBtn").onclick=()=>{renderBlack();$("blPanel").hidden=false;};
+$("blClose").onclick=()=>{$("blPanel").hidden=true;};
+$("blList").addEventListener("click",async e=>{const b=e.target.closest("[data-unbl]");if(!b)return;
+  try{await api("DELETE","/api/board/blacklist/"+b.dataset.unbl);toast("انشال من القائمة");await load();renderBlack();}catch(x){toast("ما انحفظ");}});
 async function muteLate(ids){
   ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
   try{await Promise.all(ids.map(id=>api("PATCH","/api/board/orders/"+id,{muteAlert:true})));toast("انوقف تنبيه التأخير على كل الأجهزة");}

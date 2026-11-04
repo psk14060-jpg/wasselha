@@ -6,6 +6,7 @@
 import { getMenu } from "./menu.mjs";
 import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
+import { keyOf, notePing } from "./blacklist.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -375,6 +376,10 @@ export async function handleWebhook(body, ctx) {
       [m.id, m.from, m.type, m.text, m.ts, m.dir]);
     if (!ins.rows.length) continue;
     const phone = localPhone(m.from);
+    if (m.dir === "in") {
+      const k = keyOf(m.from);
+      if (k && (await pool.query("SELECT 1 FROM blacklist WHERE key=$1", [k])).rows.length) notePing(k, m.name);
+    }
     let result = "stored";
     try {
       if (m.dir === "out") {
