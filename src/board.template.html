@@ -465,7 +465,7 @@ document.addEventListener("click",e=>{
     else if(a==="edit"||a==="review") openSheet(o);
     else if(a==="gift") sendGift(o,b);
     else if(a==="mute") muteLate([o.id]);
-    else if(a==="notify") window.open("https://wa.me/"+waNumber(o)+"?text="+encodeURIComponent(`هلا${o.name&&!/^بدون/.test(o.name)?" "+o.name:""} 🧡\nطلبك رقم ${o.num} من مينيقيش جاهز للاستلام، ننتظرك.`),"_blank");
+    else if(a==="notify") window.open("https://wa.me/"+waNumber(o)+"?text="+encodeURIComponent("مرحبا\nطلبكم صار جاهز بانتظاركم"),"_blank");
     return;
   }
   const tab=e.target.closest("[data-tab]"); if(tab){S.tab=tab.dataset.tab;render();return;}
