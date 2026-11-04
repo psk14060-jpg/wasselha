@@ -97,6 +97,11 @@ async function migrate() {
     WHERE op_day='2026-11-04' AND num=13 AND items LIKE '%سمبوسة جنوبية%'`,
     ["1 × كب بيتزا 42 قطعة — 65 ريال\n1 × فطائر مثلثة 30 قطعة (جبن ودجاج) — 45 ريال", Date.now()]);
   if (fix13.rowCount) console.log("fix: #13 of 2026-11-04 corrected");
+  // requested by Hassan (2026-11-04): add one boats box (35 SAR) to order #29
+  const add29 = await pool.query(`UPDATE orders SET items=items || E'\n1 × قوارب 18 قطعة — 35 ريال', total=COALESCE(total,0)+35,
+      note=TRIM(BOTH ' ·' FROM note || ' · أُضيف بوكس قوارب (طلب حسن)'), updated=$1
+    WHERE op_day='2026-11-04' AND num=29 AND note NOT LIKE '%أُضيف بوكس قوارب (طلب حسن)%'`, [Date.now()]);
+  if (add29.rowCount) console.log("fix: boats box added to #29 of 2026-11-04");
   // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
   const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
     WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);
