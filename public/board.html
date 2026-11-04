@@ -166,6 +166,7 @@ textarea{resize:vertical;min-height:84px}
 .chip.screens{white-space:normal}
 .fhead{font-size:14px;margin:12px 0 6px;color:var(--muted)}.fhead small{font-weight:400}
 .feef{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:14px}.feef input{width:110px;min-height:40px}
+.sm.notify{border-color:var(--ok);color:var(--ok)}
 </style>
 
 <style>
@@ -576,6 +577,7 @@ function ticket(o,t){
     <div class="foot">
       ${o.total!=null?`<span class="total">${esc(o.total)} <small>ريال</small></span>`:""}
       <div class="acts">
+        ${awaitsCustomer(o)&&waNumber(o)?`<button type="button" class="sm notify" data-act="notify">📩 بلّغ العميل</button>`:""}
         ${u.cls.startsWith("late")&&!o.alertMuted?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
@@ -692,6 +694,7 @@ document.addEventListener("click",e=>{
     else if(a==="edit"||a==="review") openSheet(o);
     else if(a==="gift") sendGift(o,b);
     else if(a==="mute") muteLate([o.id]);
+    else if(a==="notify") window.open("https://wa.me/"+waNumber(o)+"?text="+encodeURIComponent(`هلا${o.name&&!/^بدون/.test(o.name)?" "+o.name:""} 🧡\nطلبك رقم ${o.num} من مينيقيش جاهز للاستلام، ننتظرك.`),"_blank");
     return;
   }
   const tab=e.target.closest("[data-tab]"); if(tab){S.tab=tab.dataset.tab;render();return;}

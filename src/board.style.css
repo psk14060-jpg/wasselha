@@ -156,4 +156,5 @@ textarea{resize:vertical;min-height:84px}
 .chip.screens{white-space:normal}
 .fhead{font-size:14px;margin:12px 0 6px;color:var(--muted)}.fhead small{font-weight:400}
 .feef{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:14px}.feef input{width:110px;min-height:40px}
+.sm.notify{border-color:var(--ok);color:var(--ok)}
 </style>
