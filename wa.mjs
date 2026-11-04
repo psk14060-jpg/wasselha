@@ -259,6 +259,15 @@ async function lastKnownPoint(pool, waFrom, exceptId) {
 async function approveFromConversation(m, phone, ctx, apiKey) {
   const { pool, insertOrder, log } = ctx;
   const now = Date.now();
+  // an order the shop already typed on the board for this customer's phone (call/shop) is the same order:
+  // link the chat to it and add what the chat brings (delivery, location, payment) instead of opening a second one
+  const manual = (await pool.query(
+    `SELECT id, num, note FROM orders WHERE wa_from IS NULL AND phone=$1 AND source IN ('call','shop') AND status IN ('new','prep')
+       AND created > $2 ORDER BY created DESC LIMIT 1`, [phone, now - 12 * 3600e3])).rows[0];
+  if (manual) {
+    await pool.query(`UPDATE orders SET wa_from=$2, updated=$3 WHERE id=$1`, [manual.id, m.from, now]);
+    log(`wa: chat linked to board order #${manual.num}`);
+  }
   const pendingWeb = (await pool.query(
     `SELECT id, num FROM orders WHERE wa_from=$1 AND source='web' AND status='pending' AND created > $2 ORDER BY created DESC LIMIT 1`,
     [m.from, now - 24 * 3600e3])).rows[0];
@@ -269,8 +278,8 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   // last order already approved for this customer (website or WhatsApp) that the kitchen has not finished
   const prev = (await pool.query(
     `SELECT id, num, items, source, ref, confirmed_at, status, type, area, due, note, delivery_fee FROM orders
-      WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND (confirmed_at > $2 OR due > $3) ORDER BY confirmed_at DESC LIMIT 1`,
-    [m.from, now - APPROVAL_WINDOW, now - 3 * 3600e3])).rows[0]; // also a booking approved earlier (e.g. last night) that is still to come
+      WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND (confirmed_at > $2 OR due > $3) AND id<>$4 ORDER BY confirmed_at DESC LIMIT 1`,
+    [m.from, now - APPROVAL_WINDOW, now - 3 * 3600e3, manual ? manual.id : 0])).rows[0]; // also a booking approved earlier (e.g. last night) that is still to come
   const since = prev && !pendingWeb ? Math.max(Number(prev.confirmed_at) - 5000, now - 24 * 3600e3) : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
   const all = (await pool.query(
     `SELECT id, dir, body, at FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
@@ -325,6 +334,14 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     if (a === b) return `same_as_website_order #${prev.num}`;
   }
   const { due, timeKnown } = dueFromParsed(p, now, menu);
+  if (manual) {
+    // keep the items the shop typed; take delivery, notes and location from the chat
+    const extra = [customerRows.some(r => /^\[صورة\]/.test(r.body)) ? "📷 العميل أرسل صورة" : "", p.note].filter(Boolean).join(" · ");
+    await pool.query(`UPDATE orders SET type=CASE WHEN $2 THEN 'del' ELSE type END, note=TRIM(BOTH ' ·' FROM note || ' · ' || $3), updated=$4 WHERE id=$1`,
+      [manual.id, p.type === "del", extra ? ("واتساب: " + extra).slice(0, 200) : "", Date.now()]);
+    if (p.type === "del") await locationFromChat(pool, manual.id, customerRows, log, { wantDelivery: true, waFrom: m.from });
+    return `merged_into_board_order #${manual.num}`;
+  }
   const fields = {
     name: String(p.name || m.name || "").slice(0, 60), type: p.type === "del" ? "del" : "pick",
     area: built.areaLabel, items: built.items, total: built.total, deliveryFee: built.fee, due,

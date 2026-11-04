@@ -103,6 +103,16 @@ async function migrate() {
       note=TRIM(BOTH ' ·' FROM note || ' · أُضيف بوكس قوارب (طلب حسن)'), updated=$1
     WHERE op_day='2026-11-04' AND num=29 AND note NOT LIKE '%أُضيف بوكس قوارب (طلب حسن)%'`, [Date.now()]);
   if (add29.rowCount) console.log("fix: boats box added to #29 of 2026-11-04");
+  // one-off fix (2026-11-04): tomorrow's #1 (typed on the board) and #2 (WhatsApp) are the same customer and order.
+  // Keep #2 (delivery with location), with the three items the shop typed in #1.
+  const dupA = (await pool.query("SELECT id, items, total FROM orders WHERE op_day='2026-11-05' AND num=1 AND source='call' AND status<>'cancelled'")).rows[0];
+  const dupB = (await pool.query("SELECT id, delivery_fee FROM orders WHERE op_day='2026-11-05' AND num=2 AND source='wa' AND status<>'cancelled' AND note NOT LIKE '%دُمج مع الطلب #1%'")).rows[0];
+  if (dupA && dupB) {
+    await pool.query(`UPDATE orders SET items=$2, total=$3, note=TRIM(BOTH ' ·' FROM note || ' · دُمج مع الطلب #1'), updated=$4 WHERE id=$1`,
+      [dupB.id, dupA.items, Number(dupA.total) + (Number(dupB.delivery_fee) || 0), Date.now()]);
+    await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: دُمج في الطلب #2'), updated=$2 WHERE id=$1`, [dupA.id, Date.now()]);
+    console.log("fix: 2026-11-05 #1 merged into #2");
+  }
   // one-off fix (2026-11-03): #17 was a payment chat about the website booking #5, not a new order
   const fix17 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · مكرر: هو نفسه الطلب #5'), updated=$1
     WHERE op_day='2026-11-03' AND num=17 AND status<>'cancelled' AND items='(راجع المحادثة)'`, [Date.now()]);
