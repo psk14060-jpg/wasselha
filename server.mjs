@@ -435,7 +435,10 @@ const server = http.createServer(async (req, res) => {
         const x = { id, name: cl(b.name), ver: cl(b.ver), unlocked: !!b.unlocked, master: !!b.master, visible: !!b.visible,
           lastPlay: b.lastPlay ? { kind: cl(b.lastPlay.kind), at: Number(b.lastPlay.at) || 0, ok: !!b.lastPlay.ok, err: cl(b.lastPlay.err) } : null, at: Date.now() };
         screens.set(id, x);
-        if (x.lastPlay && !x.lastPlay.ok && (!prev?.lastPlay || prev.lastPlay.at !== x.lastPlay.at)) console.log(`sound: ${x.name} could not play ${x.lastPlay.kind}: ${x.lastPlay.err}`);
+        if (x.lastPlay && (!prev?.lastPlay || prev.lastPlay.at !== x.lastPlay.at))
+          console.log(`sound: ${x.name} ${x.lastPlay.ok ? "played" : "could not play"} ${x.lastPlay.kind}${x.lastPlay.err ? ": " + x.lastPlay.err : ""} (engine ${cl(b.lastPlay.ctx)}, page ${cl(b.lastPlay.vis)})`);
+        if (!prev || prev.unlocked !== x.unlocked || prev.master !== x.master || prev.visible !== x.visible)
+          console.log(`screen: ${x.name} ${x.id} sound=${x.master ? (x.unlocked ? "on" : "needs-tap") : "off"} visible=${x.visible} ver=${x.ver}`);
         if (screens.size > 50) for (const [k, v] of screens) if (Date.now() - v.at > 3600e3) screens.delete(k);
         return send(res, 200, { ok: true });
       }

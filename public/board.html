@@ -251,6 +251,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <h1 class="brand">مينيقيش <small>لوحة الطلبات</small></h1>
     <span class="clock" id="clock">--:--</span>
     <button class="btn ghost" id="soundBtn" type="button" aria-pressed="false">التنبيه الصوتي: مطفأ</button>
+    <button class="btn ghost" id="testBtn" type="button" title="تشغيل أصوات التنبيه للتأكد منها">🔔 جرّب الأصوات</button>
     <button class="btn primary" id="newBtn" type="button">+ طلب جديد</button>
   </div>
   <div class="row2">
@@ -441,7 +442,7 @@ const BOARD_VER="__BOARD_VER__";
 const DEV=(()=>{let id;try{id=localStorage.getItem("mg-dev");if(!id){id=Math.random().toString(36).slice(2,10);localStorage.setItem("mg-dev",id);}}catch(e){id=Math.random().toString(36).slice(2,10);}
   const u=navigator.userAgent;const name=/iPad/.test(u)?"آيباد":/iPhone/.test(u)?"آيفون":/Android/.test(u)?(/Mobile/.test(u)?"جوال أندرويد":"تابلت أندرويد"):/Windows/.test(u)?"كمبيوتر ويندوز":/Mac/.test(u)?"ماك":/CrOS/.test(u)?"كروم بوك":/Linux/.test(u)?"كمبيوتر لينكس":"جهاز";return{id,name};})();
 let lastPlay=null;
-function notePlay(kind,ok,err){lastPlay={kind,at:Date.now(),ok,err:err||""};if(!ok)beat();}
+function notePlay(kind,ok,err){lastPlay={kind,at:Date.now(),ok,err:err||"",ctx:actx?actx.state:"none",vis:document.visibilityState};beat();}
 function beat(){api("POST","/api/board/heartbeat",{id:DEV.id,name:DEV.name,ver:BOARD_VER,unlocked:S.unlocked&&!!actx&&actx.state==="running",master:S.master,visible:document.visibilityState==="visible",lastPlay}).catch(()=>{});}
 const now=()=>Date.now()+skew;
 const RIYADH=3*3600e3, CUT=6*3600e3;
@@ -720,6 +721,9 @@ function playClip(a,kind,fallback){
 }
 function announceNew(){playClip(newOrderClip,"new",()=>beep(2));}
 function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
+/* test: the new-order clip, then the start clip, then the late alarm — also tells the device that sound is allowed */
+$("testBtn").onclick=async()=>{unlock();await loadClip("new-order");await loadClip("start-prep");toast("تشغيل: لديك طلب جديد ← ابدأ الآن ← صفارة التأخير");
+  announceNew();setTimeout(playStart,8500);setTimeout(alarm,13500);};
 async function muteLate(ids){
   ids.forEach(id=>{const o=findOrder(id);if(o)o.alertMuted=true;}); render();
   try{await Promise.all(ids.map(id=>api("PATCH","/api/board/orders/"+id,{muteAlert:true})));toast("انوقف تنبيه التأخير على كل الأجهزة");}
