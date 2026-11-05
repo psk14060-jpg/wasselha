@@ -64,6 +64,23 @@ export async function migrateLocation(pool) {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS dest TEXT");
 }
 
+// Neighbourhood of a map point (OpenStreetMap), so a location without a typed neighbourhood still gets its rules (free areas).
+const hoodCache = new Map();
+export async function neighbourhoodOf(point) {
+  const k = point.lat.toFixed(4) + "," + point.lng.toFixed(4);
+  if (hoodCache.has(k)) return hoodCache.get(k);
+  let name = "";
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=16&accept-language=ar&lat=${point.lat}&lon=${point.lng}`,
+      { headers: { "user-agent": "minigeesh-kitchen-board/1.0" }, signal: AbortSignal.timeout(6000) });
+    const a = (await r.json()).address || {};
+    name = String(a.neighbourhood || a.suburb || a.quarter || a.city_district || "").trim();
+  } catch {}
+  if (hoodCache.size > 1000) hoodCache.clear();
+  hoodCache.set(k, name);
+  return name;
+}
+
 // Put the drive on the order: delivery, area label with distance, fee from the zone, total adjusted, map link for the driver.
 export async function applyLocation(pool, orderId, point, log = console.log, sourceNote = "") {
   const d = await deliveryFor(point);
@@ -74,9 +91,10 @@ export async function applyLocation(pool, orderId, point, log = console.log, sou
   // The map point then only sets the drive time and the driver's link.
   const areaName = String(o.area || "").replace(/^📍\s*/, "").replace(/\s*·.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
   const listed = ((await getMenu()).areas || []).find(a => a.name === areaName);
-  const fee = isFreeArea(areaName) ? 0 : listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
+  const hood = listed || isFreeArea(areaName) ? "" : await neighbourhoodOf(point);
+  const fee = isFreeArea(areaName) || isFreeArea(hood) ? 0 : listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
   const total = o.total == null ? null : Number(o.total) - oldFee + (fee || 0);
-  const keepArea = /unknown|غير معروف|غير مذكور|^-$/i.test(areaName) ? "" : areaName;
+  const keepArea = (/unknown|غير معروف|غير مذكور|^-$/i.test(areaName) ? "" : areaName) || hood.replace(/^حي\s+/, "");
   const area = `📍 ${keepArea ? keepArea + " · " : ""}${d.km} كم${fee === 0 ? " (توصيل مجاني)" : fee != null ? ` (توصيل ${fee} ر)` : " (خارج النطاق)"}`;
   const note = String(o.note || "")
     .replace(/\s*·?\s*📍 الموقع: \S+/g, "")
@@ -85,6 +103,6 @@ export async function applyLocation(pool, orderId, point, log = console.log, sou
   const note2 = [note.replace(/\s*·?\s*📍 الموقع من طلب سابق[^·]*/g, ""), `📍 الموقع: ${d.mapsUrl}`, sourceNote, d.inRange ? "" : `⚠ الموقع أبعد من نطاق التوصيل (${d.km} كم)`, d.approx ? "المسافة تقريبية" : ""].filter(Boolean).join(" · ").slice(0, 300);
   await pool.query(`UPDATE orders SET type='del', area=$1, delivery_fee=$2, total=$3, note=$4, travel_min=$5, dest=$6, updated=$7 WHERE id=$8`,
     [area.slice(0, 80), fee, total, note2, d.minutes, `${point.lat},${point.lng}`, Date.now(), orderId]);
-  log(`wa: location on #${o.num}: ${d.km} km, ${d.minutes} min, fee ${fee}${d.approx ? " (approx)" : ""}`);
+  log(`wa: location on #${o.num}: ${d.km} km, ${d.minutes} min, fee ${fee}${hood ? " hood=" + hood : ""}${d.approx ? " (approx)" : ""}`);
   return d;
 }

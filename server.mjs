@@ -12,7 +12,7 @@ import { migrateWa, handleWebhook, recentReviews, readTranscript } from "./wa.mj
 import { migrateReader, recordCorrection, evalReader, readerVersion } from "./reader.mjs";
 import { isFreeArea, getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
-import { migrateLocation } from "./location.mjs";
+import { migrateLocation, neighbourhoodOf } from "./location.mjs";
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
 import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
@@ -170,6 +170,23 @@ async function migrate() {
       console.log(`fix: free area ${o.op_day instanceof Date ? o.op_day.toISOString().slice(0, 10) : o.op_day} #${o.num} fee ${o.delivery_fee} → 0`);
     }
     await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_free_areas_1105', 'true')");
+  }
+  // same, for open orders that only have a map point (no neighbourhood typed), e.g. #37 of 2026-11-05: look the point up
+  if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_free_areas_1105b'")).rows.length) {
+    const { rows } = await pool.query("SELECT id, num, area, dest, delivery_fee FROM orders WHERE type='del' AND status IN ('new','prep','ready','out') AND op_day >= '2026-11-05' AND COALESCE(delivery_fee,0) > 0 AND dest IS NOT NULL");
+    let missed = 0;
+    for (const o of rows) {
+      const [lat, lng] = String(o.dest).split(",").map(Number);
+      const hood = await neighbourhoodOf({ lat, lng });
+      if (!hood) missed++;
+      console.log(`fix: free-area check #${o.num} point=${o.dest} hood=${hood || "?"}`);
+      if (isFreeArea(hood)) {
+        await pool.query("UPDATE orders SET total = CASE WHEN total IS NULL THEN NULL ELSE total - delivery_fee END, delivery_fee = 0, area = regexp_replace(area, '^📍\\s*', '📍 ' || $3 || ' · '), updated=$2 WHERE id=$1", [o.id, Date.now(), hood.replace(/^حي\s+/, "")]);
+        await pool.query("UPDATE orders SET area = regexp_replace(area, '\\(توصيل [0-9.]+ ر\\)', '(توصيل مجاني)') WHERE id=$1", [o.id]);
+        console.log(`fix: free area #${o.num} fee ${o.delivery_fee} → 0`);
+      }
+    }
+    if (!missed) await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_free_areas_1105b', 'true')"); // retried on next start if the lookup failed
   }
   // timeline of every order for the preparation analysis: each status change, plus item and time edits,
   // with how busy the kitchen was at that moment. Written by a trigger so every path (board, WhatsApp, website) is covered.
