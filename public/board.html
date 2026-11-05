@@ -207,6 +207,14 @@ textarea{resize:vertical;min-height:84px}
 .subsidy{font-size:.9em;color:var(--ok);background:var(--ok-soft);border-radius:8px;padding:4px 8px;margin:4px 0}
 #sumLine .ok{color:var(--ok)}
 #cxSeg{flex-wrap:wrap;margin:6px 0}
+.kabar{margin-top:10px;display:grid;gap:8px}
+.kabar .karow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;border-radius:12px;background:var(--late);color:#fff;font-weight:800;font-size:22px;line-height:1.5;box-shadow:0 0 0 4px var(--late-soft,rgba(200,60,60,.25))}
+.kabar .karow button{border:2px solid #fff;background:#fff;color:var(--late);border-radius:10px;min-height:48px;padding:0 18px;font:inherit;font-size:18px;font-weight:800;cursor:pointer}
+#kaPanel textarea{width:100%;margin:8px 0;font-size:18px}
+#kaPanel #kaSend{width:100%;min-height:52px;font-size:18px}
+#kaPanel .kah{margin:22px 0 8px;font-size:16px}
+#kaPanel .karec{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--surface)}
+#kaPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
 </style>
 
 <style>
@@ -294,6 +302,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <button class="btn ghost" id="soundBtn" type="button" aria-pressed="false">التنبيه الصوتي: مطفأ</button>
     <div class="more"><button class="btn ghost" id="moreBtn" type="button" aria-expanded="false" aria-label="المزيد">⋯</button>
       <div class="moremenu" id="moreMenu" hidden>
+        <button type="button" id="kaBtn">📢 تنبيه للمطبخ</button>
         <button type="button" id="blBtn">🚫 القائمة السوداء</button>
         <button type="button" id="repBtn">📊 التقارير</button>
         <button type="button" id="testBtn">🔔 جرّب الأصوات</button>
@@ -318,6 +327,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
   <div id="revBar" class="revbar" role="alert" hidden></div>
   <button type="button" id="updBar" class="updbar" hidden onclick="location.reload()">⟳ فيه تحديث جديد للوحة — اضغط هنا للتحديث (وبعدها المس الشاشة لتشغيل الصوت)</button>
   <button type="button" id="soundWarn" class="soundwarn" hidden>🔇 التنبيه الصوتي مطفأ — اضغط هنا لتشغيله</button>
+  <div id="kaBar" class="kabar" role="alert" hidden></div>
   <div id="lateBar" class="latebar" role="alert" hidden></div>
 </header>
 
@@ -423,6 +433,14 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
   <p class="muted">عملاء طلبوا استلام وما جوا. إذا رجعوا يطلبون يطلع تنبيه على طلبهم وعند مراسلتهم.</p>
   <div id="blList"></div>
 
+</section>
+<section class="blpanel" id="kaPanel" hidden aria-label="تنبيه للمطبخ">
+  <div class="blhead"><h2>📢 تنبيه للمطبخ</h2><button class="btn ghost" id="kaClose" type="button">إغلاق</button></div>
+  <p class="muted">اكتب الرسالة واضغط إرسال: تظهر على كل شاشات المطبخ مع صوت «تنبيه تنبيه» يتكرر كل دقيقة لين يضغطون «تم».</p>
+  <textarea id="kaText" maxlength="300" rows="3" placeholder="مثال: السمبوسة الجنوبية جبن وليست دجاج"></textarea>
+  <button class="btn primary" id="kaSend" type="button">إرسال للمطبخ</button>
+  <h3 class="kah">آخر التنبيهات</h3>
+  <div id="kaList"></div>
 </section>
 <section class="rep" id="rep" hidden aria-label="التقارير">
   <div class="rephead">
@@ -708,6 +726,10 @@ async function load(){
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
     S.reviews=j.reviews||[];
+    { const before=new Map((S.alerts||[]).map(a=>[a.id,a])); S.alerts=j.alerts||[];
+      /* sender: tell them when the kitchen pressed «تم» */
+      S.alerts.forEach(a=>{const b=before.get(a.id);if(b&&!b.ackAt&&a.ackAt&&a.fromDev===DEV.id)toast("✅ المطبخ ضغط «تم» على تنبيهك: "+a.text.slice(0,40));});
+      if(!$("kaPanel").hidden)renderKa(); }
     S.black=Object.fromEntries((j.blacklist||[]).map(x=>[x.key,x])); S.blackList=j.blacklist||[]; S.blackPings=j.blackPings||[];
     $("offline").hidden=true; render();
   }catch(e){
@@ -871,6 +893,14 @@ function render(){
   $("revBar").textContent=rv.length?"⚠ اعتمدتوا محادثة بدون أصناف — ما انضاف طلب. افتحوا المحادثة: "+rv.map(x=>x.phone+(x.name?" ("+x.name+")":"")).join("، "):"";
   const bp=S.blackPings||[]; $("blBar").hidden=!bp.length;
   $("blBar").textContent=bp.length?"🚫 عميل في القائمة السوداء يراسلكم الآن: "+bp.map(x=>"0"+x.key.slice(3)+(x.name?" ("+x.name+")":"")).join("، ")+" — ما جاء لطلب سابق، اعتذروا منه":"";
+  /* kitchen alerts: shown on every screen until «تم»; «تنبيه تنبيه» now and every minute, not on the device that sent it */
+  const ka=(S.alerts||[]).filter(a=>!a.ackAt);
+  $("kaBar").hidden=!ka.length;
+  $("kaBar").innerHTML=ka.map(a=>`<div class="karow"><span>📢 ${esc(a.text)}</span><button type="button" data-kaack="${esc(a.id)}">✅ تم</button></div>`).join("");
+  S.kaPlayed=S.kaPlayed||{};
+  const kaDue=ka.filter(a=>a.fromDev!==DEV.id&&(!S.kaPlayed[a.id]||t-S.kaPlayed[a.id]>=60000));
+  if(S.sound&&S.ready&&kaDue.length){kaDue.forEach(a=>{const first=!S.kaPlayed[a.id];S.kaPlayed[a.id]=t;
+    if(first)api("POST","/api/board/alert/"+a.id+"/heard",{name:DEV.name}).catch(()=>{});});playAlert();}
   $("lateBar").hidden=!lateNow.length;
   $("lateBar").innerHTML=lateNow.length?`<span>متأخر: ${lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، ")}</span><button type="button" data-act="muteall">🔕 إيقاف التنبيه</button>`:"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
@@ -926,21 +956,38 @@ function batchCheck(to){
 const newOrderClip=new Audio("/sounds/new-order.mp3");
 /* clips are decoded once and played through Web Audio, which keeps working after the first tap on every browser */
 const BUF={};
-async function loadClip(name){if(BUF[name])return BUF[name];try{const r=await fetch("/sounds/"+name+".mp3");const ab=await r.arrayBuffer();
+async function loadClip(name){if(BUF[name])return BUF[name];try{const r=await fetch("/sounds/"+name+".mp3");if(!r.ok)throw new Error("missing");const ab=await r.arrayBuffer();
   BUF[name]=await new Promise((ok,no)=>ac().decodeAudioData(ab,ok,no));}catch(e){BUF[name]=null;}return BUF[name];}
 function playClip(a,kind,fallback){
-  const name=kind==="start"?"start-prep":"new-order"; const ctx=ac(); const buf=BUF[name];
+  const name=kind==="start"?"start-prep":kind==="alert"?"kitchen-alert":"new-order"; const ctx=ac(); const buf=BUF[name];
   if(buf&&ctx.state==="running"){try{const src=ctx.createBufferSource();src.buffer=buf;const g=ctx.createGain();g.gain.value=1;src.connect(g).connect(ctx.destination);src.start();notePlay(kind,true);return;}catch(e){}}
   if(!buf)loadClip(name);
   a.currentTime=0;a.play().then(()=>notePlay(kind,true)).catch(e=>{notePlay(kind,false,(e&&e.name||"blocked")+" ctx="+ctx.state+" buf="+!!buf);fallback();});
 }
 function announceNew(){playClip(newOrderClip,"new",()=>beep(2));}
+/* kitchen alert: Hassan's «تنبيه تنبيه» clip (public/sounds/kitchen-alert.mp3) once he sends it; until then a two-tone attention sound */
+const alertClip=new Audio("/sounds/kitchen-alert.mp3");
+function alertTone(){try{ac();for(let i=0;i<6;i++){const o=actx.createOscillator(),g=actx.createGain();o.type="square";o.frequency.value=i%2?740:988;
+  const t=actx.currentTime+i*0.32+(i>2?0.5:0);g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.28,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.28);
+  o.connect(g).connect(actx.destination);o.start(t);o.stop(t+0.3);}}catch(e){}}
+function playAlert(){if(BUF["kitchen-alert"]===null){alertTone();notePlay("alert",true,"tone");return;}playClip(alertClip,"alert",alertTone);}
 function sayDevice(text){try{speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=arVoice?arVoice.lang:"ar-SA";if(arVoice)u.voice=arVoice;u.rate=0.95;speechSynthesis.speak(u);}catch(e){}}
 /* test: the new-order clip, then the start clip, then the late alarm — also tells the device that sound is allowed */
 $("testBtn").onclick=async()=>{$("moreMenu").hidden=true;unlock();await loadClip("new-order");await loadClip("start-prep");toast("تشغيل: لديك طلب جديد ← ابدأ الآن ← صفارة التأخير");
   announceNew();setTimeout(playStart,8500);setTimeout(alarm,13500);};
 function renderBlack(){const l=S.blackList||[];
   $("blList").innerHTML=l.length?l.map(x=>`<div class="blrow"><b class="mono">0${esc(x.key.slice(3))}</b><span>${esc(x.name||"—")}</span><span>طلب #${esc(x.orderNum)} · ${esc(x.opDay)}${x.times>1?` · ${x.times} مرات`:""}</span><button type="button" class="sm" data-unbl="${esc(x.key)}">شيله من القائمة</button></div>`).join(""):`<div class="empty">القائمة فاضية.</div>`;}
+/* kitchen alert panel */
+function renderKa(){const l=S.alerts||[];
+  $("kaList").innerHTML=l.length?l.map(a=>`<div class="karec"><b>${esc(a.text)}</b><small>${fmtClock(a.at)}${a.fromName?" · من "+esc(a.fromName):""} · ${a.ackAt?"✅ تم على "+esc(a.ackBy||"")+" "+fmtClock(a.ackAt):a.heard&&a.heard.length?"🔔 اشتغل على: "+a.heard.map(esc).join("، ")+" — بانتظار «تم»":"⏳ لسا ما اشتغل على أي شاشة (تأكد إن صوت المطبخ شغّال)"}</small></div>`).join(""):`<div class="empty">ما فيه تنبيهات اليوم.</div>`;}
+$("kaBtn").onclick=()=>{$("moreMenu").hidden=true;renderKa();$("kaPanel").hidden=false;setTimeout(()=>$("kaText").focus(),50);};
+$("kaClose").onclick=()=>{$("kaPanel").hidden=true;};
+$("kaSend").onclick=async()=>{const text=$("kaText").value.trim();if(!text){toast("اكتب الرسالة أولًا");return;}
+  $("kaSend").disabled=true;
+  try{await api("POST","/api/board/alert",{text,dev:DEV.id,name:DEV.name});$("kaText").value="";toast("انرسل للمطبخ");await load();renderKa();}
+  catch(e){toast("ما انرسل، حاول مرة ثانية");}finally{$("kaSend").disabled=false;}};
+$("kaBar").addEventListener("click",async e=>{const b=e.target.closest("[data-kaack]");if(!b)return;b.disabled=true;
+  try{await api("POST","/api/board/alert/"+b.dataset.kaack+"/ack",{name:DEV.name});await load();}catch(x){toast("ما انحفظ، حاول مرة ثانية");b.disabled=false;}});
 $("blBtn").onclick=()=>{$("moreMenu").hidden=true;renderBlack();$("blPanel").hidden=false;};
 $("moreBtn").onclick=e=>{e.stopPropagation();const h=!$("moreMenu").hidden;$("moreMenu").hidden=h;$("moreBtn").setAttribute("aria-expanded",String(!h));};
 document.addEventListener("click",e=>{if(!e.target.closest(".more"))$("moreMenu").hidden=true;});
@@ -1262,7 +1309,7 @@ function syncSound(){
   w.textContent=!S.master?"🔇 التنبيه الصوتي مطفأ على كل الأجهزة — اضغط هنا لتشغيله":"🔇 الصوت ما اشتغل على هذا الجهاز — اضغط هنا";
 }
 function wake(){try{const c=ac();const b=c.createBuffer(1,1,22050);const s=c.createBufferSource();s.buffer=b;s.connect(c.destination);s.start(0);}catch(e){}
-  loadClip("new-order");loadClip("start-prep");}
+  loadClip("new-order");loadClip("start-prep");loadClip("kitchen-alert");}
 function unlock(){wake();if(!S.unlocked){S.unlocked=true;syncSound();if(S.master){keepAwake();bell(2);}beat();}}
 async function setMaster(on){
   S.master=on; unlock(); syncSound();

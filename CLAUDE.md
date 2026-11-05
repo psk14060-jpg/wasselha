@@ -2,7 +2,7 @@
 
 Owner: Hassan (Riyadh); restaurant in Hofuf, Al-Ahsa. Talk to him in Arabic. Brand: «مينيقيش».
 Live: https://minigeesh-orders.onrender.com (Render service srv-dbipv0etlv9c73bdfvug, workspace tea-daiqbo9594qs739pn74g).
-Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy does not fire).
+Deploy: push branch `minigeesh-orders` — auto-deploy is on since 2026-11-05 (every push goes live; never push untested work there).
 
 ## Before every deploy
 1. `node build.mjs` then `npm test` — every real mistake is a check in `test/regressions.mjs`. A new mistake gets a new check first.
@@ -38,6 +38,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy doe
 - Loyalty: paused until the marketing agent sends the design. Do not build.
 - Rewaa POS integration: cancelled (13,800 SAR). Shop sales come from a weekly Rewaa Excel export; never enter shop sales on the board (the «المحل» source is hidden).
 - Weekly report every Sunday 08:00 (`reports.mjs`, board ⋯ → التقارير): sales by item/channel/hour without delivery fees, average order, repeat and lapsed customers, cancelled and reasons (picked when cancelling), subsidy paid. Taste report: 2026-11-18.
+- Kitchen alert (⋯ → 📢 تنبيه للمطبخ, table `kitchen_alerts`): written message shown on every screen with «تنبيه تنبيه» every minute until «تم»; not played on the sending device; sender sees heard/done. Sound file `public/sounds/kitchen-alert.mp3` (Hassan's recording, used whole) — until it exists a two-tone sound plays.
 - Rewaa cashier names in the reader: `CASHIER_NAMES` in `reader.mjs`.
 
 ## Shared sheet between the agents (`sheets.mjs`, Hassan 2026-11-05)

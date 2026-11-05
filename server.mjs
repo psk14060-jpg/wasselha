@@ -152,6 +152,9 @@ async function migrate() {
   await migrateReports(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
+  // kitchen alerts: a message Hassan (or anyone on the board) writes; every kitchen screen shows it and says «تنبيه تنبيه» until «تم»
+  await pool.query(`CREATE TABLE IF NOT EXISTS kitchen_alerts (id BIGSERIAL PRIMARY KEY, text TEXT NOT NULL, at BIGINT NOT NULL,
+    from_dev TEXT, from_name TEXT, heard JSONB NOT NULL DEFAULT '[]', ack_at BIGINT, ack_by TEXT)`);
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT");
   // timeline of every order for the preparation analysis: each status change, plus item and time edits,
@@ -463,6 +466,8 @@ const server = http.createServer(async (req, res) => {
         const seen = [...screens.values()].filter(x => Date.now() - x.at < 3 * 60e3);
         return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
+          alerts: (await pool.query("SELECT * FROM kitchen_alerts WHERE at > $1 ORDER BY at DESC LIMIT 15", [Date.now() - 24 * 3600e3])).rows.map(a => ({
+            id: String(a.id), text: a.text, at: Number(a.at), fromDev: a.from_dev, fromName: a.from_name, heard: a.heard || [], ackAt: a.ack_at == null ? null : Number(a.ack_at), ackBy: a.ack_by })),
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
       if (p === "/api/board/reports" && req.method === "GET") {
@@ -508,6 +513,27 @@ const server = http.createServer(async (req, res) => {
         if (!prev || prev.unlocked !== x.unlocked || prev.master !== x.master || prev.visible !== x.visible)
           console.log(`screen: ${x.name} ${x.id} sound=${x.master ? (x.unlocked ? "on" : "needs-tap") : "off"} visible=${x.visible} ver=${x.ver}`);
         if (screens.size > 50) for (const [k, v] of screens) if (Date.now() - v.at > 3600e3) screens.delete(k);
+        return send(res, 200, { ok: true });
+      }
+      if (p === "/api/board/alert" && req.method === "POST") {
+        const b = await readBody(req, 4096);
+        const text = String(b.text || "").trim().slice(0, 300);
+        if (!text) return send(res, 400, { error: "text" });
+        const { rows: [a] } = await pool.query("INSERT INTO kitchen_alerts (text, at, from_dev, from_name) VALUES ($1,$2,$3,$4) RETURNING id",
+          [text, Date.now(), String(b.dev || "").slice(0, 20), String(b.name || "").slice(0, 60)]);
+        console.log(`alert: #${a.id} sent from ${String(b.name || "?").slice(0, 60)}: ${text.slice(0, 80)}`);
+        return send(res, 201, { id: String(a.id) });
+      }
+      const ka = p.match(/^\/api\/board\/alert\/(\d+)\/(heard|ack)$/);
+      if (ka && req.method === "POST") {
+        const b = await readBody(req, 2048);
+        const name = String(b.name || "جهاز").slice(0, 60);
+        if (ka[2] === "heard")
+          await pool.query("UPDATE kitchen_alerts SET heard = CASE WHEN heard ? $2 THEN heard ELSE heard || to_jsonb($2::text) END WHERE id=$1", [ka[1], name]);
+        else {
+          await pool.query("UPDATE kitchen_alerts SET ack_at=$2, ack_by=$3 WHERE id=$1 AND ack_at IS NULL", [ka[1], Date.now(), name]);
+          console.log(`alert: #${ka[1]} done on ${name}`);
+        }
         return send(res, 200, { ok: true });
       }
       if (p === "/api/board/settings" && req.method === "POST") {
