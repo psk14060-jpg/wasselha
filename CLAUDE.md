@@ -38,4 +38,10 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy doe
 - Rewaa POS integration: cancelled (13,800 SAR). Shop sales come from a weekly Rewaa Excel export; never enter shop sales on the board (the «المحل» source is hidden).
 - Weekly report every Sunday 08:00 (`reports.mjs`, board ⋯ → التقارير): sales by item/channel/hour without delivery fees, average order, repeat and lapsed customers, cancelled and reasons (picked when cancelling), subsidy paid. Taste report: 2026-11-18.
 - Rewaa cashier names in the reader: `CASHIER_NAMES` in `reader.mjs`.
+
+## Shared sheet between the agents (`sheets.mjs`, Hassan 2026-11-05)
+- Google Sheet 1TTXbWtikFPDkTN_2GJPpMwdOCsNOZCowbRsJodXEm1U, service account key in Render env `GOOGLE_SA_JSON`.
+- Write only «المبيعات اليومية» (02:00 nightly, one row per item line + a negative «دعم توصيل من المحل» line), «الإلغاء والتأخير» (same run), «العملاء» (Sundays, whole tab rewritten). Same columns as the sheet. A day is deleted and rewritten, never appended twice.
+- Read «القواعد المعتمدة» (subsidy on/off from its status/dates; any rule change → log + note) and «المنيو والتكاليف» (unified names via `unifiedName`, costs for the subsidy margin) every 10 minutes.
+- Mistakes in other agents' tabs → a row in «ملاحظات», never an edit. Phones: last 4 digits only. No shop (Rewaa) sales.
 - Do not add header buttons; secondary tools go in the ⋯ menu, card extras in their own row.

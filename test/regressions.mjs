@@ -1,5 +1,5 @@
 // Every real mistake on the board becomes a check here. Run before every deploy: npm test
-import { subsidyFor } from "../subsidy.mjs";
+import { subsidyFor, unifiedName } from "../subsidy.mjs";
 import assert from "node:assert/strict";
 process.env.SITE_URL = "http://127.0.0.1:1"; // use the built-in menu snapshot
 const { fixSamosa, shopQuote, priceOrder, dayHint } = await import("../wa.mjs");
@@ -87,5 +87,13 @@ t("2026-11-05 دعم التوصيل: أحد–أربعاء ومن ٦٠ ر، ٥ �
   assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 65, sun, { type: "pick", deliveryFee: null })).amount, 0);
   assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, sun, { source: "chefz" })).amount, 0);
   assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, sun, { created: Date.parse("2026-11-01") })).amount, 0);
+});
+t("الملف المشترك: أصناف اللوحة تتحول للاسم الموحد في «المنيو والتكاليف»", () => {
+  const names = ["كب بيتزا (42 حبة)", "كباجي جبن سايل (20 حبة)", "بوكس اللمة – فطاير مثلثة (30 حبة)", "قوارب أجبان مشكلة (18 حبة)", "قوارب مسخن (18 حبة)",
+    "قوارب مشكلة أجبان ومسخن (22 حبة)", "ميني بيتزا (5 حبات)", "تشكيلة (48 حبة)", "ببسي (صغير)", "ميني كباجي كراميل مملح (35 حبة)"];
+  for (const [t, want] of [["كب بيتزا 42 قطعة", names[0]], ["كباجي جبن سائل برشة سكر 20 قطعة", names[1]], ["فطائر مثلثة 30 قطعة (رانش)", names[2]],
+    ["قوارب 18 قطعة", names[3]], ["قوارب المسخن 18 قطعة", names[4]], ["تشكيلة قوارب أجبان ومسخن تشكيلة", names[5]], ["بيتزا 5 قطع", names[6]],
+    ["تشكيلة 48 تكفي 8–10", names[7]], ["مشروب غازي علبة", names[8]], ["ميني كباجي بالكراميل 35 قطعة", names[9]], ["كباجي نوتيلا 10 قطع", null]])
+    assert.equal(unifiedName(t, names), want, t);
 });
 console.log(`\n${n} checks passed`);

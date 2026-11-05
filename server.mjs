@@ -16,6 +16,7 @@ import { migrateLocation } from "./location.mjs";
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
 import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
+import { startSheetJob, sheetState } from "./sheets.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -460,7 +461,7 @@ const server = http.createServer(async (req, res) => {
         const later = new Date(Date.parse(opDayOf(Date.now())) + 2 * 864e5).toISOString().slice(0, 10);
         const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
         const seen = [...screens.values()].filter(x => Date.now() - x.at < 3 * 60e3);
-        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, screens: seen,
+        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
@@ -599,6 +600,7 @@ const server = http.createServer(async (req, res) => {
 migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
   startTasteJob(pool);
+  startSheetJob(pool); // shared Google Sheet between the agents
   // score the reader against past corrections whenever its code changed
   if (process.env.ANTHROPIC_API_KEY) setTimeout(() => evalReader(pool, (t, id) => readTranscript(pool, t, id),
     readerVersion(fs.readFileSync(path.join(__dirname, "wa.mjs"), "utf8") + fs.readFileSync(path.join(__dirname, "reader.mjs"), "utf8"))).catch(e => console.log("reader-eval: " + e.message)), 120e3);
