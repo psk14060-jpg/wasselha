@@ -141,9 +141,15 @@ export async function getMenu() {
   }
   return {
     products: withShopOnly(current.products).map(p => ({ ...p, flavors: flavorsOf(p) })),
-    areas: current.areas, rules: current.rules, source: current.source, fetchedAt: current.fetchedAt,
+    areas: current.areas.map(a => isFreeArea(a.name) ? { ...a, fee: 0 } : a), rules: current.rules, source: current.source, fetchedAt: current.fetchedAt,
   };
 }
+
+// Free delivery neighbourhoods (Hassan 2026-11-05): the fee is 0 on the board, the WhatsApp pricing and map locations,
+// whatever the website list says.
+const normArea = s => String(s || "").trim().replace(/^حي\s+/, "").replace(/^ال/, "").replace(/ة$/, "ه").replace(/\s+/g, " ").trim();
+export const FREE_AREAS = ["النايفية", "العزيزية"];
+export const isFreeArea = name => FREE_AREAS.map(normArea).includes(normArea(String(name || "").replace(/📍/g, "").replace(/\s*\(.*\)\s*$/, "").split("·")[0]));
 
 // Menu as text for the WhatsApp reader
 export async function menuText() {

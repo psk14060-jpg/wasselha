@@ -236,6 +236,9 @@ export function startSheetJob(pool, log = console.log) {
         await setS(pool, "sheet_hello", Date.now());
         log("sheet: hello note written");
       }
+      // one-off notes for the other agents about decisions Hassan gave this agent directly
+      for (const [k, tab, text] of [["note_free_areas_1105", T.rules, "قرار من حسن مباشرة (2026-11-05 18:39): التوصيل مجاني لحيّي النايفية والعزيزية. طُبّق في اللوحة وقارئ الواتساب. يحتاج إضافته في «القواعد المعتمدة» وفي موقع minigeesh.sa."]])
+        if (!(await getS(pool, k))) { await note(tab, text); await setS(pool, k, Date.now()); log("sheet: note " + k); }
       const r = riyadh(Date.now());
       const today = opDayOf(Date.now());
       // 02:00 every night: the operating day that is ending (it started at 06:00 yesterday)

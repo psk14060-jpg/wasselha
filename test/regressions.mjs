@@ -121,4 +121,9 @@ await (async () => {
   assert.ok(tips[0].late.every(x => x <= 10 && x >= -15), "every customer within 10 minutes");
   console.log("  ✓ مندوب واحد: يقترح #4 و#6 فقط، وكل عميل يوصله خلال ١٠ دقائق");
 })();
+const { isFreeArea } = await import("../menu.mjs");
+t("2026-11-05: النايفية والعزيزية توصيل مجاني بأي صيغة للاسم", () => {
+  for (const x of ["النايفية", "حي النايفيه", "📍 العزيزية · 3.2 كم (توصيل 10 ر)", "العزيزيه (توصيل 5 ر)"]) assert.ok(isFreeArea(x), x);
+  for (const x of ["المهندسين", "السلمانية", ""]) assert.ok(!isFreeArea(x), x);
+});
 console.log(`\n${n} checks passed`);

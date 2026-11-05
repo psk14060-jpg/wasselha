@@ -21,6 +21,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - Media files Hassan sends are used whole. Do not cut "noise" out of a clip without asking (the airport clip's speech was cut).
 - The reader (Claude) does not reliably follow menu rules written in its prompt. Rules that matter go in code after the reader: `fixSamosa` (baked «سمبوسة» = triangles), sizes composed exactly (30 = 20 + 10), shop-quoted total compared with the board total.
 - Customer words: «سمبوسة/سمبوسك» = فطائر مثلثة unless «جنوبية / مقلية / بالبر». «نوتيلا» = كباجي نوتيلا. Drinks names → softDrink / water.
+- Free delivery: النايفية and العزيزية (Hassan 2026-11-05), `FREE_AREAS` in `menu.mjs` — fee 0 in the menu areas, map locations and WhatsApp pricing.
 - Neighbourhood fee from the website list wins over distance zones; a website order keeps the fee it was sent with.
 - Drive time = map minutes + 5. No ×1.4, no extra courier minutes.
 - One customer = one phone number in any format (05…, 9665…, Arabic digits). Before creating an order, look for the same customer's open order (WhatsApp, website, or typed on the board) and update it instead.

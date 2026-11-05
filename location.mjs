@@ -1,6 +1,6 @@
 // Customer location → delivery time and fee, the same way the website does it:
 // road distance from the shop (OSRM), else straight line × factor at a set speed; the fee comes from the distance zones.
-import { getMenu } from "./menu.mjs";
+import { getMenu, isFreeArea } from "./menu.mjs";
 
 const DEFAULTS = { shop: { lat: 25.3287496, lng: 49.5631309 }, maxKm: 20, fallbackFactor: 1.35, fallbackSpeed: 30, timeFactor: 1.4,
   zones: [{ name: "قريب جدًا", maxKm: 3.5, fee: 5 }, { name: "قريب", maxKm: 7, fee: 5 }, { name: "متوسط", maxKm: 10, fee: 10 }, { name: "بعيد", maxKm: 13, fee: 15 }, { name: "أبعد", maxKm: 20, fee: 20 }] };
@@ -74,10 +74,10 @@ export async function applyLocation(pool, orderId, point, log = console.log, sou
   // The map point then only sets the drive time and the driver's link.
   const areaName = String(o.area || "").replace(/^📍\s*/, "").replace(/\s*·.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
   const listed = ((await getMenu()).areas || []).find(a => a.name === areaName);
-  const fee = listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
+  const fee = isFreeArea(areaName) ? 0 : listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
   const total = o.total == null ? null : Number(o.total) - oldFee + (fee || 0);
   const keepArea = /unknown|غير معروف|غير مذكور|^-$/i.test(areaName) ? "" : areaName;
-  const area = `📍 ${keepArea ? keepArea + " · " : ""}${d.km} كم${fee != null ? ` (توصيل ${fee} ر)` : " (خارج النطاق)"}`;
+  const area = `📍 ${keepArea ? keepArea + " · " : ""}${d.km} كم${fee === 0 ? " (توصيل مجاني)" : fee != null ? ` (توصيل ${fee} ر)` : " (خارج النطاق)"}`;
   const note = String(o.note || "")
     .replace(/\s*·?\s*📍 الموقع: \S+/g, "")
     .split("·").map(x => x.trim()).filter(x => x && !/^(?:الحي|العنوان|الموقع)\s+غير\s+(?:مذكور|محدد)|^المسافة تقريبية$|^⚠ الموقع أبعد/.test(x)).join(" · ")

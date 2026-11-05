@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { migrateWa, handleWebhook, recentReviews, readTranscript } from "./wa.mjs";
 import { migrateReader, recordCorrection, evalReader, readerVersion } from "./reader.mjs";
-import { getMenu } from "./menu.mjs";
+import { isFreeArea, getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation } from "./location.mjs";
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
@@ -162,6 +162,15 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_id TEXT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_seq INT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_out BIGINT");
+  // 2026-11-05 18:40: النايفية and العزيزية deliver free — open orders already booked there drop their fee (once)
+  if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_free_areas_1105'")).rows.length) {
+    const { rows } = await pool.query("SELECT id, num, op_day, area, total, delivery_fee FROM orders WHERE type='del' AND status IN ('new','prep','ready') AND op_day >= '2026-11-05' AND COALESCE(delivery_fee,0) > 0");
+    for (const o of rows) if (isFreeArea(o.area)) {
+      await pool.query("UPDATE orders SET total = CASE WHEN total IS NULL THEN NULL ELSE total - delivery_fee END, delivery_fee = 0, area = regexp_replace(area, '\\(توصيل [0-9.]+ ر\\)', '(توصيل مجاني)'), updated=$2 WHERE id=$1", [o.id, Date.now()]);
+      console.log(`fix: free area ${o.op_day instanceof Date ? o.op_day.toISOString().slice(0, 10) : o.op_day} #${o.num} fee ${o.delivery_fee} → 0`);
+    }
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_free_areas_1105', 'true')");
+  }
   // timeline of every order for the preparation analysis: each status change, plus item and time edits,
   // with how busy the kitchen was at that moment. Written by a trigger so every path (board, WhatsApp, website) is covered.
   await pool.query(`
