@@ -1,4 +1,5 @@
 // Every real mistake on the board becomes a check here. Run before every deploy: npm test
+import { subsidyFor } from "../subsidy.mjs";
 import assert from "node:assert/strict";
 process.env.SITE_URL = "http://127.0.0.1:1"; // use the built-in menu snapshot
 const { fixSamosa, shopQuote, priceOrder, dayHint } = await import("../wa.mjs");
@@ -67,5 +68,24 @@ t("القاموس: كلمات العملاء اللي ما عرفها القار
     const p = { items: [{ text }] }; placeUnknown(p, menu);
     assert.equal(p.items[0].id, id, text); assert.equal(p.items[0].tag, tag, text);
   }
+});
+t("أسماء الكاشير في رواء: بوكس التذوق/الوجبة/الحفلات = ميني بيتزا 5/10/20، بوكس اللمة = 30 فطاير", () => {
+  for (const [text, id, tag] of [["بوكس التذوق", "pizza", "5 قطع"], ["2 بوكس الوجبة", "pizza", "10 قطع"], ["بوكس الحفلات", "pizza", "20 قطعة"], ["بوكس اللمة", "triangles", "30 قطعة"]]) {
+    const p = { items: [{ text }] }; placeUnknown(p, menu);
+    assert.equal(p.items[0].id, id, text); assert.equal(p.items[0].tag, tag, text);
+  }
+  const p = { items: [{ text: "2 بوكس الوجبة" }] }; placeUnknown(p, menu); assert.equal(p.items[0].qty, 2);
+});
+t("2026-11-05 دعم التوصيل: أحد–أربعاء ومن ٦٠ ر، ٥ ر أساسي ويزيد إذا الهامش يسمح، لا دعم الخميس/الجمعة ٣–٩", () => {
+  const sun = Date.parse("2026-11-08T19:00:00+03:00"), thu = Date.parse("2026-11-12T17:00:00+03:00"), sat = Date.parse("2026-11-07T12:00:00+03:00");
+  const o = (items, total, due, extra = {}) => ({ type: "del", source: "call", deliveryFee: 10, total, due, created: Date.now(), items, ...extra });
+  assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, sun)).amount, 5);          // cost unknown: base only
+  assert.equal(subsidyFor(o("1 × كباجي جبن سائل برشة سكر 20 قطعة — 38 ريال\n1 × قوارب 18 قطعة — 35 ريال", 83, sun)).amount, 8); // margin allows more
+  assert.equal(subsidyFor(o("1 × قوارب 18 قطعة — 35 ريال", 45, sun)).amount, 0);            // under 60
+  assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, thu)).amount, 0);           // Thursday 5 pm
+  assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, sat)).amount, 0);           // Saturday
+  assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 65, sun, { type: "pick", deliveryFee: null })).amount, 0);
+  assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, sun, { source: "chefz" })).amount, 0);
+  assert.equal(subsidyFor(o("1 × كب بيتزا 42 قطعة — 65 ريال", 75, sun, { created: Date.parse("2026-11-01") })).amount, 0);
 });
 console.log(`\n${n} checks passed`);

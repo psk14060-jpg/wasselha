@@ -14,6 +14,7 @@ import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation } from "./location.mjs";
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
+import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
@@ -147,9 +148,11 @@ async function migrate() {
       await pool.query("INSERT INTO reader_examples (order_id, transcript, reader_items, correct_items, created) VALUES ($1,$2,'(صُحّح يدويًا)',$3,$4)",
         [o.id, String(o.raw_text).slice(-1800), o.items, Date.now()]);
   }
+  await migrateReports(pool);
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT");
   // timeline of every order for the preparation analysis: each status change, plus item and time edits,
   // with how busy the kitchen was at that moment. Written by a trigger so every path (board, WhatsApp, website) is covered.
   await pool.query(`
@@ -343,6 +346,7 @@ const boardHtml = () => fs.readFileSync(path.join(__dirname, "public", "board.ht
 // screens currently open (in memory): sound state and the last alert each one played, so the owner can check them remotely
 const screens = new Map();
 const loginHtml = () => fs.readFileSync(path.join(__dirname, "public", "login.html"));
+let previewCache = null;
 const pageHeaders = {
   "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
   "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin", "X-Content-Type-Options": "nosniff",
@@ -460,6 +464,22 @@ const server = http.createServer(async (req, res) => {
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
+      if (p === "/api/board/reports" && req.method === "GET") {
+        const weeks = (await pool.query("SELECT week_start::text AS w, created FROM weekly_reports ORDER BY week_start DESC LIMIT 26")).rows;
+        const want = url.searchParams.get("week");
+        if (want === "current") {
+          // this week so far; one fresh build per 30 minutes
+          const k = weekStartOf(opDayOf(Date.now()));
+          if (!previewCache || previewCache.week !== k || Date.now() - previewCache.at > 30 * 60e3) previewCache = { week: k, at: Date.now(), r: await buildWeek(pool, k, { save: false }) };
+          return send(res, 200, { weeks, report: { ...previewCache.r, partial: true } });
+        }
+        const w = want && /^\d{4}-\d{2}-\d{2}$/.test(want) ? want : weeks[0]?.w;
+        const r = w ? (await pool.query("SELECT week_start::text AS \"weekStart\", data, brief FROM weekly_reports WHERE week_start=$1", [w])).rows[0] : null;
+        return send(res, 200, { weeks, report: r || null });
+      }
+      if (p === "/api/board/customers" && req.method === "GET") {
+        return send(res, 200, await customers(pool, Math.max(7, Math.min(90, parseInt(url.searchParams.get("lapse"), 10) || 21))));
+      }
       if (p === "/api/board/taste" && req.method === "GET") {
         const days = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days"), 10) || 15));
         return send(res, 200, await tasteReport(pool, days));
@@ -519,6 +539,7 @@ const server = http.createServer(async (req, res) => {
           if (!STATUSES.includes(b.status)) return send(res, 400, { error: "status" });
           put("status", b.status);
           if (b.status === "out") put("out_at", Date.now());
+          if (b.status === "cancelled") put("cancel_reason", clip(b.cancelReason, 40) || null);
         }
         if (b.muteAlert !== undefined) put("alert_muted", !!b.muteAlert);
         if (b.confirm === true) { put("confirmed_at", Date.now()); put("needs_review", false); }
@@ -581,6 +602,7 @@ migrate().then(() => {
   // score the reader against past corrections whenever its code changed
   if (process.env.ANTHROPIC_API_KEY) setTimeout(() => evalReader(pool, (t, id) => readTranscript(pool, t, id),
     readerVersion(fs.readFileSync(path.join(__dirname, "wa.mjs"), "utf8") + fs.readFileSync(path.join(__dirname, "reader.mjs"), "utf8"))).catch(e => console.log("reader-eval: " + e.message)), 120e3);
+  startWeeklyJob(pool);
   // on start, log the taste report (no names or phones) so it can be read from the service logs
   tasteReport(pool, 15).then(r => {
     console.log(`taste-report: from=${r.from} days=${r.analysedDays} orders=${r.orders}`);

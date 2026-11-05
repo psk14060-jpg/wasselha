@@ -42,6 +42,12 @@ export const GLOSSARY = [
   [/بيبسي|كولا|سفن|ميرندا|حمضيات|غازي/, () => "softDrink"],
   [/ماء|موية|مويه/, () => "water"],
 ];
+// Names used on the Rewaa cashier (Hassan): they reach the board when the staff type them or a customer repeats them.
+// A number before the name is the count of boxes («2 بوكس الوجبة» = two boxes of 10).
+export const CASHIER_NAMES = [
+  [/بوكس\s*التذوق/, "pizza", 5], [/بوكس\s*الوجبة|بوكس\s*الوجبه/, "pizza", 10], [/بوكس\s*الحفلات|بوكس\s*الحفلة/, "pizza", 20],
+  [/بوكس\s*اللمة|بوكس\s*اللمه/, "triangles", 30],
+];
 const latin = s => String(s).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
 
 // Items the reader could not place ("text") are matched with the glossary and the piece count rebuilt from the sizes.
@@ -51,6 +57,12 @@ export function placeUnknown(p, menu) {
   for (const it of p.items) {
     if (!it || it.id || !it.text) { out.push(it); continue; }
     const t = latin(it.text);
+    const named = CASHIER_NAMES.find(([re]) => re.test(t));
+    if (named) {
+      const prod = menu.products.find(x => x.id === named[1]);
+      const v = prod && prod.variants.find(x => parseInt(x.tag, 10) === named[2]);
+      if (v) { out.push({ id: prod.id, tag: v.tag, qty: parseInt((t.match(/^\s*(\d{1,2})\s/) || [])[1], 10) || 1, flavor: "" }); continue; }
+    }
     const hit = GLOSSARY.find(([re]) => re.test(t));
     const prod = hit && menu.products.find(x => x.id === hit[1](t));
     if (!prod) { out.push(it); continue; }

@@ -8,6 +8,7 @@ import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
+import { subsidyFor } from "./subsidy.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -391,7 +392,10 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (!timeKnown) missing.push("الوقت");
   if (p.type !== "del" && p.type !== "pick") missing.push("استلام أو توصيل");
   // the shop told the customer a total in the chat: if the board's total differs, say so loudly
-  const quoteWarn = quoted && built.total != null && Math.abs(quoted - built.total) >= 1 ? `⚠ المحل قال للعميل ${quoted} ريال والنظام حسب ${built.total} — راجع الأصناف` : "";
+  // a quote that already takes off the shop's delivery subsidy is right too
+  const sub = subsidyFor({ type: fields.type, source: "wa", deliveryFee: built.fee, total: built.total, due, created: Date.now(), items: built.items });
+  const quoteWarn = quoted && built.total != null && Math.abs(quoted - built.total) >= 1 && Math.abs(quoted - sub.pay) >= 1
+    ? `⚠ المحل قال للعميل ${quoted} ريال والنظام حسب ${sub.amount ? sub.pay + " (بعد دعم التوصيل " + sub.amount + ")" : built.total} — راجع الأصناف` : "";
   const photoNote = customerRows.some(r => /^\[صورة\]/.test(r.body)) ? "📷 العميل أرسل صورة — راجعها في المحادثة" : "";
   const baseNote = [quoteWarn, photoNote, missing.length ? "⚠ ناقص: " + missing.join("، ") : "", p.note, p.unclear].filter(Boolean);
 

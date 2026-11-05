@@ -29,5 +29,13 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy doe
 - Pickup orders that are ready wait on the customer: no late alarm.
 - Cancelled orders and delivery fees are not sales.
 - Website orders stay hidden until the shop writes the approval phrase in WhatsApp.
-- Ask before building when Hassan says "discuss first" (loyalty system is on hold; weekly report is parked on branch `wip-weekly-report`).
+- Ask before building when Hassan says "discuss first".
+
+## Who decides what (Hassan, 2026-11-05)
+- The marketing agent decides prices, offers, loyalty and delivery subsidy; this agent builds them. Rule changes come from there.
+- Delivery subsidy (`subsidy.mjs`, shared with the board): Sun–Wed, items ≥ 60 SAR, shop pays 5 SAR, more while the margin after delivery stays ≥ 65% (price without VAT, food + box cost), never above the fee. None Thu/Fri 3–9 pm (and, as written, none Thu/Fri/Sat at all). Unknown item costs → base 5 only.
+- Loyalty: paused until the marketing agent sends the design. Do not build.
+- Rewaa POS integration: cancelled (13,800 SAR). Shop sales come from a weekly Rewaa Excel export; never enter shop sales on the board (the «المحل» source is hidden).
+- Weekly report every Sunday 08:00 (`reports.mjs`, board ⋯ → التقارير): sales by item/channel/hour without delivery fees, average order, repeat and lapsed customers, cancelled and reasons (picked when cancelling), subsidy paid. Taste report: 2026-11-18.
+- Rewaa cashier names in the reader: `CASHIER_NAMES` in `reader.mjs`.
 - Do not add header buttons; secondary tools go in the ⋯ menu, card extras in their own row.

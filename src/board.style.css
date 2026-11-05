@@ -174,4 +174,27 @@ textarea{resize:vertical;min-height:84px}
 .moremenu button{border:0;background:transparent;text-align:start;padding:10px 12px;border-radius:8px;font:inherit;font-weight:600;color:var(--ink);cursor:pointer}
 .moremenu button:hover{background:var(--surface-2)}
 .revbar{margin-top:10px;padding:12px;border-radius:10px;background:var(--warn);color:#fff;font-weight:700;font-size:15px;text-align:center}
+.rep{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;padding:12px 16px 40px}
+.rephead{display:flex;flex-wrap:wrap;align-items:center;gap:10px;position:sticky;top:-12px;background:var(--bg);padding:10px 0;z-index:1;border-bottom:1px solid var(--line)}
+.rephead h2{margin:0;font-size:20px;margin-inline-end:auto}
+.rephead select{min-height:42px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);padding:0 10px;font:inherit}
+.repbody{max-width:1100px;margin:14px auto 0;display:grid;gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:4px}
+.tile span{font-size:13px;color:var(--muted)}.tile b{font-size:22px;font-family:var(--f-mono)}
+.tile small{font-size:12px;color:var(--muted)}.tile small.up{color:var(--ok)}.tile small.down{color:var(--late)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.card h3{margin:0 0 10px;font-size:16px}.card p{margin:6px 0;line-height:1.7}.card ul{margin:6px 0;padding-inline-start:20px;line-height:1.8}
+.brief{border-color:var(--accent)}.muted{color:var(--muted);font-size:13px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.bars{display:grid;gap:6px}.bar{display:grid;grid-template-columns:minmax(80px,38%) 1fr auto;gap:8px;align-items:center;font-size:14px}
+.bar .bl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bar .bt{height:10px;background:var(--surface-2);border-radius:6px;overflow:hidden}
+.bar .bt i{display:block;height:100%;background:var(--accent);border-radius:6px}
+.tblwrap{overflow-x:auto}.tblwrap table{width:100%;border-collapse:collapse;font-size:14px;min-width:620px}
+.tblwrap th,.tblwrap td{text-align:start;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.tblwrap th{font-size:12px;color:var(--muted);font-weight:600}
+.btn.sm{min-height:32px;padding:4px 10px;font-size:13px;display:inline-flex;align-items:center;text-decoration:none;color:inherit}
+.subsidy{font-size:.9em;color:var(--ok);background:var(--ok-soft);border-radius:8px;padding:4px 8px;margin:4px 0}
+#sumLine .ok{color:var(--ok)}
+#cxSeg{flex-wrap:wrap;margin:6px 0}
 </style>
