@@ -104,4 +104,21 @@ t("2026-11-05: أنماط التقارير ما تغيّر شكل اللوحة (
     assert.ok(bare <= 1, "." + cls + " معرّف أكثر من مرة بدون نطاق");
   }
 });
+await (async () => {
+  // 2026-11-05 one courier for close deliveries: suggest only when every customer gets it within 10 minutes of the promised time
+  const { suggestBatches } = await import("../batch.mjs");
+  const realFetch = globalThis.fetch; globalThis.fetch = async () => { throw new Error("offline"); };
+  const T = Date.parse("2026-11-05T18:00:00+03:00"), now = T - 60 * 60e3;
+  const row = (id, num, due, dest, extra = {}) => ({ id, num, type: "del", source: "wa", status: "new", due, dest, travel_min: 10, area: "", ...extra });
+  const tips = await suggestBatches([
+    row(1, 4, T, "25.3400,49.5800"), row(2, 6, T + 5 * 60e3, "25.3460,49.5850"),
+    row(3, 7, T + 90 * 60e3, "25.3410,49.5810"),                    // too late in the day to join
+    row(4, 8, T, "25.3400,49.5800", { type: "pick" }),               // pickup
+    row(5, 9, T, "25.4500,49.7000"),                                 // far away
+  ], now);
+  globalThis.fetch = realFetch;
+  n++; assert.equal(tips.length, 1, "one suggestion"); assert.deepEqual(tips[0].nums.slice().sort(), [4, 6]);
+  assert.ok(tips[0].late.every(x => x <= 10 && x >= -15), "every customer within 10 minutes");
+  console.log("  ✓ مندوب واحد: يقترح #4 و#6 فقط، وكل عميل يوصله خلال ١٠ دقائق");
+})();
 console.log(`\n${n} checks passed`);

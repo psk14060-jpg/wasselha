@@ -205,4 +205,11 @@ textarea{resize:vertical;min-height:84px}
 #kaPanel .kah{margin:22px 0 8px;font-size:16px}
 #kaPanel .karec{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--surface)}
 #kaPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
+.batchbar{margin-top:10px;display:grid;gap:8px}
+.batchbar .btip{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--surface);border:2px solid var(--accent);font-weight:700;font-size:16px;line-height:1.6}
+.batchbar .bbtns{display:flex;gap:8px}
+.batchbar .bbtns .btn{min-height:44px;padding:0 16px}
+.batchln{font-size:.9em;font-weight:700;background:var(--accent-soft);color:var(--accent-ink);border-radius:8px;padding:6px 8px;margin:4px 0;line-height:1.7}
+.batchln a{color:inherit}
+.batchln .sm{min-height:30px;padding:2px 8px;margin-inline-start:6px}
 </style>

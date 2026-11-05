@@ -215,6 +215,13 @@ textarea{resize:vertical;min-height:84px}
 #kaPanel .kah{margin:22px 0 8px;font-size:16px}
 #kaPanel .karec{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--surface)}
 #kaPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
+.batchbar{margin-top:10px;display:grid;gap:8px}
+.batchbar .btip{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--surface);border:2px solid var(--accent);font-weight:700;font-size:16px;line-height:1.6}
+.batchbar .bbtns{display:flex;gap:8px}
+.batchbar .bbtns .btn{min-height:44px;padding:0 16px}
+.batchln{font-size:.9em;font-weight:700;background:var(--accent-soft);color:var(--accent-ink);border-radius:8px;padding:6px 8px;margin:4px 0;line-height:1.7}
+.batchln a{color:inherit}
+.batchln .sm{min-height:30px;padding:2px 8px;margin-inline-start:6px}
 </style>
 
 <style>
@@ -325,6 +332,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
   <div id="banner" class="banner" hidden></div>
   <div id="blBar" class="blbar" role="alert" hidden></div>
   <div id="revBar" class="revbar" role="alert" hidden></div>
+  <div id="batchBar" class="batchbar" hidden></div>
   <button type="button" id="updBar" class="updbar" hidden onclick="location.reload()">⟳ فيه تحديث جديد للوحة — اضغط هنا للتحديث (وبعدها المس الشاشة لتشغيل الصوت)</button>
   <button type="button" id="soundWarn" class="soundwarn" hidden>🔇 التنبيه الصوتي مطفأ — اضغط هنا لتشغيله</button>
   <div id="kaBar" class="kabar" role="alert" hidden></div>
@@ -725,7 +733,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
-    S.reviews=j.reviews||[];
+    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[];
     { const before=new Map((S.alerts||[]).map(a=>[a.id,a])); S.alerts=j.alerts||[];
       /* sender: tell them when the kitchen pressed «تم» */
       S.alerts.forEach(a=>{const b=before.get(a.id);if(b&&!b.ackAt&&a.ackAt&&a.fromDev===DEV.id)toast("✅ المطبخ ضغط «تم» على تنبيهك: "+a.text.slice(0,40));});
@@ -743,7 +751,8 @@ document.addEventListener("visibilitychange",()=>{if(document.visibilityState===
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const visible=o=>S.filter==="all"||o.type===S.filter;
-function handoverAt(o){return o.due-travelMin(o)*60000;}
+/* merged with other deliveries for one courier: the group leaves together at batchOut */
+function handoverAt(o){return o.batchOut&&o.type==="del"?o.batchOut:o.due-travelMin(o)*60000;}
 /* a pickup by our own customer that is ready is waiting on the customer, not the kitchen: no late alert */
 const awaitsCustomer=o=>o.status==="ready"&&o.type==="pick"&&!isApp(o.source);
 const isLate=(o,t)=>["new","prep","ready"].includes(o.status)&&!awaitsCustomer(o)&&handoverAt(o)<t;
@@ -766,7 +775,7 @@ function travelMin(o){
   const a=MENU&&MENU.areas.find(x=>x.name===name);
   return a&&a.minutes!=null?Math.ceil(a.minutes)+ROAD_BUFFER:DEFAULT_TRAVEL_MIN;
 }
-function startAt(o){return o.due-(PREP_MIN+travelMin(o))*60000;}
+function startAt(o){return o.batchOut&&o.type==="del"?o.batchOut-PREP_MIN*60000:o.due-(PREP_MIN+travelMin(o))*60000;}
 function startPhrase(o){return "ابدأ تحضير الطلب رقم "+o.num+(isApp(o.source)?"، "+SRC[o.source]:o.type==="del"?"، توصيل":"، استلام");}
 const subOf=o=>{if(!o._sub||o._sub.k!==o.updated)o._sub={k:o.updated,...subsidyFor(o)};return o._sub;};
 const SRC={web:"الموقع",wa:"واتساب",call:"اتصال",shop:"المحل",chefz:"ذا شيفز",hunger:"هنقرستيشن",keeta:"كيتا",ninja:"نينجا"};
@@ -795,6 +804,7 @@ function ticket(o,t){
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
     ${blackOf(o)?`<div class="blnote">🚫 في القائمة السوداء: ما جاء لطلب #${esc(blackOf(o).orderNum)} (${esc(blackOf(o).opDay)})${blackOf(o).times>1?` — ${blackOf(o).times} مرات`:""}. اعتذروا منه.</div>`:""}
     ${o.type==="del"&&o.area?`<div class="area">${esc(o.area)}</div>`:""}
+    ${o.batchId&&S.batches&&S.batches[o.batchId]?`<div class="batchln">🛵 مندوب واحد: ${S.batches[o.batchId].nums.map(n=>"#"+n).join(" ← ")} · هذا التوصيل ${o.batchSeq===1?"الأول":o.batchSeq===2?"الثاني":"رقم "+o.batchSeq}${S.batches[o.batchId].route?` · <a href="${esc(S.batches[o.batchId].route)}" target="_blank" rel="noopener">🗺 مسار المندوب</a>`:""} <button type="button" class="sm" data-unbatch="${esc(o.batchId)}">فك الدمج</button></div>`:""}
     ${subOf(o).amount?`<div class="subsidy">🚚 المحل يدعم التوصيل <b>${subOf(o).amount}</b> ر · يدفع العميل <b>${subOf(o).pay}</b> ر</div>`:""}
     ${items.length?`<ul class="items">${items.map(i=>`<li><span>${esc(i)}</span></li>`).join("")}</ul>`:""}
     ${o.note?`<div class="note">${noteHtml(o.note)}</div>`:""}
@@ -889,6 +899,12 @@ function render(){
   /* the system can suspend sound (screen off, another app); say so until someone taps */
   if(S.master&&S.unlocked&&actx&&actx.state!=="running"){$("soundWarn").hidden=false;$("soundWarn").textContent="🔇 الصوت متوقف على هذا الجهاز — المس الشاشة لتشغيله";}
   else if(S.master&&S.unlocked)$("soundWarn").hidden=true;
+  /* one courier for close deliveries: suggestions the kitchen can accept or ignore */
+  let ign={};try{ign=JSON.parse(localStorage.getItem("mg-batch-ignore")||"{}");}catch(e){}
+  const tips=S.dayOff===0?(S.batchTips||[]).filter(b=>!ign[b.key]):[];
+  $("batchBar").hidden=!tips.length;
+  $("batchBar").innerHTML=tips.map(b=>{const lt=b.late.map((x,i)=>fmtClock(b.arrive[i])+(x>0?` (+${x} د)`:x<0?` (قبل بـ ${-x} د)`:""));
+    return `<div class="btip"><span>🛵 مندوب واحد يوصّل ${b.nums.map((n,i)=>"#"+n+(b.areas[i]?" ("+esc(b.areas[i])+")":"")).join(" ثم ")} — يطلع ${fmtClock(b.out)}، يوصل ${lt.join(" و ")}</span><span class="bbtns"><button type="button" class="btn primary sm" data-batch="${esc(b.key)}">دمج</button><button type="button" class="btn ghost sm" data-batchno="${esc(b.key)}">تجاهل</button></span></div>`;}).join("");
   const rv=S.reviews||[]; $("revBar").hidden=!rv.length;
   $("revBar").textContent=rv.length?"⚠ اعتمدتوا محادثة بدون أصناف — ما انضاف طلب. افتحوا المحادثة: "+rv.map(x=>x.phone+(x.name?" ("+x.name+")":"")).join("، "):"";
   const bp=S.blackPings||[]; $("blBar").hidden=!bp.length;
@@ -980,6 +996,15 @@ $("testBtn").onclick=async()=>{$("moreMenu").hidden=true;unlock();await loadClip
   announceNew();setTimeout(playStart,8500);setTimeout(alarm,13500);};
 function renderBlack(){const l=S.blackList||[];
   $("blList").innerHTML=l.length?l.map(x=>`<div class="blrow"><b class="mono">0${esc(x.key.slice(3))}</b><span>${esc(x.name||"—")}</span><span>طلب #${esc(x.orderNum)} · ${esc(x.opDay)}${x.times>1?` · ${x.times} مرات`:""}</span><button type="button" class="sm" data-unbl="${esc(x.key)}">شيله من القائمة</button></div>`).join(""):`<div class="empty">القائمة فاضية.</div>`;}
+/* courier batches */
+$("batchBar").addEventListener("click",async e=>{
+  const y=e.target.closest("[data-batch]"),n=e.target.closest("[data-batchno]");
+  if(n){let ign={};try{ign=JSON.parse(localStorage.getItem("mg-batch-ignore")||"{}");}catch(x){}ign[n.dataset.batchno]=Date.now();
+    for(const k in ign)if(Date.now()-ign[k]>864e5)delete ign[k];try{localStorage.setItem("mg-batch-ignore",JSON.stringify(ign));}catch(x){}render();return;}
+  if(!y)return;const b=(S.batchTips||[]).find(x=>x.key===y.dataset.batch);if(!b)return;y.disabled=true;
+  try{await api("POST","/api/board/batch",{ids:b.ids,out:b.out});toast("انضموا لمندوب واحد: "+b.nums.map(x=>"#"+x).join(" ثم "));await load();}catch(x){toast("ما انحفظ، حاول مرة ثانية");y.disabled=false;}});
+document.addEventListener("click",async e=>{const u=e.target.closest("[data-unbatch]");if(!u)return;u.disabled=true;
+  try{await api("DELETE","/api/board/batch/"+u.dataset.unbatch);toast("انفك الدمج");await load();}catch(x){toast("ما انحفظ");u.disabled=false;}});
 /* kitchen alert panel */
 function renderKa(){const l=S.alerts||[];
   $("kaList").innerHTML=l.length?l.map(a=>`<div class="karec"><b>${esc(a.text)}</b><small>${fmtClock(a.at)}${a.fromName?" · من "+esc(a.fromName):""} · ${a.ackAt?"✅ تم على "+esc(a.ackBy||"")+" "+fmtClock(a.ackAt):a.heard&&a.heard.length?"🔔 اشتغل على: "+a.heard.map(esc).join("، ")+" — بانتظار «تم»":"⏳ لسا ما اشتغل على أي شاشة (تأكد إن صوت المطبخ شغّال)"}</small></div>`).join(""):`<div class="empty">ما فيه تنبيهات اليوم.</div>`;}

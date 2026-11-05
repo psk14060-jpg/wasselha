@@ -17,6 +17,7 @@ import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from 
 import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { startSheetJob, sheetState } from "./sheets.mjs";
+import { suggestBatches, routeUrl } from "./batch.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +158,10 @@ async function migrate() {
     from_dev TEXT, from_name TEXT, heard JSONB NOT NULL DEFAULT '[]', ack_at BIGINT, ack_by TEXT)`);
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS cancel_reason TEXT");
+  // one courier for several deliveries: same batch_id, drop order batch_seq, group leaves the shop at batch_out
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_id TEXT");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_seq INT");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_out BIGINT");
   // timeline of every order for the preparation analysis: each status change, plus item and time edits,
   // with how busy the kitchen was at that moment. Written by a trigger so every path (board, WhatsApp, website) is covered.
   await pool.query(`
@@ -263,6 +268,7 @@ function rowToOrder(r) {
     waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review, appRef: r.app_ref || "",
     giftOut: r.gift_out || null, giftIn: r.gift_in || null, alertMuted: !!r.alert_muted,
     travelMin: r.travel_min == null ? null : Number(r.travel_min), dest: r.dest || null,
+    batchId: r.batch_id || null, batchSeq: r.batch_seq == null ? null : Number(r.batch_seq), batchOut: r.batch_out == null ? null : Number(r.batch_out),
   };
 }
 
@@ -464,7 +470,13 @@ const server = http.createServer(async (req, res) => {
         const later = new Date(Date.parse(opDayOf(Date.now())) + 2 * 864e5).toISOString().slice(0, 10);
         const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
         const seen = [...screens.values()].filter(x => Date.now() - x.at < 3 * 60e3);
-        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
+        // courier batches: route links for merged groups, and suggestions for today's open deliveries
+        const groups = {};
+        for (const o of rows) if (o.batch_id && o.status !== "cancelled") (groups[o.batch_id] = groups[o.batch_id] || []).push(o);
+        const batches = Object.fromEntries(Object.entries(groups).map(([k, g]) => { g.sort((a, b) => (a.batch_seq || 0) - (b.batch_seq || 0));
+          return [k, { nums: g.map(o => o.num), ids: g.map(o => String(o.id)), route: routeUrl(g.map(o => o.dest)) }]; }));
+        const batchTips = !from && day === opDayOf(Date.now()) ? await suggestBatches(rows).catch(e => (console.log("batch: " + e.message), [])) : [];
+        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), batches, batchTips, upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           alerts: (await pool.query("SELECT * FROM kitchen_alerts WHERE at > $1 ORDER BY at DESC LIMIT 15", [Date.now() - 24 * 3600e3])).rows.map(a => ({
             id: String(a.id), text: a.text, at: Number(a.at), fromDev: a.from_dev, fromName: a.from_name, heard: a.heard || [], ackAt: a.ack_at == null ? null : Number(a.ack_at), ackBy: a.ack_by })),
@@ -534,6 +546,23 @@ const server = http.createServer(async (req, res) => {
           await pool.query("UPDATE kitchen_alerts SET ack_at=$2, ack_by=$3 WHERE id=$1 AND ack_at IS NULL", [ka[1], Date.now(), name]);
           console.log(`alert: #${ka[1]} done on ${name}`);
         }
+        return send(res, 200, { ok: true });
+      }
+      if (p === "/api/board/batch" && req.method === "POST") {
+        // ids in drop order; out = when the courier leaves the shop
+        const b = await readBody(req, 2048);
+        const ids = (Array.isArray(b.ids) ? b.ids : []).map(String).filter(x => /^\d+$/.test(x)).slice(0, 4);
+        const out = Number(b.out);
+        if (ids.length < 2 || !out) return send(res, 400, { error: "batch" });
+        const bid = "B" + Date.now().toString(36);
+        for (let i = 0; i < ids.length; i++)
+          await pool.query("UPDATE orders SET batch_id=$1, batch_seq=$2, batch_out=$3, updated=$4 WHERE id=$5 AND status IN ('new','prep','ready')", [bid, i + 1, out, Date.now(), ids[i]]);
+        console.log(`batch: ${bid} orders ${ids.join("+")} leave ${new Date(out + 3 * 3600e3).toISOString().slice(11, 16)}`);
+        return send(res, 200, { batchId: bid });
+      }
+      const bd = p.match(/^\/api\/board\/batch\/(B[0-9a-z]+)$/);
+      if (bd && req.method === "DELETE") {
+        await pool.query("UPDATE orders SET batch_id=NULL, batch_seq=NULL, batch_out=NULL, updated=$2 WHERE batch_id=$1", [bd[1], Date.now()]);
         return send(res, 200, { ok: true });
       }
       if (p === "/api/board/settings" && req.method === "POST") {
@@ -606,6 +635,15 @@ const server = http.createServer(async (req, res) => {
         const { rows } = await pool.query(`UPDATE orders SET ${sets.join(",")} WHERE id=$${vals.length} RETURNING *`, vals);
         if (!rows.length) return send(res, 404, { error: "not_found" });
         if (before) await recordCorrection(pool, before, rows[0].items).catch(e => console.log("reader: " + e.message)); // the shop's fix teaches the reader
+        // one courier: «خرج» or «تم» on one order of a group moves the others with it; cancelling one takes it out of the group
+        if (rows[0].batch_id && ["out", "done"].includes(b.status))
+          await pool.query(`UPDATE orders SET status=$1, out_at=COALESCE(out_at,$2), updated=$2 WHERE batch_id=$3 AND id<>$4 AND status IN ('new','prep','ready'${b.status === "done" ? ",'out'" : ""})`,
+            [b.status, Date.now(), rows[0].batch_id, m[1]]);
+        if (rows[0].batch_id && b.status === "cancelled") {
+          await pool.query("UPDATE orders SET batch_id=NULL, batch_seq=NULL, batch_out=NULL WHERE id=$1", [m[1]]);
+          const left = await pool.query("SELECT id FROM orders WHERE batch_id=$1 AND status<>'cancelled'", [rows[0].batch_id]);
+          if (left.rows.length < 2) await pool.query("UPDATE orders SET batch_id=NULL, batch_seq=NULL, batch_out=NULL WHERE batch_id=$1", [rows[0].batch_id]);
+        }
         if (b.note !== undefined && await applyGift(pool, m[1], b.note).catch(() => null)) {
           const again = await pool.query("SELECT * FROM orders WHERE id=$1", [m[1]]);
           return send(res, 200, { order: rowToOrder(again.rows[0]) });
