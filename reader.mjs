@@ -73,15 +73,16 @@ export async function evalReader(pool, readFn, version, log = console.log) {
   const done = await pool.query("SELECT value FROM board_settings WHERE key='reader_eval'");
   if (done.rows.length && done.rows[0].value === version) return;
   const norm = x => String(x || "").split("\n").map(l => l.replace(/\s*—.*$/, "").replace(/\s*\(.*?\)\s*$/, "").trim()).filter(Boolean).sort().join("|");
-  let ok = 0;
+  let ok = 0, errors = 0;
   for (const e of ex) {
     try {
       const got = await readFn(e.transcript, e.order_id);
       if (norm(got) === norm(e.correct_items)) ok++;
       else log(`reader-eval: miss order ${e.order_id}: got «${String(got).replace(/\n/g, "، ")}» want «${e.correct_items.replace(/\n/g, "، ")}»`);
-    } catch (err) { log("reader-eval: " + err.message); }
+    } catch (err) { errors++; log("reader-eval: " + err.message); }
   }
   log(`reader-eval: ${ok}/${ex.length} past corrections read right (version ${version})`);
+  if (errors === ex.length) return; // the reader could not run at all: try again next start
   await pool.query("INSERT INTO board_settings (key,value) VALUES ('reader_eval',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [JSON.stringify(version)]);
 }
 

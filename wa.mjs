@@ -117,7 +117,8 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     // a forced tool call: the answer always comes back as structured fields, never as prose
-    body: JSON.stringify({ model: READER_MODEL, max_tokens: 1500, system, tools: [ORDER_TOOL], tool_choice: { type: "tool", name: "save_order" },
+    // some models refuse a forced tool call: ask for it ("auto") and insist in the prompt; a reply without the call is retried
+    body: JSON.stringify({ model: READER_MODEL, max_tokens: 1500, system: system + "\nيجب أن تكون إجابتك استدعاء أداة save_order فقط، بدون أي نص.", tools: [ORDER_TOOL], tool_choice: { type: "auto" },
       messages: [{ role: "user", content: transcript }] }),
     signal: AbortSignal.timeout(30000),
   });
