@@ -508,11 +508,14 @@ function render(){
   $("lateBar").innerHTML=lateNow.length?`<span>متأخر: ${lateNow.map(o=>"#"+o.num+" ("+Math.round((t-handoverAt(o))/60000)+" د)").join("، ")}</span><button type="button" data-act="muteall">🔕 إيقاف التنبيه</button>`:"";
   if(S.sound&&S.rendered&&lateNow.length&&(fresh||t-(S.lastAlarm||0)>=120000)){S.lastAlarm=t;alarm();}
   by.new.forEach(o=>{if(startAt(o)-t<20*60000)warm(startPhrase(o));});
-  /* "start now" alert (Hassan's clip): when an order reaches its start time, then every minute until «ابدأ التحضير» is pressed */
-  S.spoken=S.spoken||{};
+  /* "start now" alert (Hassan's clip): when an order reaches its start time, and once more a minute later — two times per order only
+     (Hassan 2026-11-05). The count is kept on the device so a reload does not start it again. */
+  if(!S.spoken){try{S.spoken=JSON.parse(localStorage.getItem("mg-spoken")||"{}");}catch(e){S.spoken={};}}
   if(S.sound&&S.ready&&S.dayOff===0){
-    const due=by.new.filter(o=>t>=startAt(o)&&(!S.spoken[o.id]||t-S.spoken[o.id].at>=60000));
-    if(due.length){due.forEach(o=>{S.spoken[o.id]={n:(S.spoken[o.id]?S.spoken[o.id].n:0)+1,at:t};});playStart();}
+    const due=by.new.filter(o=>t>=startAt(o)&&(!S.spoken[o.id]||(S.spoken[o.id].n<2&&t-S.spoken[o.id].at>=60000)));
+    if(due.length){due.forEach(o=>{S.spoken[o.id]={n:(S.spoken[o.id]?S.spoken[o.id].n:0)+1,at:t};});playStart();
+      for(const k in S.spoken)if(t-S.spoken[k].at>2*864e5)delete S.spoken[k];
+      try{localStorage.setItem("mg-spoken",JSON.stringify(S.spoken));}catch(e){}}
   }
   S.rendered=S.ready;
 }
