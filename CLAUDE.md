@@ -2,7 +2,7 @@
 
 Owner: Hassan (Riyadh); restaurant in Hofuf, Al-Ahsa. Talk to him in Arabic. Brand: «مينيقيش».
 Live: https://minigeesh-orders.onrender.com (Render service srv-dbipv0etlv9c73bdfvug, workspace tea-daiqbo9594qs739pn74g).
-Deploy: push branch `minigeesh-orders` — auto-deploy is on since 2026-11-05 (every push goes live; never push untested work there).
+Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows auto-deploy on, but pushes still do not deploy — checked 2026-11-05). Never push untested work there.
 
 ## Before every deploy
 1. `node build.mjs` then `npm test` — every real mistake is a check in `test/regressions.mjs`. A new mistake gets a new check first.
