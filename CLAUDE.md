@@ -28,6 +28,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - The day the customer says («بكرة / الجمعة / بعد بكرة») is taken in code (`dayHint`), not from the reader; a future day without a time defaults to 16:00 with the time marked missing.
 - An approval with nothing to cook never becomes a blank card: it shows a review notice; a confirmation of an existing booking (matched by WhatsApp number or the phone on the order) updates that booking.
 - Pickup orders that are ready wait on the customer: no late alarm.
+- The order form always offers «أقرب وقت» for today, also after the 12:30 am last slot (2026-11-06 00:35 Hassan could not add an order). Test the form at late-night and early-morning clock times.
 - «ابدأ التحضير الآن» clip plays twice per order only (at start time, and once a minute later), counted per device across reloads (Hassan 2026-11-05).
 - Cancelled orders and delivery fees are not sales.
 - Website orders stay hidden until the shop writes the approval phrase in WhatsApp.

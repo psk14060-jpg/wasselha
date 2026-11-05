@@ -785,9 +785,10 @@ function renderSlots(){
   const lead=(del?45:20)*60000;
   let s=off===0?Math.max(open,Math.ceil((t+lead)/1800000)*1800000):open;
   const out=[];
-  if(off===0&&t<close-lead)out.push({asap:true,ms:Math.max(t+(del?45:30)*60000,open)});
+  /* «أقرب وقت» is always there for today, even after 12:30 am (orders still come in late at night; 2026-11-06 00:35 the form had no time to pick) */
+  if(off===0)out.push({asap:true,ms:Math.max(t+(del?45:30)*60000,open)});
   for(;s<=close;s+=1800000)out.push({ms:s});
-  box.innerHTML=out.length?out.map(o=>`<button type="button" class="${o.asap?"asap":""}" data-ms="${o.ms}" aria-pressed="${pickedSlot&&pickedSlot.asap===!!o.asap&&(o.asap||pickedSlot.ms===o.ms)}">${o.asap?"أقرب وقت":(()=>{const c=fmtClock(o.ms);return `<span class="num">${c.slice(0,-2)}</span> ${c.slice(-1)}`;})()}</button>`).join(""):`<span class="qhint">انتهت أوقات اليوم، اختر بكرة.</span>`;
+  box.innerHTML=out.length?out.map(o=>`<button type="button" class="${o.asap?"asap":""}" data-ms="${o.ms}" aria-pressed="${pickedSlot&&pickedSlot.asap===!!o.asap&&(o.asap||pickedSlot.ms===o.ms)}">${o.asap?"أقرب وقت":(()=>{const c=fmtClock(o.ms);return `<span class="num">${c.slice(0,-2)}</span> ${c.slice(-1)}`;})()}</button>`).join(""):`<span class="qhint">اختر التاريخ.</span>`;
 }
 $("slots").addEventListener("click",e=>{const b=e.target.closest("button[data-ms]");if(!b)return;
   pickedSlot={ms:+b.dataset.ms,asap:b.classList.contains("asap")};const p=rParts(pickedSlot.ms);$("dueTime").value=pad(p.h)+":"+pad(p.mi);renderSlots();renderSum();});
