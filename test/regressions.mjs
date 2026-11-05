@@ -1,3 +1,4 @@
+import fs from "node:fs";
 // Every real mistake on the board becomes a check here. Run before every deploy: npm test
 import { subsidyFor, unifiedName } from "../subsidy.mjs";
 import assert from "node:assert/strict";
@@ -95,5 +96,12 @@ t("الملف المشترك: أصناف اللوحة تتحول للاسم ال
     ["قوارب 18 قطعة", names[3]], ["قوارب المسخن 18 قطعة", names[4]], ["تشكيلة قوارب أجبان ومسخن تشكيلة", names[5]], ["بيتزا 5 قطع", names[6]],
     ["تشكيلة 48 تكفي 8–10", names[7]], ["مشروب غازي علبة", names[8]], ["ميني كباجي بالكراميل 35 قطعة", names[9]], ["كباجي نوتيلا 10 قطع", null]])
     assert.equal(unifiedName(t, names), want, t);
+});
+t("2026-11-05: أنماط التقارير ما تغيّر شكل اللوحة (رأس اللوحة .bar وأزرار الأصناف .tile)", () => {
+  const css = fs.readFileSync(new URL("../src/board.style.css", import.meta.url), "utf8") + fs.readFileSync(new URL("../src/board.template.html", import.meta.url), "utf8");
+  for (const cls of ["bar", "tiles", "tile", "card", "muted"]) {
+    const bare = css.split("}").filter(r => new RegExp("(^|,)\\s*\\." + cls + "\\s*$").test(r.split("{")[0].trim())).length;
+    assert.ok(bare <= 1, "." + cls + " معرّف أكثر من مرة بدون نطاق");
+  }
 });
 console.log(`\n${n} checks passed`);

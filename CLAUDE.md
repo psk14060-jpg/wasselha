@@ -30,6 +30,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy doe
 - Cancelled orders and delivery fees are not sales.
 - Website orders stay hidden until the shop writes the approval phrase in WhatsApp.
 - Ask before building when Hassan says "discuss first".
+- 2026-11-05: report styles merged from another branch used bare class names (`.bar`, `.tile`) and broke the board header and the item tiles. Styles for a panel are always scoped under that panel (`.rep …`); a check in `npm test` fails on a class defined twice without scope. Compare screenshots with the previous build after any merge.
 
 ## Who decides what (Hassan, 2026-11-05)
 - The marketing agent decides prices, offers, loyalty and delivery subsidy; this agent builds them. Rule changes come from there.
