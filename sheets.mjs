@@ -12,7 +12,7 @@ const WRITER = "وكيل التشغيل";
 const T = { sales: "المبيعات اليومية", customers: "العملاء", cx: "الإلغاء والتأخير", notes: "ملاحظات", rules: "القواعد المعتمدة", menu: "المنيو والتكاليف" };
 const SRC = { web: "الموقع", wa: "واتساب", call: "اتصال", shop: "المحل", chefz: "ذا شيفز", hunger: "هنقرستيشن", keeta: "كيتا", ninja: "نينجا" };
 const APPS = ["chefz", "hunger", "keeta", "ninja"];
-const STATUS = { new: "جديد", prep: "تحضير", ready: "جاهز", out: "خرج", done: "تم", cancelled: "ملغي" };
+const STATUS = { pending: "بانتظار التأكيد", new: "جديد", prep: "تحضير", ready: "جاهز", out: "خرج", done: "تم", cancelled: "ملغي" };
 const LAPSE_DAYS = 21;
 const DAY = 864e5;
 
@@ -157,7 +157,7 @@ export async function syncDay(pool, day, log = console.log) {
     ls.forEach((l, i) => {
       const u = unifiedName(l.text, names);
       if (!u && l.qty != null) missing.add(l.text.replace(/\s*\(.*?\)\s*$/, ""));
-      sales.push([...base, u || l.text, l.qty ?? "", l.amount ?? "", i === 0 ? fee : "", STATUS[o.status] || o.status, o.type === "del" ? areaName(o.area) : ""]);
+      sales.push([...base, u || l.text.replace(/\s*\(.*?\)\s*$/, ""), l.qty ?? "", l.amount ?? "", i === 0 ? fee : "", STATUS[o.status] || o.status, o.type === "del" ? areaName(o.area) : ""]);
     });
     const sub = o.status === "cancelled" ? 0 : subsidyFor(rowO(o)).amount;
     if (sub) sales.push([...base, "دعم توصيل من المحل", 1, -sub, "", STATUS[o.status] || o.status, areaName(o.area)]);
