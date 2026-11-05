@@ -7,6 +7,7 @@ import { getMenu } from "./menu.mjs";
 import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
+import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,6 +16,8 @@ import { fileURLToPath } from "node:url";
 const { parseOrder } = new Function(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "src", "parser.js"), "utf8") + "\nreturn { parseOrder };")();
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
+// the order reader uses a stronger model: a wrong order costs far more than the few halalas per read
+const READER_MODEL = process.env.READER_MODEL || "claude-sonnet-5-5";
 
 const localPhone = waId => {
   const d = String(waId || "").replace(/\D/g, "");
@@ -78,7 +81,7 @@ export function extractMessages(body) {
   return out;
 }
 
-async function askClaude(apiKey, transcript, nowMs, previous, menu) {
+async function askClaude(apiKey, transcript, nowMs, previous, menu, examples = "") {
   const MENU = menu.products.map(p => `${p.id} | ${p.name}${p.flavors.length ? " | حشوات: " + p.flavors.join("، ") : ""} | الأحجام: ` +
     p.variants.map(v => `«${v.tag}» ${v.price} ريال`).join("، ")).join("\n");
   const AREAS = menu.areas.map(a => a.name).join("، ");
@@ -109,12 +112,12 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
 - day: عدد الأيام من اليوم إلى يوم التسليم: 0 اليوم، 1 بكرة أو غدًا، ولحجز يوم محدد (مثل «الجمعة» أو «٦ نوفمبر») احسب الأيام من تاريخ اليوم أعلاه. type=del إذا طلب توصيل أو ذكر حيًا للتوصيل، وpick إذا قال استلام أو يمر يأخذه، وunknown إن لم يتضح.
 - note: ملاحظة التحضير والدفع باختصار (مثل: حمّرها زيادة · الدفع شبكة عند الاستلام).
 - unclear: ما ينقص فعلًا لتجهيز الطلب في أقل من 10 كلمات، أو فارغ. لا تشرح افتراضاتك.
-- لا تخترع شيئًا لم يُذكر.`;
+- لا تخترع شيئًا لم يُذكر.${examples}`;
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com") + "/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     // a forced tool call: the answer always comes back as structured fields, never as prose
-    body: JSON.stringify({ model: MODEL, max_tokens: 1500, system, tools: [ORDER_TOOL], tool_choice: { type: "tool", name: "save_order" },
+    body: JSON.stringify({ model: READER_MODEL, max_tokens: 1500, system, tools: [ORDER_TOOL], tool_choice: { type: "tool", name: "save_order" },
       messages: [{ role: "user", content: transcript }] }),
     signal: AbortSignal.timeout(30000),
   });
@@ -334,7 +337,7 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   let p = null;
   if (apiKey) {
     for (let attempt = 1; attempt <= 2 && !p; attempt++) {
-      try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu); }
+      try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu, examplesText(await recentExamples(pool, 8).catch(() => []))); }
       catch (e) { log(`wa: claude failed (try ${attempt}) ` + String(e.message || e).slice(0, 200)); }
     }
   }
@@ -346,6 +349,7 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
       items: apiKey ? [{ text: "تعذّرت قراءة الأصناف — افتح المحادثة" }] : customerRows.map(r => ({ text: r.body })).slice(-6),
       unclear: apiKey ? "" : "راجع الأصناف في المحادثة" };
   }
+  placeUnknown(p, menu);
   fixSamosa(p, customerRows.map(r => r.body).join("\n"), menu);
   const saidDay = dayHint(customerRows.map(r => r.body), now);
   if (saidDay != null && saidDay !== (parseInt(p.day, 10) || 0)) { log(`wa: day set to +${saidDay} from the customer's words (reader said +${p.day || 0})`); p.day = saidDay; }
@@ -481,3 +485,13 @@ export async function handleWebhook(body, ctx) {
   return msgs.length;
 }
 export { askClaude, fixSamosa, shopQuote, priceOrder };
+
+// Read a stored transcript the way an approval does (used to score the reader against past corrections).
+export async function readTranscript(pool, transcript, orderId) {
+  const menu = await getMenu();
+  const ex = examplesText(await recentExamples(pool, 8, orderId));
+  const p = await askClaude(process.env.ANTHROPIC_API_KEY, transcript, Date.now(), null, menu, ex);
+  placeUnknown(p, menu);
+  fixSamosa(p, String(transcript).split("\n").filter(l => !l.startsWith("[المحل]")).join("\n"), menu);
+  return priceOrder(p, menu).items;
+}

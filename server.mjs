@@ -8,7 +8,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { migrateWa, handleWebhook, recentReviews } from "./wa.mjs";
+import { migrateWa, handleWebhook, recentReviews, readTranscript } from "./wa.mjs";
+import { migrateReader, recordCorrection, evalReader, readerVersion } from "./reader.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation } from "./location.mjs";
@@ -138,6 +139,14 @@ async function migrate() {
   await migratePrefs(pool);
   await migrateLocation(pool);
   await migrateBlacklist(pool);
+  await migrateReader(pool);
+  // seed the reader's lessons with the orders already corrected by hand (their current items are the right ones)
+  for (const [d, n] of [["2026-11-03", 8], ["2026-11-03", 12], ["2026-11-04", 13], ["2026-11-04", 29], ["2026-11-05", 2]]) {
+    const o = (await pool.query("SELECT id, raw_text, items FROM orders WHERE op_day=$1 AND num=$2 AND raw_text IS NOT NULL", [d, n])).rows[0];
+    if (o && !(await pool.query("SELECT 1 FROM reader_examples WHERE order_id=$1", [o.id])).rows.length)
+      await pool.query("INSERT INTO reader_examples (order_id, transcript, reader_items, correct_items, created) VALUES ($1,$2,'(صُحّح يدويًا)',$3,$4)",
+        [o.id, String(o.raw_text).slice(-1800), o.items, Date.now()]);
+  }
   // board settings shared by every device (e.g. alert sound on/off), and per-order alert mute
   await pool.query("CREATE TABLE IF NOT EXISTS board_settings (key TEXT PRIMARY KEY, value JSONB NOT NULL)");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS alert_muted BOOLEAN NOT NULL DEFAULT false");
@@ -516,7 +525,9 @@ const server = http.createServer(async (req, res) => {
         if (b.name !== undefined) put("name", clip(b.name, 60));
         if (b.phone !== undefined) put("phone", clip(b.phone, 20));
         if (b.area !== undefined) put("area", clip(b.area, 80));
-        if (b.items !== undefined) { const it = clip(b.items, 1500); if (!it) return send(res, 400, { error: "no_items" }); put("items", it); }
+        let before = null;
+        if (b.items !== undefined) { const it = clip(b.items, 1500); if (!it) return send(res, 400, { error: "no_items" }); put("items", it);
+          before = (await pool.query("SELECT id, source, items, raw_text FROM orders WHERE id=$1", [m[1]])).rows[0]; }
         if (b.note !== undefined) put("note", clip(b.note, 300));
         if (b.appRef !== undefined) put("app_ref", clip(b.appRef, 30) || null);
         if (b.total !== undefined) put("total", num(b.total));
@@ -546,6 +557,7 @@ const server = http.createServer(async (req, res) => {
         vals.push(m[1]);
         const { rows } = await pool.query(`UPDATE orders SET ${sets.join(",")} WHERE id=$${vals.length} RETURNING *`, vals);
         if (!rows.length) return send(res, 404, { error: "not_found" });
+        if (before) await recordCorrection(pool, before, rows[0].items).catch(e => console.log("reader: " + e.message)); // the shop's fix teaches the reader
         if (b.note !== undefined && await applyGift(pool, m[1], b.note).catch(() => null)) {
           const again = await pool.query("SELECT * FROM orders WHERE id=$1", [m[1]]);
           return send(res, 200, { order: rowToOrder(again.rows[0]) });
@@ -566,6 +578,9 @@ const server = http.createServer(async (req, res) => {
 migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
   startTasteJob(pool);
+  // score the reader against past corrections whenever its code changed
+  if (process.env.ANTHROPIC_API_KEY) setTimeout(() => evalReader(pool, (t, id) => readTranscript(pool, t, id),
+    readerVersion(fs.readFileSync(path.join(__dirname, "wa.mjs"), "utf8") + fs.readFileSync(path.join(__dirname, "reader.mjs"), "utf8"))).catch(e => console.log("reader-eval: " + e.message)), 120e3);
   // on start, log the taste report (no names or phones) so it can be read from the service logs
   tasteReport(pool, 15).then(r => {
     console.log(`taste-report: from=${r.from} days=${r.analysedDays} orders=${r.orders}`);

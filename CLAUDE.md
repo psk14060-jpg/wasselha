@@ -10,6 +10,12 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy doe
 3. Sound changes: test with the browser's default autoplay policy and a real tap (touch), not with autoplay forced on.
 4. After deploy: read the startup log lines (`day:`, `chat:`, `fix:`, `sound:`, `screen:`) to confirm.
 
+## The reader (WhatsApp → order)
+- Model: `READER_MODEL` (default claude-sonnet-5-5). Prompt in `wa.mjs` `askClaude`.
+- After the reader, code decides: `placeUnknown` (glossary in `reader.mjs`), `fixSamosa`, `dayHint`, exact size composition, shop-quote check, no blank cards.
+- Every time the shop edits the items of a WhatsApp order, `recordCorrection` saves (chat → right items) in `reader_examples`; the 8 latest are given to the reader as examples.
+- On each deploy that changes `wa.mjs`/`reader.mjs`, `evalReader` re-reads the last 20 corrected chats and logs `reader-eval: X/Y` plus each miss. A drop means the change made the reader worse.
+
 ## Lessons (each cost Hassan a wrong order or a broken screen)
 - A global text replace turned the audio helper into a function calling itself: every sound failed silently for a day. Never mass-replace code; re-read the result.
 - Media files Hassan sends are used whole. Do not cut "noise" out of a clip without asking (the airport clip's speech was cut).

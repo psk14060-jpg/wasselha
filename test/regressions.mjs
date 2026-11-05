@@ -5,6 +5,7 @@ const { fixSamosa, shopQuote, priceOrder, dayHint } = await import("../wa.mjs");
 const { getMenu } = await import("../menu.mjs");
 const { findPoint } = await import("../location.mjs");
 const { keyOf } = await import("../blacklist.mjs");
+const { placeUnknown } = await import("../reader.mjs");
 const menu = await getMenu();
 let n = 0; const t = (name, fn) => { fn(); n++; console.log("✓", name); };
 
@@ -58,5 +59,13 @@ t("2026-11-05 #3: «طلبك اليوم او بكرة» ← «بكرى الجم�
   assert.equal(dayHint(["ابيه اليوم"], thu), 0);
   assert.equal(dayHint(["الأحد الساعة ٥"], thu), 3);
   assert.equal(dayHint(["ابي ٢٠ كباجي"], thu), null);
+});
+t("القاموس: كلمات العملاء اللي ما عرفها القارئ تتحول لأصناف المنيو", () => {
+  const cases = [["كباجا 20 حبه", "kabajiSugar", "20 قطعة"], ["٤٢ حبة مني معجنات كب", "cupPizza", "42 قطعة"], ["30 فطاير", "triangles", "30 قطعة"],
+    ["١٠ نوتيلا", "kabajiNutella", "10 قطع"], ["قوارب مسخن", "musakhanBoats18", "18 قطعة"], ["ميني كباجي كراميل", "miniCaramel", "35 قطعة"]];
+  for (const [text, id, tag] of cases) {
+    const p = { items: [{ text }] }; placeUnknown(p, menu);
+    assert.equal(p.items[0].id, id, text); assert.equal(p.items[0].tag, tag, text);
+  }
 });
 console.log(`\n${n} checks passed`);
