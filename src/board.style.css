@@ -173,4 +173,5 @@ textarea{resize:vertical;min-height:84px}
 .moremenu{position:absolute;inset-inline-end:0;top:calc(100% + 6px);z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:6px;display:grid;gap:4px;min-width:200px}
 .moremenu button{border:0;background:transparent;text-align:start;padding:10px 12px;border-radius:8px;font:inherit;font-weight:600;color:var(--ink);cursor:pointer}
 .moremenu button:hover{background:var(--surface-2)}
+.revbar{margin-top:10px;padding:12px;border-radius:10px;background:var(--warn);color:#fff;font-weight:700;font-size:15px;text-align:center}
 </style>

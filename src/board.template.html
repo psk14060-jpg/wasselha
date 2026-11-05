@@ -114,6 +114,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
   </div>
   <div id="banner" class="banner" hidden></div>
   <div id="blBar" class="blbar" role="alert" hidden></div>
+  <div id="revBar" class="revbar" role="alert" hidden></div>
   <button type="button" id="updBar" class="updbar" hidden onclick="location.reload()">⟳ فيه تحديث جديد للوحة — اضغط هنا للتحديث (وبعدها المس الشاشة لتشغيل الصوت)</button>
   <button type="button" id="soundWarn" class="soundwarn" hidden>🔇 التنبيه الصوتي مطفأ — اضغط هنا لتشغيله</button>
   <div id="lateBar" class="latebar" role="alert" hidden></div>
@@ -292,6 +293,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
+    S.reviews=j.reviews||[];
     S.black=Object.fromEntries((j.blacklist||[]).map(x=>[x.key,x])); S.blackList=j.blacklist||[]; S.blackPings=j.blackPings||[];
     $("offline").hidden=true; render();
   }catch(e){
@@ -447,6 +449,8 @@ function render(){
   /* the system can suspend sound (screen off, another app); say so until someone taps */
   if(S.master&&S.unlocked&&actx&&actx.state!=="running"){$("soundWarn").hidden=false;$("soundWarn").textContent="🔇 الصوت متوقف على هذا الجهاز — المس الشاشة لتشغيله";}
   else if(S.master&&S.unlocked)$("soundWarn").hidden=true;
+  const rv=S.reviews||[]; $("revBar").hidden=!rv.length;
+  $("revBar").textContent=rv.length?"⚠ اعتمدتوا محادثة بدون أصناف — ما انضاف طلب. افتحوا المحادثة: "+rv.map(x=>x.phone+(x.name?" ("+x.name+")":"")).join("، "):"";
   const bp=S.blackPings||[]; $("blBar").hidden=!bp.length;
   $("blBar").textContent=bp.length?"🚫 عميل في القائمة السوداء يراسلكم الآن: "+bp.map(x=>"0"+x.key.slice(3)+(x.name?" ("+x.name+")":"")).join("، ")+" — ما جاء لطلب سابق، اعتذروا منه":"";
   $("lateBar").hidden=!lateNow.length;

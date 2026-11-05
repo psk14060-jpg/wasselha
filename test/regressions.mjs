@@ -1,7 +1,7 @@
 // Every real mistake on the board becomes a check here. Run before every deploy: npm test
 import assert from "node:assert/strict";
 process.env.SITE_URL = "http://127.0.0.1:1"; // use the built-in menu snapshot
-const { fixSamosa, shopQuote, priceOrder } = await import("../wa.mjs");
+const { fixSamosa, shopQuote, priceOrder, dayHint } = await import("../wa.mjs");
 const { getMenu } = await import("../menu.mjs");
 const { findPoint } = await import("../location.mjs");
 const { keyOf } = await import("../blacklist.mjs");
@@ -49,5 +49,14 @@ t("2026-11-04: رقم العميل نفسه بأي صيغة (05 / 966 / أرقا
   assert.equal(keyOf(null, "0501112223"), "966501112223");
   assert.equal(keyOf("966501112223"), "966501112223");
   assert.equal(keyOf(null, "٠٥٠١١١٢٢٢٣"), "966501112223");
+});
+t("2026-11-05 #3: «طلبك اليوم او بكرة» ← «بكرى الجمعه» = بكرة (مو اليوم)", () => {
+  const thu = Date.parse("2026-11-05T10:04:00+03:00"); // Thursday
+  assert.equal(dayHint(["أرجو تأكيد الطلب", "بكرى الجمعه", "هذا"], thu), 1);
+  assert.equal(dayHint(["ابيه بكرة"], thu), 1);
+  assert.equal(dayHint(["بعد بكرة العصر"], thu), 2);
+  assert.equal(dayHint(["ابيه اليوم"], thu), 0);
+  assert.equal(dayHint(["الأحد الساعة ٥"], thu), 3);
+  assert.equal(dayHint(["ابي ٢٠ كباجي"], thu), null);
 });
 console.log(`\n${n} checks passed`);

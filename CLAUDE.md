@@ -18,6 +18,8 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (auto-deploy doe
 - Neighbourhood fee from the website list wins over distance zones; a website order keeps the fee it was sent with.
 - Drive time = map minutes + 5. No ×1.4, no extra courier minutes.
 - One customer = one phone number in any format (05…, 9665…, Arabic digits). Before creating an order, look for the same customer's open order (WhatsApp, website, or typed on the board) and update it instead.
+- The day the customer says («بكرة / الجمعة / بعد بكرة») is taken in code (`dayHint`), not from the reader; a future day without a time defaults to 16:00 with the time marked missing.
+- An approval with nothing to cook never becomes a blank card: it shows a review notice; a confirmation of an existing booking (matched by WhatsApp number or the phone on the order) updates that booking.
 - Pickup orders that are ready wait on the customer: no late alarm.
 - Cancelled orders and delivery fees are not sales.
 - Website orders stay hidden until the shop writes the approval phrase in WhatsApp.

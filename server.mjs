@@ -8,7 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { migrateWa, handleWebhook } from "./wa.mjs";
+import { migrateWa, handleWebhook, recentReviews } from "./wa.mjs";
 import { getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation } from "./location.mjs";
@@ -114,6 +114,14 @@ async function migrate() {
     console.log("fix: 2026-11-05 #1 merged into #2");
   }
   await pool.query(`UPDATE orders SET area=REPLACE(area, '<UNKNOWN> · ', '') WHERE op_day>='2026-11-04' AND area LIKE '%<UNKNOWN>%'`);
+  // one-off (2026-11-05): #3 today was the customer confirming her Friday booking MG-8K4SU («بكرى الجمعه»), not a new order
+  const fx3 = await pool.query(`UPDATE orders SET status='cancelled', note=TRIM(BOTH ' ·' FROM note || ' · تأكيد لحجز الجمعة MG-8K4SU'), updated=$1
+    WHERE op_day='2026-11-05' AND num=3 AND items='(راجع المحادثة)' AND status<>'cancelled'`, [Date.now()]);
+  if (fx3.rowCount) {
+    await pool.query(`UPDATE orders SET status='new', note=TRIM(BOTH ' ·' FROM note || ' · العميلة أكدت الجمعة بالواتساب (٥ نوفمبر)'), updated=$1
+      WHERE ref='MG-8K4SU' AND status='cancelled'`, [Date.now()]);
+    console.log("fix: 2026-11-05 #3 → Friday booking MG-8K4SU restored");
+  }
   // requested by Hassan (2026-11-04): Maryam's pickup was cancelled by mistake instead of marked no-show — put her number on the list
   for (const o of (await pool.query(`SELECT id, num, phone, wa_from FROM orders WHERE op_day='2026-11-04' AND name LIKE '%مريم%' AND status='cancelled'`)).rows) {
     const k = keyOf(o.wa_from, o.phone);
@@ -440,7 +448,7 @@ const server = http.createServer(async (req, res) => {
         const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
         const seen = [...screens.values()].filter(x => Date.now() - x.at < 3 * 60e3);
         return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), upcoming: up.rows[0].n, ver: BOARD_VER, screens: seen,
-          blacklist: await listBlacklist(pool), blackPings: recentPings(),
+          blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
       }
       if (p === "/api/board/taste" && req.method === "GET") {

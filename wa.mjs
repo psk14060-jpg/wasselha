@@ -157,6 +157,11 @@ function asapDue(p, nowMs, menu) {
   return nowMs + (25 + drive) * 60e3;
 }
 function dueFromParsed(p, nowMs, menu) {
+  const ahead = Math.max(0, Math.min(60, parseInt(p?.day, 10) || 0));
+  if (ahead > 0 && (!p.time || p.time === "asap")) {
+    const d = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3);
+    return { due: Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + ahead, 16, 0) - 3 * 3600e3, timeKnown: false };
+  }
   if (!p || !p.time || p.time === "asap") return { due: asapDue(p, nowMs, menu), timeKnown: p?.time === "asap" };
   const mm = String(p.time).match(/^(\d{1,2}):(\d{2})$/);
   if (!mm) return { due: asapDue(p, nowMs, menu), timeKnown: false };
@@ -166,6 +171,11 @@ function dueFromParsed(p, nowMs, menu) {
   if (h * 60 + mi < 6 * 60) ms += 864e5;
   return { due: ms, timeKnown: true };
 }
+
+// approved chats with nothing to cook: shown on every board for an hour so someone opens the chat
+const reviews = new Map();
+function noteReview(from, phone, name, text) { reviews.set(from, { phone, name, text, at: Date.now() }); }
+export function recentReviews() { const out = []; for (const [k, v] of reviews) { if (Date.now() - v.at > 3600e3) reviews.delete(k); else out.push(v); } return out; }
 
 // The owner's approval phrase. Only a message from the business containing it turns a chat into a kitchen order.
 const APPROVAL = /تم\s*(ال)?([اأ]عتماد|تأكيد|تاكيد)\s*(ال)?طلب/;
@@ -202,6 +212,24 @@ function priceOrder(p, menu) {
 }
 
 // Build the order from this customer's chat, triggered by the owner's approval message.
+// The day the customer said in the chat ("بكرة", "الجمعة", "بعد بكرة", "اليوم"); the last mention wins. null if none.
+const WEEKDAYS = [/الأحد|الاحد/, /الإثنين|الاثنين|الاثنينن/, /الثلاثاء|الثلاثا|الثلوث/, /الأربعاء|الاربعاء|الاربعا/, /الخميس/, /الجمعة|الجمعه|جمعة|جمعه/, /السبت/];
+export function dayHint(lines, nowMs) {
+  const today = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3).getUTCDay();
+  let found = null;
+  for (const raw of lines) {
+    const t = String(raw || "");
+    const hits = [];
+    const push = (re, d) => { const m = t.match(re); if (m) hits.push([m.index, d]); };
+    push(/بعد\s*(?:بكرة|بكره|بكرا|بكرى|باكر|غد)/, 2);
+    if (!/بعد\s*(?:بكرة|بكره|بكرا|بكرى|باكر|غد)/.test(t)) push(/بكرة|بكره|بكرا|بكرى|باكر|باچر|غدا|غداً|بالغد/, 1);
+    push(/اليوم|الحين|الحين|الآن|الان/, 0);
+    WEEKDAYS.forEach((re, wd) => push(re, (wd - today + 7) % 7));
+    if (hits.length) found = hits.sort((a, b) => a[0] - b[0])[hits.length - 1][1];
+  }
+  return found;
+}
+
 // «سمبوسة» in a customer's mouth means the baked triangles; only fried / southern / whole-wheat means the southern samosa.
 // The pieces asked for are rebuilt from the triangle sizes (30 pieces = one box of 30), with the fillings kept as one note.
 function fixSamosa(p, customerText, menu) {
@@ -278,8 +306,9 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   // last order already approved for this customer (website or WhatsApp) that the kitchen has not finished
   const prev = (await pool.query(
     `SELECT id, num, items, source, ref, confirmed_at, status, type, area, due, note, delivery_fee FROM orders
-      WHERE wa_from=$1 AND status IN ('new','prep','ready','out') AND (confirmed_at > $2 OR due > $3) AND id<>$4 ORDER BY confirmed_at DESC LIMIT 1`,
-    [m.from, now - APPROVAL_WINDOW, now - 3 * 3600e3, manual ? manual.id : 0])).rows[0]; // also a booking approved earlier (e.g. last night) that is still to come
+      WHERE (wa_from=$1 OR (wa_from IS NULL AND $5 <> '' AND phone LIKE '%' || $5 || '%'))
+        AND status IN ('new','prep','ready','out') AND (confirmed_at > $2 OR due > $3) AND id<>$4 ORDER BY confirmed_at DESC LIMIT 1`,
+    [m.from, now - APPROVAL_WINDOW, now - 3 * 3600e3, manual ? manual.id : 0, String(phone || "").replace(/^0/, "")])).rows[0]; // also a booking approved earlier (e.g. last night) that is still to come
   const since = prev && !pendingWeb ? Math.max(Number(prev.confirmed_at) - 5000, now - 24 * 3600e3) : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
   const all = (await pool.query(
     `SELECT id, dir, body, at FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
@@ -318,6 +347,8 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
       unclear: apiKey ? "" : "راجع الأصناف في المحادثة" };
   }
   fixSamosa(p, customerRows.map(r => r.body).join("\n"), menu);
+  const saidDay = dayHint(customerRows.map(r => r.body), now);
+  if (saidDay != null && saidDay !== (parseInt(p.day, 10) || 0)) { log(`wa: day set to +${saidDay} from the customer's words (reader said +${p.day || 0})`); p.day = saidDay; }
   const built = priceOrder(p, menu);
   const quoted = shopQuote(rows);
   const matchedItems = (Array.isArray(p.items) ? p.items : []).filter(it => it && typeof it === "object" && it.id).length;
@@ -326,6 +357,11 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     if (!extra) return `nothing_new_for #${prev.num}`;
     await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · واتساب: ' || $2), updated=$3 WHERE id=$1`, [prev.id, extra, Date.now()]);
     return `merged_note_into #${prev.num}`;
+  }
+  if (!prev && !matchedItems && !(Array.isArray(p.items) && p.items.some(it => it && it.text && !/تعذّرت/.test(it.text)))) {
+    // nothing to cook: flag the chat for the shop instead of putting an empty card on the board
+    noteReview(m.from, localPhone(m.from), m.name || "", customerRows.slice(-3).map(r => r.body).join(" · ").slice(0, 160));
+    return "approved_without_items (flagged for review)";
   }
   if (prev && prev.source === "web") {
     // the same items as the website order already approved: nothing new
