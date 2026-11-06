@@ -703,11 +703,14 @@ migrate().then(() => {
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   // 2026-11-06 Hassan: add two The Chefz orders from his screenshot (once each, by the app's order number)
   (async () => {
-    for (const [ref, hm] of [["301360153", "16:13"], ["301369155", "17:50"]]) {
+    for (const [ref, hm, items, total, status] of [
+      ["301360153", "16:13", "1 × تشكيلة قوارب أجبان ومسخن تشكيلة — 59 ريال", 59, "new"],
+      ["301369155", "17:50", "1 × تشكيلة قوارب أجبان ومسخن تشكيلة — 59 ريال", 59, "new"],
+      ["301374451", "16:08", "1 × قوارب 18 قطعة — 49.5 ريال", 49.5, "prep"],    // already «قيد التحضير» in The Chefz
+    ]) {
       if ((await pool.query("SELECT 1 FROM orders WHERE app_ref=$1", [ref])).rows.length) continue;
-      const o = await insertOrder({ source: "chefz", type: "del", status: "new", name: "ذا شفز", phone: "", area: "",
-        items: "1 × تشكيلة قوارب أجبان ومسخن تشكيلة — 59 ريال", total: 59, deliveryFee: null, note: "",
-        due: Date.parse(`2026-11-06T${hm}:00+03:00`), appRef: ref });
+      const o = await insertOrder({ source: "chefz", type: "del", status, name: "ذا شفز", phone: "", area: "",
+        items, total, deliveryFee: null, note: "", due: Date.parse(`2026-11-06T${hm}:00+03:00`), appRef: ref });
       console.log(`fix: added The Chefz ${ref} as #${o.num} due ${hm}`);
     }
   })().catch(e => console.log("fix: chefz " + e.message));
