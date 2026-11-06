@@ -133,16 +133,21 @@ t("2026-11-06 الملف المشترك: اسم واحد لكل حي (المطر
   assert.equal(canonArea("📍 1.1 كم (توصيل 5 ر)"), "");
 });
 const cap = await import("../capacity.mjs");
-t("2026-11-06 «أقرب وقت» من أرقام المطبخ الفعلية: خطّين، وكل طلب وقت تجهيزه حسب حجمه", () => {
-  const M = cap.DEFAULT_MODEL, T = Date.parse("2026-11-06T17:00:00+03:00"), hm = ms => new Date(ms + 3 * 3600e3).toISOString().slice(11, 16);
-  const open = cap.openOf(T);
-  assert.equal(hm(cap.nextReady([], T, cap.svcMin(1, M), M, open)), "17:14");                                    // empty kitchen
-  const two = cap.kitchenJobs([{ status: "prep", prepAt: T, boxes: 1 }, { status: "prep", prepAt: T, boxes: 1 }], T, M);
-  assert.equal(hm(cap.nextReady(two, T, cap.svcMin(1, M), M, open)), "17:28");                                   // both lanes busy until 17:14
-  const one = cap.kitchenJobs([{ status: "prep", prepAt: T, boxes: 1 }], T, M);
-  assert.equal(hm(cap.nextReady(one, T, cap.svcMin(1, M), M, open)), "17:14");                                   // one lane free
+t("2026-11-06 «أقرب وقت»: فرن وقلي يشتغلون بنفس الوقت، القلي يكبر مع عدد الحبات", () => {
+  const M = { oven: { lanes: 2, min: 14 }, fry: { lanes: 1, base: 6, per10: 3 } }, T = Date.parse("2026-11-06T17:00:00+03:00");
+  const hm = ms => new Date(ms + 3 * 3600e3).toISOString().slice(11, 16), open = cap.openOf(T), none = { oven: [], fry: [] };
+  assert.deepEqual(cap.stationsOf("1 × كب بيتزا 42 قطعة\n2 × كباجي جبن سائل برشة سكر 20 قطعة"), { oven: true, fryPcs: 40 });
+  assert.equal(hm(cap.nextReady(none, T, "1 × قوارب 18 قطعة", M, open)), "17:14");                         // oven only
+  assert.equal(hm(cap.nextReady(none, T, "1 × كباجي جبن سائل برشة سكر 20 قطعة", M, open)), "17:12");       // 6 + 3×2
+  assert.equal(hm(cap.nextReady(none, T, "1 × قوارب 18 قطعة\n1 × كباجي جبن سائل برشة سكر 40 قطعة", M, open)), "17:18"); // max(14, 18)
+  const fryBusy = cap.kitchenJobs([{ status: "prep", prepAt: T, items: "1 × كباجي جبن سائل برشة سكر 20 قطعة" }], T, M);
+  assert.equal(hm(cap.nextReady(fryBusy, T, "1 × قوارب 18 قطعة", M, open)), "17:14");                      // fryer busy does not slow the oven
+  assert.equal(hm(cap.nextReady(fryBusy, T, "1 × كباجي جبن سائل برشة سكر 20 قطعة", M, open)), "17:24");    // waits for the fryer
   const noon = Date.parse("2026-11-06T12:30:00+03:00");
-  assert.equal(hm(cap.nextReady([], noon, cap.svcMin(1, M), M, cap.openOf(noon))), "15:30");                    // before opening
-  assert.equal(cap.boxesOf("2 × قوارب 18 قطعة — 70 ريال\n1 × كب بيتزا 42 قطعة — 65 ريال"), 3);
+  assert.equal(hm(cap.nextReady(none, noon, "1 × قوارب 18 قطعة", M, cap.openOf(noon))), "15:30");
+});
+t("2026-11-06: صفحة اللوحة المبنية تشتغل (ملفات مشتركة بنفس أسماء المتغيرات كسرت الصفحة كاملة)", () => {
+  const h = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  for (const [, code] of h.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(code);
 });
 console.log(`\n${n} checks passed`);

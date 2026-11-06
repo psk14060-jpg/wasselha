@@ -9,7 +9,7 @@ import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 import { subsidyFor } from "./subsidy.mjs";
-import { nextReady, openOf, kitchenJobs, svcMin, boxesOf } from "./capacity.mjs";
+import { nextReady, openOf, kitchenJobs } from "./capacity.mjs";
 import { kitchenModel } from "./kitchenstats.mjs";
 
 import fs from "node:fs";
@@ -159,8 +159,7 @@ const ORDER_TOOL = {
 // «أقرب وقت»: the first moment a kitchen lane is free long enough for this order (measured prep times, capacity.mjs),
 // after the orders already waiting or in preparation; plus the drive for a delivery
 function asapDue(p, nowMs, menu, jobs) {
-  const boxes = Array.isArray(p?.items) ? p.items.reduce((s, it) => s + (it && it.id ? Math.max(1, parseInt(it.qty, 10) || 1) : 0), 0) : boxesOf(p?.itemsText);
-  const ready = nextReady(jobs || [], nowMs, svcMin(boxes || 1, kitchenModel()), kitchenModel(), openOf(nowMs));
+  const ready = nextReady(jobs || { oven: [], fry: [] }, nowMs, p?.itemsText || "", kitchenModel(), openOf(nowMs));
   if (!p || p.type !== "del") return ready;
   const norm = x => String(x || "").replace(/\s+/g, " ").trim();
   const a = menu && menu.areas.find(x => norm(x.name) === norm(p.area));
@@ -180,7 +179,7 @@ export async function busyReady(pool, nowMs, menu) {
       const a = menu && menu.areas.find(x => norm(x.name) === norm(o.area));
       readyAt -= (o.travel_min != null ? Number(o.travel_min) + 5 : a && a.minutes != null ? Math.ceil(a.minutes) + 5 : 20) * 60e3;
     }
-    return { status: o.status, prepAt: o.prep_at == null ? null : Number(o.prep_at), readyAt, boxes: boxesOf(o.items) };
+    return { status: o.status, prepAt: o.prep_at == null ? null : Number(o.prep_at), readyAt, items: o.items };
   }), nowMs, kitchenModel());
 }
 function dueFromParsed(p, nowMs, menu, jobs) {
@@ -387,6 +386,7 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (saidDay != null && saidDay !== (parseInt(p.day, 10) || 0)) { log(`wa: day set to +${saidDay} from the customer's words (reader said +${p.day || 0})`); p.day = saidDay; }
   const built = priceOrder(p, menu);
   const quoted = shopQuote(rows);
+  p.itemsText = built.items; // «أقرب وقت» depends on what is cooked (oven / fryer)
   const { due, timeKnown } = dueFromParsed(p, now, menu, await busyReady(pool, now, menu));
   // a time the customer said in the chat after the order was made (e.g. website order #3 of 2026-11-06: site 4:30, chat 3:30) wins
   const chatTime = async (o, why) => {

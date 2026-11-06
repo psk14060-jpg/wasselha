@@ -777,13 +777,13 @@ $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(
 
 /* time slots every 30 minutes, like the website */
 let pickedSlot=null;
-/* «أقرب وقت»: the first moment a kitchen lane is free long enough for this order (measured prep times from the server,
-   capacity.mjs), after the orders waiting or in preparation; plus the drive for a delivery */
+/* «أقرب وقت»: oven and fryer queues (capacity.mjs, measured times from the server); the order is ready when its slower
+   station is; plus the drive for a delivery */
 function asapMs(del){const t=now(),M=S.kitchenModel||DEFAULT_MODEL;
   const open=S.dayOff===0?(S.orders||[]).filter(o=>["new","prep"].includes(o.status)&&!(S.editing&&o.id===S.editing.id)):[];
-  const jobs=kitchenJobs(open.map(o=>({status:o.status,prepAt:o.prepAt,readyAt:handoverAt(o),boxes:boxesOf(o.items)})),t,M);
-  const boxes=textMode()?boxesOf($("items").value):cart.reduce((s,l)=>s+l.qty,0);
-  return nextReady(jobs,t,svcMin(boxes||1,M),M,openOf(t))+(del?travelMin({type:"del",source:segVal("srcSeg"),area:areaName(),travelMin:null})*60000:0);}
+  const jobs=kitchenJobs(open.map(o=>({status:o.status,prepAt:o.prepAt,readyAt:handoverAt(o),items:o.items})),t,M);
+  const items=textMode()?$("items").value:cart.map(l=>`${l.qty} × ${l.name} ${l.tag}`).join("\n");
+  return nextReady(jobs,t,items,M,openOf(t))+(del?travelMin({type:"del",source:segVal("srcSeg"),area:areaName(),travelMin:null})*60000:0);}
 function renderSlots(){
   const box=$("slots"); const off=selOff(); const del=segVal("typeSeg")==="del";
   if(isNaN(off)){box.innerHTML=`<span class="qhint">اختر التاريخ.</span>`;return;}

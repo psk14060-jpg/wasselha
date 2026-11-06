@@ -1,18 +1,21 @@
 // What the kitchen really does, from the board's own status history (order_events): how long an order takes from
 // «ابدأ التحضير» to «جاهز», how that grows with the order size, how many orders are in preparation at once,
 // and how many get ready per hour. Used to schedule «أقرب وقت» on real numbers, not on a guess.
-import { DEFAULT_MODEL } from "./capacity.mjs";
+import { DEFAULT_MODEL, stationsOf } from "./capacity.mjs";
 const APPS = ["chefz", "hunger", "keeta", "ninja"];
 
 // The kitchen model used for «أقرب وقت»: lanes = orders usually in preparation at once (p75), time per order size = p75
 // of the measured «ابدأ التحضير» → «جاهز» (a size with fewer than 10 measures keeps the default). Rebuilt at start and nightly.
 let MODEL = DEFAULT_MODEL;
 export const kitchenModel = () => MODEL;
+// oven: p75 time of oven-only orders; fry: least-squares line of time against pieces on fry-only orders, never faster
+// than frying alone (2 min / 10 pieces, Hassan), shifted up by the p75 of what the line misses; lanes: p75 of how many
+// orders of that station were in preparation when one started. A station with fewer than 8 measures keeps the default.
 export function modelFrom(k) {
-  const pick = (key, def) => k.bySize[key] && k.bySize[key].n >= 10 ? Math.ceil(k.bySize[key].p75) : def;
-  const big = k.bySize["3-4"] && k.bySize["3-4"].n >= 10 ? Math.ceil(k.bySize["3-4"].p75) : DEFAULT_MODEL.svc[3];
-  return { lanes: Math.max(1, Math.min(4, k.inPrepAtOnce.p75 || DEFAULT_MODEL.lanes)), svc: { 1: pick("1", DEFAULT_MODEL.svc[1]), 2: pick("2", DEFAULT_MODEL.svc[2]), 3: big },
-    basis: `${k.prep.n} طلب من ${k.from}` };
+  const D = DEFAULT_MODEL, st = k.stations || {};
+  const oven = st.oven && st.oven.n >= 8 ? { lanes: Math.max(1, Math.min(4, st.oven.lanesP75 || D.oven.lanes)), min: Math.ceil(st.oven.p75) } : D.oven;
+  const fry = st.fry && st.fry.n >= 8 ? { lanes: Math.max(1, Math.min(3, st.fry.lanesP75 || D.fry.lanes)), base: Math.max(0, Math.ceil(st.fry.base)), per10: Math.max(2, Math.round(st.fry.per10 * 10) / 10) } : D.fry;
+  return { oven, fry, basis: `${k.prep.n} طلب من ${k.from} (فرن ${st.oven ? st.oven.n : 0}، قلي ${st.fry ? st.fry.n : 0})` };
 }
 export function startKitchenModel(pool, log = console.log) {
   const run = () => kitchenStats(pool).then(k => { MODEL = modelFrom(k); log("kitchen: " + JSON.stringify(k)); log("kitchen-model: " + JSON.stringify(MODEL)); })
@@ -57,6 +60,32 @@ export async function kitchenStats(pool, days = 14) {
   const readyTimes = [...byId.values()].map(o => o.ev.ready).filter(Boolean).sort((a, b) => a - b);
   const gaps = []; for (let i = 1; i < readyTimes.length; i++) { const g = (readyTimes[i] - readyTimes[i - 1]) / 60e3; if (g > 0 && g < 60) gaps.push(g); }
 
+  // per station (oven-only orders / fry-only orders), from the same measures
+  const ovenRuns = [], fryRuns = [];
+  for (const o of byId.values()) {
+    const p = o.ev.prep, r = o.ev.ready; if (!(p && r && r > p)) continue;
+    const m = (r - p) / 60e3; if (m < 1 || m > 180) continue;
+    const s = stationsOf(o.items);
+    if (s.oven && !s.fryPcs) ovenRuns.push({ p, r, m });
+    else if (s.fryPcs && !s.oven) fryRuns.push({ p, r, m, pcs: s.fryPcs });
+  }
+  const lanesAt = runs => q(runs.map(a => runs.filter(b => b.p <= a.p && b.r > a.p).length), .75);
+  let fit = null;
+  if (fryRuns.length >= 3) {
+    const n = fryRuns.length, xs = fryRuns.map(f => f.pcs / 10), ys = fryRuns.map(f => f.m);
+    const mx = xs.reduce((a, b) => a + b) / n, my = ys.reduce((a, b) => a + b) / n;
+    const sxx = xs.reduce((a, x) => a + (x - mx) ** 2, 0);
+    let per10 = sxx ? xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) / sxx : 2;
+    per10 = Math.max(2, per10);
+    const base0 = my - per10 * mx;
+    const miss = q(ys.map((y, i) => y - (base0 + per10 * xs[i])), .75) || 0;
+    fit = { n, base: Math.round((base0 + miss) * 10) / 10, per10: Math.round(per10 * 10) / 10, lanesP75: lanesAt(fryRuns),
+      pcsP50: q(fryRuns.map(f => f.pcs), .5), p50: Math.round(q(ys, .5) * 10) / 10 };
+  }
+  const stations = {
+    oven: ovenRuns.length ? { n: ovenRuns.length, p50: Math.round(q(ovenRuns.map(o => o.m), .5) * 10) / 10, p75: Math.round(q(ovenRuns.map(o => o.m), .75) * 10) / 10, lanesP75: lanesAt(ovenRuns) } : null,
+    fry: fit,
+  };
   const r1 = x => x == null ? null : Math.round(x * 10) / 10;
   return {
     from, orders: byId.size, measured, pressedTogether,
@@ -66,5 +95,6 @@ export async function kitchenStats(pool, days = 14) {
     inPrepAtOnce: { p50: q(conc, .5), p75: q(conc, .75), p90: q(conc, .9), max: conc.length ? Math.max(...conc) : null },
     readyPerHour: { hours: hours.length, p50: q(hours, .5), p75: q(hours, .75), max: hours.length ? Math.max(...hours) : null },
     gapBetweenReady: { n: gaps.length, p25: r1(q(gaps, .25)), p50: r1(q(gaps, .5)) },
+    stations,
   };
 }
