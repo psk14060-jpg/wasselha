@@ -1,7 +1,24 @@
 // What the kitchen really does, from the board's own status history (order_events): how long an order takes from
 // «ابدأ التحضير» to «جاهز», how that grows with the order size, how many orders are in preparation at once,
 // and how many get ready per hour. Used to schedule «أقرب وقت» on real numbers, not on a guess.
+import { DEFAULT_MODEL } from "./capacity.mjs";
 const APPS = ["chefz", "hunger", "keeta", "ninja"];
+
+// The kitchen model used for «أقرب وقت»: lanes = orders usually in preparation at once (p75), time per order size = p75
+// of the measured «ابدأ التحضير» → «جاهز» (a size with fewer than 10 measures keeps the default). Rebuilt at start and nightly.
+let MODEL = DEFAULT_MODEL;
+export const kitchenModel = () => MODEL;
+export function modelFrom(k) {
+  const pick = (key, def) => k.bySize[key] && k.bySize[key].n >= 10 ? Math.ceil(k.bySize[key].p75) : def;
+  const big = k.bySize["3-4"] && k.bySize["3-4"].n >= 10 ? Math.ceil(k.bySize["3-4"].p75) : DEFAULT_MODEL.svc[3];
+  return { lanes: Math.max(1, Math.min(4, k.inPrepAtOnce.p75 || DEFAULT_MODEL.lanes)), svc: { 1: pick("1", DEFAULT_MODEL.svc[1]), 2: pick("2", DEFAULT_MODEL.svc[2]), 3: big },
+    basis: `${k.prep.n} طلب من ${k.from}` };
+}
+export function startKitchenModel(pool, log = console.log) {
+  const run = () => kitchenStats(pool).then(k => { MODEL = modelFrom(k); log("kitchen: " + JSON.stringify(k)); log("kitchen-model: " + JSON.stringify(MODEL)); })
+    .catch(e => log("kitchen: " + e.message));
+  setTimeout(run, 45e3); setInterval(run, 24 * 3600e3);
+}
 const q = (a, p) => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1) + 0.5))]; };
 const boxes = items => String(items || "").split("\n").reduce((s, l) => { const m = l.match(/^\s*(\d+)\s*×/); return s + (m ? +m[1] : 0); }, 0);
 

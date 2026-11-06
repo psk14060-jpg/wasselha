@@ -9,6 +9,8 @@ import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 import { subsidyFor } from "./subsidy.mjs";
+import { nextReady, openOf, kitchenJobs, svcMin, boxesOf } from "./capacity.mjs";
+import { kitchenModel } from "./kitchenstats.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -154,22 +156,42 @@ const ORDER_TOOL = {
 
 // "As soon as possible" (or no time said): pickup in 30 minutes; delivery after preparation plus the drive,
 // using the same numbers as the board (25 min prep, the area's map minutes + 5 for the road; unknown area 20).
-function asapDue(p, nowMs, menu) {
-  if (!p || p.type !== "del") return nowMs + 30 * 60e3;
+// «أقرب وقت»: the first moment a kitchen lane is free long enough for this order (measured prep times, capacity.mjs),
+// after the orders already waiting or in preparation; plus the drive for a delivery
+function asapDue(p, nowMs, menu, jobs) {
+  const boxes = Array.isArray(p?.items) ? p.items.reduce((s, it) => s + (it && it.id ? Math.max(1, parseInt(it.qty, 10) || 1) : 0), 0) : boxesOf(p?.itemsText);
+  const ready = nextReady(jobs || [], nowMs, svcMin(boxes || 1, kitchenModel()), kitchenModel(), openOf(nowMs));
+  if (!p || p.type !== "del") return ready;
   const norm = x => String(x || "").replace(/\s+/g, " ").trim();
   const a = menu && menu.areas.find(x => norm(x.name) === norm(p.area));
   const drive = a && a.minutes != null ? Math.ceil(a.minutes) + 5 : 20;
-  return nowMs + (25 + drive) * 60e3;
+  return ready + drive * 60e3;
 }
-function dueFromParsed(p, nowMs, menu) {
+// what the kitchen is committed to today: orders waiting (to be ready by their time) or in preparation
+export async function busyReady(pool, nowMs, menu) {
+  const day = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3).toISOString().slice(0, 10);
+  const { rows } = await pool.query(`SELECT o.type, o.source, o.area, o.due, o.travel_min, o.status, o.items,
+      (SELECT min(e.at) FROM order_events e WHERE e.order_id=o.id AND e.to_status='prep') AS prep_at
+    FROM orders o WHERE o.op_day=$1 AND o.status IN ('new','prep')`, [day]);
+  const norm = x => String(x || "").replace(/\s*\(.*\)\s*$/, "").replace(/\s+/g, " ").trim();
+  return kitchenJobs(rows.map(o => {
+    let readyAt = Number(o.due);
+    if (o.type === "del" && !["chefz", "hunger", "keeta", "ninja"].includes(o.source)) {
+      const a = menu && menu.areas.find(x => norm(x.name) === norm(o.area));
+      readyAt -= (o.travel_min != null ? Number(o.travel_min) + 5 : a && a.minutes != null ? Math.ceil(a.minutes) + 5 : 20) * 60e3;
+    }
+    return { status: o.status, prepAt: o.prep_at == null ? null : Number(o.prep_at), readyAt, boxes: boxesOf(o.items) };
+  }), nowMs, kitchenModel());
+}
+function dueFromParsed(p, nowMs, menu, jobs) {
   const ahead = Math.max(0, Math.min(60, parseInt(p?.day, 10) || 0));
   if (ahead > 0 && (!p.time || p.time === "asap")) {
     const d = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3);
     return { due: Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + ahead, 16, 0) - 3 * 3600e3, timeKnown: false };
   }
-  if (!p || !p.time || p.time === "asap") return { due: asapDue(p, nowMs, menu), timeKnown: p?.time === "asap" };
+  if (!p || !p.time || p.time === "asap") return { due: asapDue(p, nowMs, menu, jobs), timeKnown: p?.time === "asap" };
   const mm = String(p.time).match(/^(\d{1,2}):(\d{2})$/);
-  if (!mm) return { due: asapDue(p, nowMs, menu), timeKnown: false };
+  if (!mm) return { due: asapDue(p, nowMs, menu, jobs), timeKnown: false };
   const h = +mm[1], mi = +mm[2];
   const opDay = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3);          // Riyadh operating day
   let ms = Date.UTC(opDay.getUTCFullYear(), opDay.getUTCMonth(), opDay.getUTCDate() + Math.max(0, Math.min(60, parseInt(p.day, 10) || 0)), h, mi) - 3 * 3600e3;
@@ -307,6 +329,14 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (pendingWeb) {
     await pool.query(`UPDATE orders SET status='new', confirmed_at=$2, updated=$2 WHERE id=$1`, [pendingWeb.id, now]);
     log(`wa: website order #${pendingWeb.num} approved`);
+    // the customer chose «أقرب وقت» on the website: the kitchen's first free 10-minute gap from now (it may have been sent hours ago)
+    const w = (await pool.query("SELECT type, area, raw, items FROM orders WHERE id=$1", [pendingWeb.id])).rows[0];
+    if (w && w.raw && w.raw.asap) {
+      const menu0 = await getMenu();
+      const d = asapDue({ type: w.type, area: String(w.area || "").replace(/\s*\(.*\)\s*$/, ""), itemsText: w.items }, now, menu0, await busyReady(pool, now, menu0));
+      await pool.query("UPDATE orders SET due=$2 WHERE id=$1", [pendingWeb.id, d]);
+      log(`wa: website order #${pendingWeb.num} «أقرب وقت» → ${new Date(d + 3 * 3600e3).toISOString().slice(11, 16)}`);
+    }
   }
   // last order already approved for this customer (website or WhatsApp) that the kitchen has not finished
   const prev = (await pool.query(
@@ -357,10 +387,21 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (saidDay != null && saidDay !== (parseInt(p.day, 10) || 0)) { log(`wa: day set to +${saidDay} from the customer's words (reader said +${p.day || 0})`); p.day = saidDay; }
   const built = priceOrder(p, menu);
   const quoted = shopQuote(rows);
+  const { due, timeKnown } = dueFromParsed(p, now, menu, await busyReady(pool, now, menu));
+  // a time the customer said in the chat after the order was made (e.g. website order #3 of 2026-11-06: site 4:30, chat 3:30) wins
+  const chatTime = async (o, why) => {
+    if (!timeKnown || !p.time || p.time === "asap" || !["new", "prep"].includes(o.status) || Math.abs(due - Number(o.due)) < 5 * 60e3) return false;
+    const hm = ms => new Date(ms + 3 * 3600e3).toISOString().slice(11, 16);
+    await pool.query("UPDATE orders SET due=$2, note=TRIM(BOTH ' ·' FROM $3 || ' · ' || COALESCE(note,'')), updated=$4 WHERE id=$1",
+      [o.id, due, `⏰ الوقت من الواتساب ${hm(due)} (كان ${hm(Number(o.due))})`, Date.now()]);
+    log(`wa: #${o.num} time ${hm(Number(o.due))} → ${hm(due)} from the chat (${why})`);
+    return true;
+  };
   const matchedItems = (Array.isArray(p.items) ? p.items : []).filter(it => it && typeof it === "object" && it.id).length;
   if (prev && !matchedItems) {
+    const timed = await chatTime(prev, "no new items");
     const extra = String(p.note || "").trim().slice(0, 160);
-    if (!extra) return `nothing_new_for #${prev.num}`;
+    if (!extra) return timed ? `time_changed #${prev.num}` : `nothing_new_for #${prev.num}`;
     await pool.query(`UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · واتساب: ' || $2), updated=$3 WHERE id=$1`, [prev.id, extra, Date.now()]);
     return `merged_note_into #${prev.num}`;
   }
@@ -373,9 +414,8 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     // the same items as the website order already approved: nothing new
     const norm2 = x => String(x).replace(/\s*—.*$/, "").replace(/\s+/g, " ").trim();
     const a = built.items.split("\n").map(norm2).sort().join("|"), b = String(prev.items).split("\n").map(norm2).sort().join("|");
-    if (a === b) return `same_as_website_order #${prev.num}`;
+    if (a === b) { await chatTime(prev, "same items as the website"); return `same_as_website_order #${prev.num}`; }
   }
-  const { due, timeKnown } = dueFromParsed(p, now, menu);
   if (manual) {
     // keep the items the shop typed; take delivery, notes and location from the chat
     const extra = [customerRows.some(r => /^\[صورة\]/.test(r.body)) ? "📷 العميل أرسل صورة" : "", p.note].filter(Boolean).join(" · ");

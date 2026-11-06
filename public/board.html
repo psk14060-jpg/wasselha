@@ -656,6 +656,61 @@ function subsidyFor(o, rule = SUBSIDY_RULE) {
   return { amount, pay: +o.total - amount, why };
 }
 
+// «أقرب وقت» on the kitchen's real numbers (Hassan 2026-11-06: "build the queue on the data you have, not on my words").
+// From the board's own status history (kitchenstats.mjs, 207 orders 23 Oct – 6 Nov 2026):
+//   «ابدأ التحضير» → «جاهز»: 1 box 11 min (p75 14), 2 boxes 12 (p75 17), 3+ boxes 20 (p75 22);
+//   orders in preparation at the same time: usually 1–2 (p75 2, max 5).
+// So the kitchen is two lanes; each order takes its size's p75 time. An as-soon-as-possible order gets the first moment
+// a lane is free long enough for it, after the orders already waiting or in preparation. The server recomputes the
+// model from the history every night and sends it to the board; DEFAULT_MODEL is the measured start.
+// Shared by the server and the board (built into the page): plain JavaScript, no imports.
+
+const DEFAULT_MODEL = { lanes: 2, svc: { 1: 14, 2: 17, 3: 22 }, basis: "207 طلب 23 أكتوبر – 6 نوفمبر" };
+const OPEN_MIN = 15 * 60 + 30;  // first orders ready at 3:30 pm
+
+const boxesOf = items => String(items || "").split("\n").reduce((s, l) => { const m = String(l).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).match(/^\s*(\d+)\s*×/); return s + (m ? +m[1] : 0); }, 0);
+function svcMin(boxes, model) { const s = (model || DEFAULT_MODEL).svc; return boxes <= 1 ? s[1] : boxes === 2 ? s[2] : s[3]; }
+
+// most jobs running at the same moment inside [a, b)
+function peak(jobs, a, b) {
+  const pts = [];
+  for (const j of jobs) { const s = Math.max(j.start, a), e = Math.min(j.end, b); if (s < e) { pts.push([s, 1]); pts.push([e, -1]); } }
+  pts.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+  let n = 0, m = 0; for (const [, d] of pts) { n += d; m = Math.max(m, n); } return m;
+}
+
+// jobs: [{start, end}] (ms) the kitchen is already committed to. Returns the earliest ready time for a new order of
+// `minutes`, starting no earlier than `from` (and finishing no earlier than opening).
+function nextReady(jobs, from, minutes, model, openMs) {
+  const K = (model || DEFAULT_MODEL).lanes, s = minutes * 60e3;
+  let t = Math.max(from, (openMs || 0) - s);
+  const js = (jobs || []).filter(j => j.end > t);
+  for (let guard = 0; guard < 300; guard++) {
+    if (peak(js, t, t + s) < K) return Math.ceil((t + s) / 60e3) * 60e3;
+    const ends = js.map(j => j.end).filter(e => e > t);
+    if (!ends.length) break;
+    t = Math.min(...ends);
+  }
+  return Math.ceil((t + s) / 60e3) * 60e3;
+}
+
+// what the kitchen is committed to, from open orders: {status, prepAt, readyAt (when it must be ready), boxes}
+function kitchenJobs(orders, now, model) {
+  const out = [];
+  for (const o of orders) {
+    const m = svcMin(o.boxes, model) * 60e3;
+    if (o.status === "prep") { const st = o.prepAt || now; out.push({ start: st, end: Math.max(st + m, now + 2 * 60e3) }); }
+    else if (o.status === "new") { const st = Math.max(o.readyAt - m, now); out.push({ start: st, end: st + m }); }
+  }
+  return out;
+}
+
+// 3:30 pm of the operating day (it starts at 06:00 Riyadh) that `ms` belongs to
+function openOf(ms) {
+  const d = new Date(ms + 3 * 3600e3 - 6 * 3600e3);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - 3 * 3600e3 + OPEN_MIN * 60e3;
+}
+
 
 /* ---------- time (Riyadh, UTC+3 all year; operating day starts 06:00) ---------- */
 let skew=0; /* server clock minus device clock */
@@ -733,7 +788,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
-    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[];
+    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[]; if(j.kitchenModel)S.kitchenModel=j.kitchenModel;
     { const before=new Map((S.alerts||[]).map(a=>[a.id,a])); S.alerts=j.alerts||[];
       /* sender: tell them when the kitchen pressed «تم» */
       S.alerts.forEach(a=>{const b=before.get(a.id);if(b&&!b.ackAt&&a.ackAt&&a.fromDev===DEV.id)toast("✅ المطبخ ضغط «تم» على تنبيهك: "+a.text.slice(0,40));});
@@ -1180,6 +1235,13 @@ $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(
 
 /* time slots every 30 minutes, like the website */
 let pickedSlot=null;
+/* «أقرب وقت»: the first moment a kitchen lane is free long enough for this order (measured prep times from the server,
+   capacity.mjs), after the orders waiting or in preparation; plus the drive for a delivery */
+function asapMs(del){const t=now(),M=S.kitchenModel||DEFAULT_MODEL;
+  const open=S.dayOff===0?(S.orders||[]).filter(o=>["new","prep"].includes(o.status)&&!(S.editing&&o.id===S.editing.id)):[];
+  const jobs=kitchenJobs(open.map(o=>({status:o.status,prepAt:o.prepAt,readyAt:handoverAt(o),boxes:boxesOf(o.items)})),t,M);
+  const boxes=textMode()?boxesOf($("items").value):cart.reduce((s,l)=>s+l.qty,0);
+  return nextReady(jobs,t,svcMin(boxes||1,M),M,openOf(t))+(del?travelMin({type:"del",source:segVal("srcSeg"),area:areaName(),travelMin:null})*60000:0);}
 function renderSlots(){
   const box=$("slots"); const off=selOff(); const del=segVal("typeSeg")==="del";
   if(isNaN(off)){box.innerHTML=`<span class="qhint">اختر التاريخ.</span>`;return;}
@@ -1190,7 +1252,7 @@ function renderSlots(){
   let s=off===0?Math.max(open,Math.ceil((t+lead)/1800000)*1800000):open;
   const out=[];
   /* «أقرب وقت» is always there for today, even after 12:30 am (orders still come in late at night; 2026-11-06 00:35 the form had no time to pick) */
-  if(off===0)out.push({asap:true,ms:Math.max(t+(del?45:30)*60000,open)});
+  if(off===0)out.push({asap:true,ms:asapMs(del)});
   for(;s<=close;s+=1800000)out.push({ms:s});
   box.innerHTML=out.length?out.map(o=>`<button type="button" class="${o.asap?"asap":""}" data-ms="${o.ms}" aria-pressed="${pickedSlot&&pickedSlot.asap===!!o.asap&&(o.asap||pickedSlot.ms===o.ms)}">${o.asap?"أقرب وقت":(()=>{const c=fmtClock(o.ms);return `<span class="num">${c.slice(0,-2)}</span> ${c.slice(-1)}`;})()}</button>`).join(""):`<span class="qhint">اختر التاريخ.</span>`;
 }
@@ -1271,7 +1333,7 @@ $("sheet").addEventListener("submit",async e=>{
   if(del&&!areaName()){err.textContent="اختر حي التوصيل.";err.hidden=false;return;}
   const [h,mi]=tm.split(":").map(Number); const off=selOff();
   if(isNaN(off)||off<0){err.textContent="اختر تاريخ الحجز.";err.hidden=false;return;}
-  const due=pickedSlot?pickedSlot.ms:dueFrom(off,h,mi);
+  const due=pickedSlot?(pickedSlot.asap?asapMs(del):pickedSlot.ms):dueFrom(off,h,mi); /* «أقرب وقت» recomputed now (area or queue may have changed) */
   const area=del?areaName()+(deliveryFee?` (توصيل ${deliveryFee} ر)`:""):"";
   const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),area,items,total,note:$("note").value.trim(),due};
   if(deliveryFee!=null)data.deliveryFee=deliveryFee;

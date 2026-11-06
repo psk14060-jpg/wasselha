@@ -252,6 +252,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
 <script>
 {{PARSER}}
 {{SUBSIDY}}
+{{CAPACITY}}
 
 /* ---------- time (Riyadh, UTC+3 all year; operating day starts 06:00) ---------- */
 let skew=0; /* server clock minus device clock */
@@ -329,7 +330,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
-    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[];
+    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[]; if(j.kitchenModel)S.kitchenModel=j.kitchenModel;
     { const before=new Map((S.alerts||[]).map(a=>[a.id,a])); S.alerts=j.alerts||[];
       /* sender: tell them when the kitchen pressed «تم» */
       S.alerts.forEach(a=>{const b=before.get(a.id);if(b&&!b.ackAt&&a.ackAt&&a.fromDev===DEV.id)toast("✅ المطبخ ضغط «تم» على تنبيهك: "+a.text.slice(0,40));});
@@ -776,6 +777,13 @@ $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(
 
 /* time slots every 30 minutes, like the website */
 let pickedSlot=null;
+/* «أقرب وقت»: the first moment a kitchen lane is free long enough for this order (measured prep times from the server,
+   capacity.mjs), after the orders waiting or in preparation; plus the drive for a delivery */
+function asapMs(del){const t=now(),M=S.kitchenModel||DEFAULT_MODEL;
+  const open=S.dayOff===0?(S.orders||[]).filter(o=>["new","prep"].includes(o.status)&&!(S.editing&&o.id===S.editing.id)):[];
+  const jobs=kitchenJobs(open.map(o=>({status:o.status,prepAt:o.prepAt,readyAt:handoverAt(o),boxes:boxesOf(o.items)})),t,M);
+  const boxes=textMode()?boxesOf($("items").value):cart.reduce((s,l)=>s+l.qty,0);
+  return nextReady(jobs,t,svcMin(boxes||1,M),M,openOf(t))+(del?travelMin({type:"del",source:segVal("srcSeg"),area:areaName(),travelMin:null})*60000:0);}
 function renderSlots(){
   const box=$("slots"); const off=selOff(); const del=segVal("typeSeg")==="del";
   if(isNaN(off)){box.innerHTML=`<span class="qhint">اختر التاريخ.</span>`;return;}
@@ -786,7 +794,7 @@ function renderSlots(){
   let s=off===0?Math.max(open,Math.ceil((t+lead)/1800000)*1800000):open;
   const out=[];
   /* «أقرب وقت» is always there for today, even after 12:30 am (orders still come in late at night; 2026-11-06 00:35 the form had no time to pick) */
-  if(off===0)out.push({asap:true,ms:Math.max(t+(del?45:30)*60000,open)});
+  if(off===0)out.push({asap:true,ms:asapMs(del)});
   for(;s<=close;s+=1800000)out.push({ms:s});
   box.innerHTML=out.length?out.map(o=>`<button type="button" class="${o.asap?"asap":""}" data-ms="${o.ms}" aria-pressed="${pickedSlot&&pickedSlot.asap===!!o.asap&&(o.asap||pickedSlot.ms===o.ms)}">${o.asap?"أقرب وقت":(()=>{const c=fmtClock(o.ms);return `<span class="num">${c.slice(0,-2)}</span> ${c.slice(-1)}`;})()}</button>`).join(""):`<span class="qhint">اختر التاريخ.</span>`;
 }
@@ -867,7 +875,7 @@ $("sheet").addEventListener("submit",async e=>{
   if(del&&!areaName()){err.textContent="اختر حي التوصيل.";err.hidden=false;return;}
   const [h,mi]=tm.split(":").map(Number); const off=selOff();
   if(isNaN(off)||off<0){err.textContent="اختر تاريخ الحجز.";err.hidden=false;return;}
-  const due=pickedSlot?pickedSlot.ms:dueFrom(off,h,mi);
+  const due=pickedSlot?(pickedSlot.asap?asapMs(del):pickedSlot.ms):dueFrom(off,h,mi); /* «أقرب وقت» recomputed now (area or queue may have changed) */
   const area=del?areaName()+(deliveryFee?` (توصيل ${deliveryFee} ر)`:""):"";
   const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),area,items,total,note:$("note").value.trim(),due};
   if(deliveryFee!=null)data.deliveryFee=deliveryFee;

@@ -132,4 +132,17 @@ t("2026-11-06 الملف المشترك: اسم واحد لكل حي (المطر
   assert.equal(canonArea("📍 حي النايفية · 1.1 كم (توصيل مجاني)"), "النايفية");
   assert.equal(canonArea("📍 1.1 كم (توصيل 5 ر)"), "");
 });
+const cap = await import("../capacity.mjs");
+t("2026-11-06 «أقرب وقت» من أرقام المطبخ الفعلية: خطّين، وكل طلب وقت تجهيزه حسب حجمه", () => {
+  const M = cap.DEFAULT_MODEL, T = Date.parse("2026-11-06T17:00:00+03:00"), hm = ms => new Date(ms + 3 * 3600e3).toISOString().slice(11, 16);
+  const open = cap.openOf(T);
+  assert.equal(hm(cap.nextReady([], T, cap.svcMin(1, M), M, open)), "17:14");                                    // empty kitchen
+  const two = cap.kitchenJobs([{ status: "prep", prepAt: T, boxes: 1 }, { status: "prep", prepAt: T, boxes: 1 }], T, M);
+  assert.equal(hm(cap.nextReady(two, T, cap.svcMin(1, M), M, open)), "17:28");                                   // both lanes busy until 17:14
+  const one = cap.kitchenJobs([{ status: "prep", prepAt: T, boxes: 1 }], T, M);
+  assert.equal(hm(cap.nextReady(one, T, cap.svcMin(1, M), M, open)), "17:14");                                   // one lane free
+  const noon = Date.parse("2026-11-06T12:30:00+03:00");
+  assert.equal(hm(cap.nextReady([], noon, cap.svcMin(1, M), M, cap.openOf(noon))), "15:30");                    // before opening
+  assert.equal(cap.boxesOf("2 × قوارب 18 قطعة — 70 ريال\n1 × كب بيتزا 42 قطعة — 65 ريال"), 3);
+});
 console.log(`\n${n} checks passed`);

@@ -18,6 +18,7 @@ import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } fro
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { startSheetJob, sheetState } from "./sheets.mjs";
 import { suggestBatches, routeUrl } from "./batch.mjs";
+import { startKitchenModel, kitchenModel } from "./kitchenstats.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -171,6 +172,13 @@ async function migrate() {
     }
     await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_free_areas_1105', 'true')");
   }
+  // 2026-11-06 #3 (website MG-J4K76): the customer asked for 3:30 pm in the chat, the board had the website's 4:30
+  if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_1106_3'")).rows.length) {
+    const r = await pool.query("UPDATE orders SET due=$1, note=TRIM(BOTH ' ·' FROM '⏰ العميل طلب 3:30 في الواتساب (كان 4:30) · ' || COALESCE(note,'')), updated=$2 WHERE op_day='2026-11-06' AND num=3 AND ref='MG-J4K76' AND status IN ('new','prep') RETURNING num",
+      [Date.parse("2026-11-06T15:30:00+03:00"), Date.now()]);
+    console.log("fix: 2026-11-06 #3 due 16:30 → 15:30 rows=" + r.rowCount);
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_1106_3', 'true')");
+  }
   // same, for open orders that only have a map point (no neighbourhood typed), e.g. #37 of 2026-11-05: look the point up
   if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_free_areas_1105b'")).rows.length) {
     const { rows } = await pool.query("SELECT id, num, area, dest, delivery_fee FROM orders WHERE type='del' AND status IN ('new','prep','ready','out') AND op_day >= '2026-11-05' AND COALESCE(delivery_fee,0) > 0 AND dest IS NOT NULL");
@@ -294,6 +302,7 @@ function rowToOrder(r) {
     waFrom: r.wa_from || null, rawText: r.raw_text || "", needsReview: !!r.needs_review, appRef: r.app_ref || "",
     giftOut: r.gift_out || null, giftIn: r.gift_in || null, alertMuted: !!r.alert_muted,
     travelMin: r.travel_min == null ? null : Number(r.travel_min), dest: r.dest || null,
+    prepAt: r.prep_at == null ? null : Number(r.prep_at),
     batchId: r.batch_id || null, batchSeq: r.batch_seq == null ? null : Number(r.batch_seq), batchOut: r.batch_out == null ? null : Number(r.batch_out),
   };
 }
@@ -491,7 +500,7 @@ const server = http.createServer(async (req, res) => {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || (from && !/^\d{4}-\d{2}-\d{2}$/.test(from))) return send(res, 400, { error: "day" });
         const { rows } = from
           ? await pool.query("SELECT * FROM orders WHERE op_day>=$1 ORDER BY due ASC", [from])
-          : await pool.query("SELECT * FROM orders WHERE op_day=$1 ORDER BY due ASC", [day]);
+          : await pool.query("SELECT o.*, (SELECT min(e.at) FROM order_events e WHERE e.order_id=o.id AND e.to_status='prep') AS prep_at FROM orders o WHERE o.op_day=$1 ORDER BY o.due ASC", [day]);
         const st = await pool.query("SELECT value FROM board_settings WHERE key='sound'");
         const later = new Date(Date.parse(opDayOf(Date.now())) + 2 * 864e5).toISOString().slice(0, 10);
         const up = await pool.query("SELECT count(*)::int AS n FROM orders WHERE op_day>=$1 AND status NOT IN ('cancelled','dismissed','done')", [later]);
@@ -502,7 +511,7 @@ const server = http.createServer(async (req, res) => {
         const batches = Object.fromEntries(Object.entries(groups).map(([k, g]) => { g.sort((a, b) => (a.batch_seq || 0) - (b.batch_seq || 0));
           return [k, { nums: g.map(o => o.num), ids: g.map(o => String(o.id)), route: routeUrl(g.map(o => o.dest)) }]; }));
         const batchTips = !from && day === opDayOf(Date.now()) ? await suggestBatches(rows).catch(e => (console.log("batch: " + e.message), [])) : [];
-        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), batches, batchTips, upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
+        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), batches, batchTips, kitchenModel: kitchenModel(), upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           alerts: (await pool.query("SELECT * FROM kitchen_alerts WHERE at > $1 ORDER BY at DESC LIMIT 15", [Date.now() - 24 * 3600e3])).rows.map(a => ({
             id: String(a.id), text: a.text, at: Number(a.at), fromDev: a.from_dev, fromName: a.from_name, heard: a.heard || [], ackAt: a.ack_at == null ? null : Number(a.ack_at), ackBy: a.ack_by })),
@@ -691,7 +700,7 @@ migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
-  setTimeout(() => import("./kitchenstats.mjs").then(m => m.kitchenStats(pool)).then(k => console.log("kitchen: " + JSON.stringify(k))).catch(e => console.log("kitchen: " + e.message)), 45e3);
+  startKitchenModel(pool); // measured prep times → «أقرب وقت»
   // score the reader against past corrections whenever its code changed
   if (process.env.ANTHROPIC_API_KEY) setTimeout(() => evalReader(pool, (t, id) => readTranscript(pool, t, id),
     readerVersion(fs.readFileSync(path.join(__dirname, "wa.mjs"), "utf8") + fs.readFileSync(path.join(__dirname, "reader.mjs"), "utf8"))).catch(e => console.log("reader-eval: " + e.message)), 120e3);
