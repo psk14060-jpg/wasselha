@@ -893,7 +893,9 @@ function ticket(o,t){
       <span class="no">#${esc(o.num)}</span>${o.opDay&&o.opDay!==dayKey(0)&&o.opDay!==dayKey(1)?`<span class="refchip daychip">${esc(fmtDay(o.opDay))}</span>`:""}
       <span class="src ${o.source==="web"?"wa":esc(o.source)}">${SRC[o.source]||""}${o.appRef?" "+esc(o.appRef):""}</span>
       <span class="type ${o.type==="del"?"del":""}">${isApp(o.source)?"مندوب التطبيق":o.type==="del"?"توصيل":"استلام"}</span>
-      <div class="due ${u.cls}"><span class="t">${fmtClock(o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t):(awaitsCustomer(o)?"بانتظار العميل":(travelMin(o)?"يطلع مع المندوب "+fmtClock(handoverAt(o))+" · ":"")+minsLeftText(u.mins))}</span></div>
+      ${(()=>{/* our deliveries: the big time is when it leaves the shop with the courier, the customer's time is the small line (Hassan 2026-11-06) */
+        const leaves=travelMin(o)&&o.status!=="out";
+        return `<div class="due ${u.cls}"><span class="t">${fmtClock(leaves?handoverAt(o):o.due)}</span><span class="left">${o.status==="out"?"خرج "+fmtClock(o.outAt||t)+" · يوصل العميل "+fmtClock(o.due):(awaitsCustomer(o)?"بانتظار العميل":(leaves?"يوصل العميل "+fmtClock(o.due)+" · ":"")+minsLeftText(u.mins))}</span></div>`;})()}
     </div>
     ${o.status==="new"?(t>=startAt(o)?`<div class="startnow">ابدأ الآن</div>`:`<div class="startat">ابدأ التحضير <span class="num">${fmtClock(startAt(o))}</span>${travelMin(o)?` <small>(توصيل ${travelMin(o)} د)</small>`:""}</div>`):""}
     ${(o.name||o.phone||o.ref)?`<div class="who">${o.name?`<strong>${esc(o.name)}</strong>`:""}${o.phone?`<span class="mono">${esc(o.phone)}</span>`:""}${o.ref?`<span class="refchip">${esc(o.ref)}</span>`:""}</div>`:""}
