@@ -701,6 +701,10 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
+  // one-off for Hassan (2026-11-06): yesterday's boats and cup pizza lines
+  pool.query("SELECT num, source, items FROM orders WHERE op_day='2026-11-05' AND status NOT IN ('cancelled','dismissed','pending') ORDER BY num")
+    .then(r => { for (const o of r.rows) for (const l of String(o.items || "").split("\n")) if (/قوارب|كب بيتزا|تشكيلة|مسخن/.test(l)) console.log(`y1105: #${o.num} ${o.source} ${l}`); console.log("y1105: end orders=" + r.rows.length); })
+    .catch(e => console.log("y1105: " + e.message));
   // score the reader against past corrections whenever its code changed
   if (process.env.ANTHROPIC_API_KEY) setTimeout(() => evalReader(pool, (t, id) => readTranscript(pool, t, id),
     readerVersion(fs.readFileSync(path.join(__dirname, "wa.mjs"), "utf8") + fs.readFileSync(path.join(__dirname, "reader.mjs"), "utf8"))).catch(e => console.log("reader-eval: " + e.message)), 120e3);
