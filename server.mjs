@@ -19,6 +19,7 @@ import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
 import { startSheetJob, sheetState } from "./sheets.mjs";
 import { suggestBatches, routeUrl } from "./batch.mjs";
 import { startKitchenModel, kitchenModel } from "./kitchenstats.mjs";
+import { migrateRw, addRw, listRw } from "./rw.mjs";
 import { migrateGifts, issueGift, applyGift, giftMessage, GIFT } from "./gifts.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -143,6 +144,7 @@ async function migrate() {
   await migratePrefs(pool);
   await migrateLocation(pool);
   await migrateBlacklist(pool);
+  await migrateRw(pool);
   await migrateReader(pool);
   // seed the reader's lessons with the orders already corrected by hand (their current items are the right ones)
   for (const [d, n] of [["2026-11-03", 8], ["2026-11-03", 12], ["2026-11-04", 13], ["2026-11-04", 29], ["2026-11-05", 2]]) {
@@ -511,7 +513,7 @@ const server = http.createServer(async (req, res) => {
         const batches = Object.fromEntries(Object.entries(groups).map(([k, g]) => { g.sort((a, b) => (a.batch_seq || 0) - (b.batch_seq || 0));
           return [k, { nums: g.map(o => o.num), ids: g.map(o => String(o.id)), route: routeUrl(g.map(o => o.dest)) }]; }));
         const batchTips = !from && day === opDayOf(Date.now()) ? await suggestBatches(rows).catch(e => (console.log("batch: " + e.message), [])) : [];
-        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), batches, batchTips, kitchenModel: kitchenModel(), upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
+        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), batches, batchTips, kitchenModel: kitchenModel(), rw: from ? [] : await listRw(pool, day), supervisorSet: !!process.env.SUPERVISOR_CODE, upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           alerts: (await pool.query("SELECT * FROM kitchen_alerts WHERE at > $1 ORDER BY at DESC LIMIT 15", [Date.now() - 24 * 3600e3])).rows.map(a => ({
             id: String(a.id), text: a.text, at: Number(a.at), fromDev: a.from_dev, fromName: a.from_name, heard: a.heard || [], ackAt: a.ack_at == null ? null : Number(a.ack_at), ackBy: a.ack_by })),
@@ -561,6 +563,11 @@ const server = http.createServer(async (req, res) => {
           console.log(`screen: ${x.name} ${x.id} sound=${x.master ? (x.unlocked ? "on" : "needs-tap") : "off"} visible=${x.visible} ver=${x.ver}`);
         if (screens.size > 50) for (const [k, v] of screens) if (Date.now() - v.at > 3600e3) screens.delete(k);
         return send(res, 200, { ok: true });
+      }
+      if (p === "/api/board/rw" && req.method === "POST") {
+        const b = await readBody(req, 4096);
+        const r = await addRw(pool, b, opDayOf(Date.now()));
+        return send(res, r.status, r.error ? { error: r.error } : { entry: r.entry });
       }
       if (p === "/api/board/alert" && req.method === "POST") {
         const b = await readBody(req, 4096);

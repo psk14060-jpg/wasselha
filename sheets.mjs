@@ -185,6 +185,12 @@ export async function syncDay(pool, day, log = console.log) {
     const sub = o.status === "cancelled" ? 0 : subsidyFor(rowO(o)).amount;
     if (sub) sales.push([...base, "دعم توصيل من المحل", 1, -sub, "", STATUS[o.status] || o.status, areaName(o.area), want]);
   }
+  // returns (رمز المشرف): a negative line on the returned order, so the day's sum is what was really sold
+  const rets = (await pool.query("SELECT order_id, amount, reason, at FROM returns_waste WHERE op_day=$1 AND kind='return'", [day]).catch(() => ({ rows: [] }))).rows;
+  for (const r of rets) {
+    const o = orders.find(x => String(x.id) === String(r.order_id)); if (!o || o.source === "chefz") continue;
+    sales.push([day, hhmm(r.at), o.num, SRC[o.source] || o.source, "مرتجع: " + r.reason, 1, -Number(r.amount), "", "مرتجع", o.type === "del" ? areaName(o.area) : "", hhmm(o.due)]);
+  }
   await ensureHeader(T.sales, "K1", "وقت الاستلام المطلوب");
   await deleteDate(T.sales, day);
   await append(T.sales, sales);

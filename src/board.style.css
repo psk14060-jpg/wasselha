@@ -212,4 +212,14 @@ textarea{resize:vertical;min-height:84px}
 .batchln{font-size:.9em;font-weight:700;background:var(--accent-soft);color:var(--accent-ink);border-radius:8px;padding:6px 8px;margin:4px 0;line-height:1.7}
 .batchln a{color:inherit}
 .batchln .sm{min-height:30px;padding:2px 8px;margin-inline-start:6px}
+#rwPanel .rwform{display:grid;gap:10px;margin:10px 0}
+#rwPanel .rwform label{display:grid;gap:4px;font-weight:700;font-size:15px}
+#rwPanel .rwform input,#rwPanel .rwform select{min-height:44px;font-size:16px}
+#rwPanel .rwqty{display:flex;gap:8px}
+#rwPanel .rwqty input{flex:1;min-width:0}
+#rwPanel .rwqty select{flex:0 0 110px}
+#rwPanel #rwSave{width:100%;min-height:52px;font-size:18px}
+#rwPanel .kah{margin:22px 0 8px;font-size:16px}
+#rwPanel .karec{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--surface)}
+#rwPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
 </style>

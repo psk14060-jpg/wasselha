@@ -47,7 +47,11 @@ async function weekFigures(pool, from, to, products) {
     total: o.total == null ? null : Number(o.total), due: Number(o.due), created: Number(o.created), items: o.items });
   const food = o => o.total == null ? 0 : Math.max(0, Number(o.total) - feeOfOrder(rowO(o)));
   const sum = a => a.reduce((s, x) => s + food(x), 0);
-  const sales = sum(rows);
+  // returns with the supervisor code come off sales; waste is reported at cost
+  const rw = (await pool.query("SELECT kind, amount, cost, reason, item, qty, pieces FROM returns_waste WHERE op_day >= $1 AND op_day < $2", [from, to]).catch(() => ({ rows: [] }))).rows;
+  const returnsTotal = rw.filter(x => x.kind === "return").reduce((a, x) => a + Number(x.amount || 0), 0);
+  const wasteRows = rw.filter(x => x.kind === "waste");
+  const sales = sum(rows) - returnsTotal;
   const fees = rows.reduce((s, o) => s + (o.total == null ? 0 : feeOfOrder(rowO(o))), 0);
   const subsidy = rows.map(o => subsidyFor(rowO(o)).amount).filter(Boolean);
   const salesByHour = {};
@@ -88,7 +92,10 @@ async function weekFigures(pool, from, to, products) {
   }
   return {
     orders: rows.length, sales: Math.round(sales), avgTicket: rows.length ? Math.round(sales / rows.length) : 0,
-    fees: Math.round(fees), subsidy: { orders: subsidy.length, total: subsidy.reduce((a, b) => a + b, 0) },
+    fees: Math.round(fees),
+    returns: { count: rw.filter(x => x.kind === "return").length, total: Math.round(returnsTotal) },
+    waste: { count: wasteRows.length, cost: Math.round(wasteRows.reduce((a, x) => a + Number(x.cost || 0), 0)),
+      byReason: wasteRows.reduce((m, x) => (m[x.reason] = (m[x.reason] || 0) + Number(x.cost || 0), m), {}) }, subsidy: { orders: subsidy.length, total: subsidy.reduce((a, b) => a + b, 0) },
     salesByHour: Object.fromEntries(Object.entries(salesByHour).map(([k, v]) => [k, Math.round(v)])),
     cancelled: { orders: cx.length, value: Math.round(cx.reduce((s, o) => s + food(o), 0)),
       reasons: Object.fromEntries(Object.entries(cxReasons).map(([k, v]) => [k, { orders: v.orders, value: Math.round(v.value) }])) },
