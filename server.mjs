@@ -691,6 +691,7 @@ migrate().then(() => {
   server.listen(PORT, () => console.log(`minigeesh-orders listening on ${PORT}`));
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
+  setTimeout(() => import("./kitchenstats.mjs").then(m => m.kitchenStats(pool)).then(k => console.log("kitchen: " + JSON.stringify(k))).catch(e => console.log("kitchen: " + e.message)), 45e3);
   // score the reader against past corrections whenever its code changed
   if (process.env.ANTHROPIC_API_KEY) setTimeout(() => evalReader(pool, (t, id) => readTranscript(pool, t, id),
     readerVersion(fs.readFileSync(path.join(__dirname, "wa.mjs"), "utf8") + fs.readFileSync(path.join(__dirname, "reader.mjs"), "utf8"))).catch(e => console.log("reader-eval: " + e.message)), 120e3);
