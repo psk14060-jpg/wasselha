@@ -12,7 +12,7 @@ const addDays = (k, n) => new Date(Date.parse(k) + n * DAY).toISOString().slice(
 const WEEKDAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const SRC = { web: "الموقع", wa: "واتساب", call: "اتصال", shop: "المحل", chefz: "ذا شيفز", hunger: "هنقرستيشن", keeta: "كيتا", ninja: "نينجا" };
 const APPS = ["chefz", "hunger", "keeta", "ninja"];
-const LIVE = "status NOT IN ('cancelled','dismissed','pending')";
+const LIVE = "status NOT IN ('cancelled','dismissed','pending') AND source <> 'chefz'"; // The Chefz orders are not sales here (Hassan 2026-11-06)
 
 export async function migrateReports(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS weekly_reports (
@@ -80,7 +80,7 @@ async function weekFigures(pool, from, to, products) {
   const keys = rows.map(customerKey).filter(Boolean);
   // cancelled orders and why (reason picked when cancelling; older ones read from the note)
   const cx = (await pool.query(`SELECT o.*, EXISTS (SELECT 1 FROM blacklist b WHERE b.op_day = o.op_day AND b.order_num = o.num) AS noshow FROM orders o
-    WHERE o.op_day >= $1 AND o.op_day < $2 AND o.status = 'cancelled'`, [from, to])).rows;
+    WHERE o.op_day >= $1 AND o.op_day < $2 AND o.status = 'cancelled' AND o.source <> 'chefz'`, [from, to])).rows;
   const cxReasons = {};
   for (const o of cx) {
     const why = o.cancel_reason || (/مكرر|دُمج/.test(o.note || "") ? "مكرر" : o.noshow ? "ما جاء يستلم" : /تأكيد لحجز/.test(o.note || "") ? "مكرر" : "غير محدد");

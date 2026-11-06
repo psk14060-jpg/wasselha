@@ -466,7 +466,9 @@ function render(){
   const late=live.filter(o=>isLate(o,t)).length;
   const drv=by.ready.filter(o=>o.type==="del").length;
   /* sales exclude cancelled orders and the delivery fee, which goes to the outside couriers */
-  const counted=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status));
+  /* The Chefz orders are not sales here (Hassan 2026-11-06): they are counted from The Chefz itself */
+  const counted=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)&&o.source!=="chefz");
+  const chefzN=S.orders.filter(o=>["new","prep","ready","out","done"].includes(o.status)&&o.source==="chefz").length;
   const feeOf=o=>{if(o.deliveryFee!=null)return +o.deliveryFee||0;const m=String(o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);return m?+m[1]:0;};
   const fees=counted.reduce((s,o)=>s+feeOf(o),0);
   const subs=counted.reduce((s,o)=>s+subOf(o).amount,0);
@@ -480,6 +482,7 @@ function render(){
 
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`+
     `<span class="chip">رسوم التوصيل <b>${Math.round(fees)}</b> ر</span>`+
+    (chefzN?`<span class="chip" title="طلبات ذا شفز ما تدخل في المبيعات">ذا شفز <b>${chefzN}</b> طلب (خارج المبيعات)</span>`:"")+
     (subs?`<span class="chip">دعم التوصيل من المحل <b>${Math.round(subs)}</b> ر</span>`:"");
   const doneL=all.filter(o=>o.status==="done").sort((a,b)=>b.updated-a.updated);
   const cxL=all.filter(o=>["cancelled","dismissed"].includes(o.status)).sort((a,b)=>b.updated-a.updated);

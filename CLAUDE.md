@@ -34,7 +34,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - A time the customer says in the chat after a website order (or with no new items) moves that order (`chatTime` in `wa.mjs`; #3 of 2026-11-06 stayed at the website's 4:30 while the customer asked 3:30).
 - The order form always offers «أقرب وقت» for today, also after the 12:30 am last slot (2026-11-06 00:35 Hassan could not add an order). Test the form at late-night and early-morning clock times.
 - «ابدأ التحضير الآن» clip plays twice per order only (at start time, and once a minute later), counted per device across reloads (Hassan 2026-11-05).
-- Cancelled orders and delivery fees are not sales.
+- Cancelled orders and delivery fees are not sales. The Chefz orders are not sales either (Hassan 2026-11-06): out of the board's sales chip, the weekly report and «المبيعات اليومية»; they still show on the board for the kitchen.
 - Website orders stay hidden until the shop writes the approval phrase in WhatsApp.
 - Ask before building when Hassan says "discuss first".
 - 2026-11-05: report styles merged from another branch used bare class names (`.bar`, `.tile`) and broke the board header and the item tiles. Styles for a panel are always scoped under that panel (`.rep …`); a check in `npm test` fails on a class defined twice without scope. Compare screenshots with the previous build after any merge.

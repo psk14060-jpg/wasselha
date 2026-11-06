@@ -171,6 +171,7 @@ export async function syncDay(pool, day, log = console.log) {
   const missing = new Set();
   const sales = [];
   for (const o of orders) {
+    if (o.source === "chefz") continue; // The Chefz orders are not sales here (Hassan 2026-11-06); they stay in «الإلغاء والتأخير»
     const base = [day, hhmm(o.created), o.num, SRC[o.source] || o.source];   // «الساعة» = when the order came in (Hassan 2026-11-06)
     const want = hhmm(o.due);                                                  // «وقت الاستلام المطلوب» (column K)
     const fee = o.total == null || APPS.includes(o.source) ? "" : feeOfOrder(rowO(o)) || "";
