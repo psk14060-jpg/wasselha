@@ -6,6 +6,7 @@
 import crypto from "node:crypto";
 import { subsidyFor, feeOfOrder, unifiedName, setSheetCosts } from "./subsidy.mjs";
 import { keyOf } from "./blacklist.mjs";
+import { getMenu } from "./menu.mjs";
 
 const SHEET_ID = process.env.SHARED_SHEET_ID || "1TTXbWtikFPDkTN_2GJPpMwdOCsNOZCowbRsJodXEm1U";
 const WRITER = "وكيل التشغيل";
@@ -21,7 +22,20 @@ const opDayOf = ms => new Date(Number(ms) + 3 * 3600e3 - 6 * 3600e3).toISOString
 const hhmm = ms => riyadh(ms).toISOString().slice(11, 16);
 const dateOf = ms => riyadh(ms).toISOString().slice(0, 10);
 const dayStr = d => d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
-const areaName = a => { const n = String(a || "").replace(/📍/g, "").replace(/\s*\(.*\)\s*$/, "").split("·")[0].trim(); return /^[\d.]+\s*كم$/.test(n) ? "" : n; };
+const rawArea = a => { const n = String(a || "").replace(/📍/g, "").replace(/\s*\(.*\)\s*$/, "").split("·")[0].trim(); return /^[\d.]+\s*كم$/.test(n) ? "" : n; };
+// One spelling per neighbourhood (Hassan 2026-11-06): the website's list name when it matches, known variants mapped,
+// «حي» dropped. «المطيرفي» / «حي المطرفي» / «المطرفى» → «المطرفي».
+const areaKey = s => String(s || "").trim().replace(/^حي\s+/, "").replace(/[إأآ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/^ال/, "").replace(/\s+/g, "");
+const AREA_ALIASES = { "مطيرفي": "المطرفي", "مطرفي": "المطرفي" };
+let siteAreas = [];
+export function canonArea(a) {
+  const n = rawArea(a).replace(/^حي\s+/, "").trim();
+  if (!n) return "";
+  const k = areaKey(n);
+  const hit = siteAreas.find(x => areaKey(x) === k);
+  return hit || AREA_ALIASES[k] || n;
+}
+const areaName = canonArea;
 export const enabled = () => !!process.env.GOOGLE_SA_JSON;
 
 // ---------- Google auth (service account JWT → access token) ----------
@@ -86,6 +100,12 @@ async function deleteDate(tab, date) {
   return rows.length;
 }
 
+// our own tabs only: add a column header if it is not there yet
+async function ensureHeader(tab, cell, text) {
+  const v = await read(tab, cell);
+  if (!(v[0] && v[0][0])) await api("PUT", `/values/${rng(tab, cell)}?valueInputOption=RAW`, { values: [[text]] });
+}
+
 // ---------- small state kept in board_settings ----------
 async function getS(pool, k) { const r = await pool.query("SELECT value FROM board_settings WHERE key=$1", [k]); return r.rows.length ? r.rows[0].value : null; }
 async function setS(pool, k, v) { await pool.query("INSERT INTO board_settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2", [k, JSON.stringify(v)]); }
@@ -107,6 +127,7 @@ function inForce(row, today) {
 }
 
 export async function readShared(pool, log = console.log) {
+  siteAreas = (((await getMenu().catch(() => null)) || {}).areas || []).map(a => String(a.name).replace(/^حي\s+/, "").trim());
   const menu = await read(T.menu, "A2:E200");
   names = menu.map(r => String(r[0] || "").trim()).filter(Boolean);
   costs = {};
@@ -150,18 +171,20 @@ export async function syncDay(pool, day, log = console.log) {
   const missing = new Set();
   const sales = [];
   for (const o of orders) {
-    const base = [day, hhmm(o.due), o.num, SRC[o.source] || o.source];
+    const base = [day, hhmm(o.created), o.num, SRC[o.source] || o.source];   // «الساعة» = when the order came in (Hassan 2026-11-06)
+    const want = hhmm(o.due);                                                  // «وقت الاستلام المطلوب» (column K)
     const fee = o.total == null || APPS.includes(o.source) ? "" : feeOfOrder(rowO(o)) || "";
     const ls = lines(o.items);
     if (!ls.length) ls.push({ qty: null, text: "(بدون أصناف)", amount: o.total == null ? null : Number(o.total) - (fee || 0) });
     ls.forEach((l, i) => {
       const u = unifiedName(l.text, names);
       if (!u && l.qty != null) missing.add(l.text.replace(/\s*\(.*?\)\s*$/, ""));
-      sales.push([...base, u || l.text.replace(/\s*\(.*?\)\s*$/, ""), l.qty ?? "", l.amount ?? "", i === 0 ? fee : "", STATUS[o.status] || o.status, o.type === "del" ? areaName(o.area) : ""]);
+      sales.push([...base, u || l.text.replace(/\s*\(.*?\)\s*$/, ""), l.qty ?? "", l.amount ?? "", i === 0 ? fee : "", STATUS[o.status] || o.status, o.type === "del" ? areaName(o.area) : "", want]);
     });
     const sub = o.status === "cancelled" ? 0 : subsidyFor(rowO(o)).amount;
-    if (sub) sales.push([...base, "دعم توصيل من المحل", 1, -sub, "", STATUS[o.status] || o.status, areaName(o.area)]);
+    if (sub) sales.push([...base, "دعم توصيل من المحل", 1, -sub, "", STATUS[o.status] || o.status, areaName(o.area), want]);
   }
+  await ensureHeader(T.sales, "K1", "وقت الاستلام المطلوب");
   await deleteDate(T.sales, day);
   await append(T.sales, sales);
 
@@ -239,6 +262,14 @@ export function startSheetJob(pool, log = console.log) {
       // one-off notes for the other agents about decisions Hassan gave this agent directly
       for (const [k, tab, text] of [["note_free_areas_1105", T.rules, "قرار من حسن مباشرة (2026-11-05 18:39): التوصيل مجاني لحيّي النايفية والعزيزية. طُبّق في اللوحة وقارئ الواتساب. يحتاج إضافته في «القواعد المعتمدة» وفي موقع minigeesh.sa."]])
         if (!(await getS(pool, k))) { await note(tab, text); await setS(pool, k, Date.now()); log("sheet: note " + k); }
+      // 2026-11-06 format change (arrival time, requested time column, one spelling per neighbourhood): rewrite what is there
+      if (!(await getS(pool, "sheet_v2"))) {
+        const days = [...new Set((await read(T.sales, "A2:A")).map(x => String(x[0] || "")).filter(d => /^\d{4}-\d\d-\d\d$/.test(d)))];
+        for (const d of days) await syncDay(pool, d, log);
+        await syncCustomers(pool, log);
+        await setS(pool, "sheet_v2", Date.now());
+        log("sheet: v2 rewrite " + days.join(","));
+      }
       const r = riyadh(Date.now());
       const today = opDayOf(Date.now());
       // 02:00 every night: the operating day that is ending (it started at 06:00 yesterday)

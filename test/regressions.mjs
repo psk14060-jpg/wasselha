@@ -126,4 +126,10 @@ t("2026-11-05: النايفية والعزيزية توصيل مجاني بأي 
   for (const x of ["النايفية", "حي النايفيه", "📍 العزيزية · 3.2 كم (توصيل 10 ر)", "العزيزيه (توصيل 5 ر)"]) assert.ok(isFreeArea(x), x);
   for (const x of ["المهندسين", "السلمانية", ""]) assert.ok(!isFreeArea(x), x);
 });
+const { canonArea } = await import("../sheets.mjs");
+t("2026-11-06 الملف المشترك: اسم واحد لكل حي (المطرفي)", () => {
+  for (const x of ["المطيرفي", "حي المطرفي", "المطرفى", "📍 المطيرفي · 2.3 كم (توصيل 10 ر)"]) assert.equal(canonArea(x), "المطرفي", x);
+  assert.equal(canonArea("📍 حي النايفية · 1.1 كم (توصيل مجاني)"), "النايفية");
+  assert.equal(canonArea("📍 1.1 كم (توصيل 5 ر)"), "");
+});
 console.log(`\n${n} checks passed`);

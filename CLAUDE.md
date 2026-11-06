@@ -47,6 +47,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 
 ## Shared sheet between the agents (`sheets.mjs`, Hassan 2026-11-05)
 - Google Sheet 1TTXbWtikFPDkTN_2GJPpMwdOCsNOZCowbRsJodXEm1U, service account key in Render env `GOOGLE_SA_JSON`.
+- «المبيعات اليومية» columns (Hassan 2026-11-06): «الساعة» = time the order came in (created), column K «وقت الاستلام المطلوب» = requested time (due). Neighbourhoods written with one spelling (`canonArea`: website list name, «حي» dropped, «المطيرفي» → «المطرفي»).
 - Write only «المبيعات اليومية» (02:00 nightly, one row per item line + a negative «دعم توصيل من المحل» line), «الإلغاء والتأخير» (same run), «العملاء» (Sundays, whole tab rewritten). Same columns as the sheet. A day is deleted and rewritten, never appended twice.
 - Read «القواعد المعتمدة» (subsidy on/off from its status/dates; any rule change → log + note) and «المنيو والتكاليف» (unified names via `unifiedName`, costs for the subsidy margin) every 10 minutes.
 - Mistakes in other agents' tabs → a row in «ملاحظات», never an edit. Phones: last 4 digits only. No shop (Rewaa) sales.
