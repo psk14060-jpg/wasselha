@@ -47,6 +47,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - Weekly report every Sunday 08:00 (`reports.mjs`, board ⋯ → التقارير): sales by item/channel/hour without delivery fees, average order, repeat and lapsed customers, cancelled and reasons (picked when cancelling), subsidy paid. Taste report: 2026-11-18.
 - Kitchen alert (⋯ → 📢 تنبيه للمطبخ, table `kitchen_alerts`): written message shown on every screen with «تنبيه تنبيه» every minute until «تم»; not played on the sending device; sender sees heard/done. Sound file `public/sounds/kitchen-alert.mp3` (Hassan's recording, used whole) — until it exists a two-tone sound plays.
 - One courier for close deliveries (`batch.mjs`, Hassan 2026-11-05): board suggests pairs of our own deliveries leaving within 20 min, customers ≤ 6 km apart (or same neighbourhood without map points), every customer within 10 min late / 15 min early. Kitchen presses «دمج»: same batch_id, both prepared for the group departure (batch_out), one «خرج» moves the group, card shows drop order and a Google Maps route. Courier is paid by each customer, so fees do not change.
+- The Chefz names (Hassan 2026-11-06): «مثلثات فطائر مشكلة» 67.50 = فطائر مثلثة 30 قطعة; «Mix Boat Pastries / معجنات قوارب مشكلة» 49.50 = قوارب 18; «مشكل قوارب أجبان ومسخن دجاج» 59 = تشكيلة قوارب أجبان ومسخن.
 - Rewaa cashier names in the reader: `CASHIER_NAMES` in `reader.mjs`.
 
 ## Shared sheet between the agents (`sheets.mjs`, Hassan 2026-11-05)

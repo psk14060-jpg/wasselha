@@ -715,6 +715,9 @@ migrate().then(() => {
         items, total, deliveryFee: null, note: "", due: Date.parse(`2026-11-06T${hm}:00+03:00`), appRef: ref });
       console.log(`fix: added The Chefz ${ref} as #${o.num} due ${hm}`);
     }
+    // Hassan: «مثلثات فطائر مشكلة» on The Chefz (67.50) is 30 pieces
+    const u = await pool.query("UPDATE orders SET items='1 × فطائر مثلثة 30 قطعة — 67.5 ريال', updated=$1 WHERE app_ref='301380056' AND items LIKE '%الحجم غير مذكور%' RETURNING num", [Date.now()]);
+    if (u.rowCount) console.log("fix: The Chefz 301380056 #" + u.rows[0].num + " → 30 pieces");
   })().catch(e => console.log("fix: chefz " + e.message));
   // one-off for Hassan (2026-11-06): yesterday's boats and cup pizza lines
   pool.query("SELECT num, source, items FROM orders WHERE op_day='2026-11-05' AND status NOT IN ('cancelled','dismissed','pending') ORDER BY num")
