@@ -701,6 +701,18 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
+  // 2026-11-06 Hassan: #24 back to «بانتظار التحضير»; the chat says pickup («حطه استلام») under the name «ممتاز», the reader had delivery to النايفية
+  (async () => {
+    if ((await pool.query("SELECT 1 FROM board_settings WHERE key='fix_1106_24'")).rows.length) return;
+    const b = (await pool.query("SELECT status, type, name, area, total, delivery_fee FROM orders WHERE op_day='2026-11-06' AND num=24")).rows[0];
+    if (!b) return console.log("fix: #24 not found");
+    await pool.query(`UPDATE orders SET status='new', out_at=NULL, type='pick', area='', delivery_fee=0, total=35, travel_min=NULL, dest=NULL,
+      name=CASE WHEN COALESCE(name,'')='' THEN 'ممتاز' ELSE name END,
+      note=TRIM(BOTH ' ·' FROM 'استلام من المحل (العميل: حطه استلام) · كان يبيه قبل 5 · ' || COALESCE(note,'')), updated=$1
+      WHERE op_day='2026-11-06' AND num=24`, [Date.now()]);
+    console.log(`fix: #24 ${b.status}/${b.type} ${b.area} total=${b.total} → new/pick total=35 name=${b.name || "ممتاز"}`);
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_1106_24', 'true')");
+  })().catch(e => console.log("fix: #24 " + e.message));
   // 2026-11-06 Hassan: Saleh's order #27 (website MG-UYYCK) becomes a delivery; location from the order or his chat
   (async () => {
     if ((await pool.query("SELECT 1 FROM board_settings WHERE key='fix_1106_27'")).rows.length) return;
