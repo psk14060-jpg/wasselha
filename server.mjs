@@ -706,8 +706,15 @@ migrate().then(() => {
     const o = (await pool.query("SELECT id, num, name, phone, wa_from, status, type FROM orders WHERE op_day='2026-11-06' AND num=13")).rows[0];
     if (!o) return console.log("fix: #13 not found");
     const k = keyOf(o.wa_from, o.phone);
-    if (!/جواهر/.test(o.name || "")) return console.log(`fix: #13 name is «${o.name || ""}», not جواهر — not added (phone …${String(k || "").slice(-4)} ${o.type}/${o.status})`);
-    if (k && !(await pool.query("SELECT 1 FROM blacklist WHERE key=$1", [k])).rows.length) { await markNoShow(pool, o.id); console.log(`fix: #13 (${o.name}) …${k.slice(-4)} added to the no-show list (was ${o.type}/${o.status})`); }
+    if (!/جواهر|jawaher/i.test(o.name || "")) return console.log(`fix: #13 name is «${o.name || ""}», not جواهر — not added (phone …${String(k || "").slice(-4)} ${o.type}/${o.status})`);
+    if (k && !(await pool.query("SELECT 1 FROM blacklist WHERE key=$1", [k])).rows.length) {
+      await markNoShow(pool, o.id);
+      if (o.type === "del") { // a delivery she did not take from the courier, not a pickup
+        await pool.query("UPDATE blacklist SET reason='ما استلمت التوصيل' WHERE key=$1", [k]);
+        await pool.query("UPDATE orders SET note=REPLACE(note, '🚫 ما جاء للاستلام', '🚫 ما استلمت التوصيل') WHERE id=$1", [o.id]);
+      }
+      console.log(`fix: #13 (${o.name}) …${k.slice(-4)} added to the no-show list (was ${o.type}/${o.status})`);
+    }
     else console.log(`fix: #13 ${k ? "already on the list" : "has no phone"}`);
   })().catch(e => console.log("fix: #13 " + e.message));
   // 2026-11-06 Hassan: #24 back to «بانتظار التحضير»; the chat says pickup («حطه استلام») under the name «ممتاز», the reader had delivery to النايفية
