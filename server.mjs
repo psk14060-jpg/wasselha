@@ -8,11 +8,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { migrateWa, handleWebhook, recentReviews, readTranscript } from "./wa.mjs";
+import { migrateWa, handleWebhook, recentReviews, readTranscript, lastKnownPoint } from "./wa.mjs";
 import { migrateReader, recordCorrection, evalReader, readerVersion } from "./reader.mjs";
 import { isFreeArea, getMenu } from "./menu.mjs";
 import { migrateTts, speech } from "./tts.mjs";
-import { migrateLocation, neighbourhoodOf } from "./location.mjs";
+import { migrateLocation, neighbourhoodOf, findPoint, applyLocation } from "./location.mjs";
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
 import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
@@ -701,6 +701,24 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
+  // 2026-11-06 Hassan: Saleh's order #27 (website MG-UYYCK) becomes a delivery; location from the order or his chat
+  (async () => {
+    if ((await pool.query("SELECT 1 FROM board_settings WHERE key='fix_1106_27'")).rows.length) return;
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-06' AND num=27")).rows[0];
+    if (!o) return console.log("fix: #27 not found");
+    console.log(`fix: #27 before type=${o.type} name=${o.name} phone=…${String(o.phone || "").slice(-4)} wa=…${String(o.wa_from || "").slice(-4)} area=${o.area} fee=${o.delivery_fee} total=${o.total} dest=${o.dest} note=${String(o.note || "").slice(0, 200)}`);
+    const keys = [o.wa_from, String(o.phone || "").replace(/\D/g, "").replace(/^0/, "966")].filter(Boolean);
+    const msgs = (await pool.query("SELECT dir, body, at FROM wa_messages WHERE wa_from = ANY($1) ORDER BY at DESC LIMIT 12", [keys])).rows;
+    for (const m of msgs.slice().reverse()) console.log(`fix: #27 chat ${new Date(Number(m.at) + 3 * 3600e3).toISOString().slice(11, 16)} ${m.dir === "in" ? "[العميل]" : "[المحل]"} ${String(m.body).slice(0, 160)}`);
+    let pt = await findPoint(String(o.note || "")).catch(() => null), from = "the order";
+    if (!pt) for (const m of msgs.filter(x => x.dir === "in")) { pt = await findPoint(m.body).catch(() => null); if (pt) { from = "the chat"; break; } }
+    if (!pt) for (const k of keys) { const kp = await lastKnownPoint(pool, k, o.id).catch(() => null); if (kp) { pt = kp.point; from = "an earlier order " + kp.when; break; } }
+    await pool.query("UPDATE orders SET type='del', delivery_fee=NULL, updated=$2 WHERE id=$1", [o.id, Date.now()]);
+    if (pt) await applyLocation(pool, o.id, pt, console.log, from.startsWith("an earlier") ? "📍 الموقع من طلب سابق — تأكد مع العميل" : "");
+    const a = (await pool.query("SELECT type, area, delivery_fee, total, travel_min, dest FROM orders WHERE id=$1", [o.id])).rows[0];
+    console.log(`fix: #27 after (${pt ? "location from " + from : "NO location found"}) type=${a.type} area=${a.area} fee=${a.delivery_fee} total=${a.total} drive=${a.travel_min} dest=${a.dest}`);
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_1106_27', 'true')");
+  })().catch(e => console.log("fix: #27 " + e.message));
   // 2026-11-06 Hassan: add two The Chefz orders from his screenshot (once each, by the app's order number)
   (async () => {
     for (const [ref, hm, items, total, status] of [

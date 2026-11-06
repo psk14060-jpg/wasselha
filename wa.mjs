@@ -299,7 +299,7 @@ async function locationFromChat(pool, orderId, customerRows, log, opts = {}) {
   if (known) await applyLocation(pool, orderId, known.point, log, `📍 الموقع من طلب سابق (${known.when}) — تأكد مع العميل إذا تغيّر`).catch(e => log("wa: location " + e.message));
 }
 
-async function lastKnownPoint(pool, waFrom, exceptId) {
+export async function lastKnownPoint(pool, waFrom, exceptId) {
   const fmt = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(0, 10);
   const o = (await pool.query(
     "SELECT dest, updated FROM orders WHERE wa_from=$1 AND id<>$2 AND dest IS NOT NULL ORDER BY updated DESC LIMIT 1", [waFrom, exceptId])).rows[0];
