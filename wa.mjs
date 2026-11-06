@@ -240,6 +240,16 @@ function priceOrder(p, menu) {
 // Build the order from this customer's chat, triggered by the owner's approval message.
 // The day the customer said in the chat ("بكرة", "الجمعة", "بعد بكرة", "اليوم"); the last mention wins. null if none.
 const WEEKDAYS = [/الأحد|الاحد/, /الإثنين|الاثنين|الاثنينن/, /الثلاثاء|الثلاثا|الثلوث/, /الأربعاء|الاربعاء|الاربعا/, /الخميس/, /الجمعة|الجمعه|جمعة|جمعه/, /السبت/];
+// Pickup or delivery from the customer's own last word on it (2026-11-06 #24: shop offered pickup, customer «تمام حطه استلام»,
+// the reader kept delivery to a neighbourhood). The latest customer line that says one of them decides.
+export function typeHint(lines) {
+  const PICK = /(?:حط(?:ه|ها|و)?|خل(?:ه|يه|ها)|ابي|ابغى|ابغي|نبي|بكون|بيكون|يكون|خلاص|تمام)\s*(?:\S+\s+)?استلام|استلام\s*(?:من\s*المحل|ممتاز|احسن|افضل)|\bبستلم|بجي\s*(?:اخذه|آخذه|اخذها|استلم)|بمر\s*(?:عليكم|اخذه)|^\s*استلام\s*$/;
+  const DEL = /(?:ابي|ابغى|ابغي|نبي|حط(?:ه|ها)?|خل(?:ه|يه))\s*(?:\S+\s+)?توصيل|^\s*توصيل\s*$|وصلوه|وصّلوه|ارسلوه\s*(?:لي|على)/;
+  let found = null;
+  for (const raw of lines) { const t = String(raw || ""); if (PICK.test(t)) found = "pick"; else if (DEL.test(t)) found = "del"; }
+  return found;
+}
+
 export function dayHint(lines, nowMs) {
   const today = new Date(nowMs + 3 * 3600e3 - 6 * 3600e3).getUTCDay();
   let found = null;
@@ -382,6 +392,8 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   }
   placeUnknown(p, menu);
   fixSamosa(p, customerRows.map(r => r.body).join("\n"), menu);
+  const saidType = typeHint(customerRows.map(r => r.body));
+  if (saidType && saidType !== p.type) { log(`wa: type set to ${saidType} from the customer's words (reader said ${p.type})`); p.type = saidType; if (saidType === "pick") p.area = ""; }
   const saidDay = dayHint(customerRows.map(r => r.body), now);
   if (saidDay != null && saidDay !== (parseInt(p.day, 10) || 0)) { log(`wa: day set to +${saidDay} from the customer's words (reader said +${p.day || 0})`); p.day = saidDay; }
   const built = priceOrder(p, menu);

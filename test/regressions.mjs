@@ -150,4 +150,12 @@ t("2026-11-06: صفحة اللوحة المبنية تشتغل (ملفات مش�
   const h = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
   for (const [, code] of h.matchAll(/<script>([\s\S]*?)<\/script>/g)) new Function(code);
 });
+{ const { typeHint } = await import("../wa.mjs");
+  t("typeHint: آخر كلام العميل عن الاستلام أو التوصيل هو اللي يحكم", () => {
+    assert.equal(typeHint(["فيه توصيل اليوم للسلمانيه الجنوبيه ؟", "قبل 5", "تمام حطه استلام", "ممتاز"]), "pick");
+    assert.equal(typeHint(["ابي استلام", "لا خلاص ابي توصيل"]), "del");
+    assert.equal(typeHint(["بجي اخذه الساعة 6"]), "pick");
+    assert.equal(typeHint(["فيه توصيل للمطرفي؟"]), null);      // a question is not a choice
+    assert.equal(typeHint(["20 قطعة فطاير"]), null);
+  }); }
 console.log(`\n${n} checks passed`);
