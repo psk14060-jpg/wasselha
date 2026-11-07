@@ -708,6 +708,10 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
+  // 2026-11-07 #35: an Enter inside the item line split its price off, the total became 0
+  pool.query(`UPDATE orders SET items='1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال', total=20, updated=$1
+    WHERE op_day='2026-11-07' AND num=35 AND total=0 AND items LIKE '%قطعة — 20%' RETURNING num`, [Date.now()])
+    .then(r => r.rowCount && console.log("fix: 2026-11-07 #35 total 0 → 20")).catch(e => console.log("fix: #35 " + e.message));
   // 2026-11-06 Hassan: #13 (جواهر) to the no-show list
   (async () => {
     const o = (await pool.query("SELECT id, num, name, phone, wa_from, status, type FROM orders WHERE op_day='2026-11-06' AND num=13")).rows[0];

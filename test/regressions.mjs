@@ -158,4 +158,13 @@ t("2026-11-06: صفحة اللوحة المبنية تشتغل (ملفات مش�
     assert.equal(typeHint(["فيه توصيل للمطرفي؟"]), null);      // a question is not a choice
     assert.equal(typeHint(["20 قطعة فطاير"]), null);
   }); }
+t("2026-11-07 #35: سطر صنف انكسر بـ Enter ما يصفّر الإجمالي", () => {
+  const h = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  const code = h.match(/const joinItemLines=[^\n]+/)[0] + "\n" + h.match(/const linesSum=[^\n]+/)[0] + "\nreturn [joinItemLines, linesSum];";
+  const [join, sum] = new Function(code)();
+  const broken = "1 × كباجي جبن سائل برشة سكر 10\nقطعة — 20\n ريال";
+  assert.equal(join(broken), "1 × كباجي جبن سائل برشة سكر 10 قطعة — 20 ريال");
+  assert.equal(sum(broken), 20);
+  assert.equal(sum("1 × قوارب 18 قطعة — 35 ريال\n2 × كب بيتزا 28 قطعة — 94 ريال"), 129);
+});
 console.log(`\n${n} checks passed`);

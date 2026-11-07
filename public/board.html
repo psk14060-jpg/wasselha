@@ -1417,7 +1417,10 @@ function openSheet(o){
   if(!MENU)loadMenu();
 }
 /* edit: removing or changing a priced line ("— 35 ريال") moves the total by the same amount, unless the total was typed by hand */
-const linesSum=t=>String(t||"").split("\n").reduce((s,l)=>{const m=l.match(/—\s*([\d.]+)\s*ريال/);return s+(m?+m[1]:0);},0);
+/* a line that does not start with «N ×» continues the line above (an Enter pressed inside an item broke #35 of 2026-11-07:
+   its price fell on another line and the total became 0) */
+const joinItemLines=t=>String(t||"").split("\n").reduce((a,l)=>{const x=l.trim();if(!x)return a;if(!a.length||/^\s*[\d٠-٩]+\s*×/.test(x))a.push(x);else a[a.length-1]+=" "+x;return a;},[]).join("\n");
+const linesSum=t=>joinItemLines(t).split("\n").reduce((s,l)=>{const m=l.match(/—\s*([\d.]+)\s*ريال/);return s+(m?+m[1]:0);},0);
 $("items").addEventListener("input",()=>{const b=S.editBase;if(!b||b.touched||b.total==null)return;
   $("total").value=Math.max(0,Math.round((b.total-linesSum(b.items)+linesSum($("items").value))*100)/100);});
 $("total").addEventListener("input",()=>{if(S.editBase)S.editBase.touched=true;});
@@ -1434,7 +1437,7 @@ $("sheet").addEventListener("submit",async e=>{
   const tm=$("dueTime").value; const del=segVal("typeSeg")==="del";
   let items, total, deliveryFee=null;
   if(textMode()){
-    items=$("items").value.trim(); total=$("total").value===""?null:+$("total").value;
+    items=joinItemLines($("items").value); total=$("total").value===""?null:+$("total").value;
     deliveryFee=del&&!isApp(segVal("srcSeg"))?areaFee():null;
   }else{
     const app=isApp(segVal("srcSeg"));
