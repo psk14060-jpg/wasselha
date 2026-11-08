@@ -2,6 +2,7 @@
 // - POST /api/web-order      : website sends an order (public, CORS) -> status "pending"
 // - GET  /                   : kitchen board (PIN protected)
 // - /api/board/*             : board reads and updates orders
+import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
 import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -366,7 +367,7 @@ function fromWebPayload(b) {
 function fromBoardPayload(b) {
   const due = cleanDue(b.due);
   if (!due) return { error: "bad_due" };
-  const items = clip(b.items, 1500);
+  const items = clip(normItemLines(b.items), 1500);
   if (!items) return { error: "no_items" };
   return {
     order: {
@@ -645,7 +646,7 @@ const server = http.createServer(async (req, res) => {
         if (b.phone !== undefined) put("phone", clip(b.phone, 20));
         if (b.area !== undefined) put("area", clip(b.area, 80));
         let before = null;
-        if (b.items !== undefined) { const it = clip(b.items, 1500); if (!it) return send(res, 400, { error: "no_items" }); put("items", it);
+        if (b.items !== undefined) { const it = clip(normItemLines(b.items), 1500); if (!it) return send(res, 400, { error: "no_items" }); put("items", it);
           before = (await pool.query("SELECT id, source, items, raw_text FROM orders WHERE id=$1", [m[1]])).rows[0]; }
         if (b.note !== undefined) put("note", clip(b.note, 300));
         if (b.appRef !== undefined) put("app_ref", clip(b.appRef, 30) || null);
@@ -711,6 +712,22 @@ migrate().then(() => {
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
     .then(r => r.rowCount && console.log("fix: delivery subsidy off (Hassan 2026-11-08)")).catch(() => {});
+  // 2026-11-08 #21 (Hassan): a «بوكس تشكيلة العائلة» 69 SAR was added but the total did not move; delivery is 20 SAR.
+  // Once (board_settings fix21_1108): price the line, then total = lines + 20 when every line has a price.
+  (async () => {
+    if ((await pool.query("SELECT 1 FROM board_settings WHERE key='fix21_1108'")).rows.length) return;
+    const o = (await pool.query("SELECT id, items, total, delivery_fee, area, type FROM orders WHERE op_day='2026-11-08' AND num=21")).rows[0];
+    if (!o) return console.log("fix: #21 not found");
+    console.log(`fix: #21 before total=${o.total} fee=${o.delivery_fee} type=${o.type} area=${o.area} items=${String(o.items).replace(/\n/g, " / ")}`);
+    let items = normItemLines(o.items).split("\n").map(l => /العائلة/.test(l) && !/—\s*[\d.]+\s*ريال/.test(l) ? l + " — 69 ريال" : l).join("\n");
+    if (o.type !== "del") return console.log("fix: #21 is not a delivery order, left as is");
+    if (unpricedLines(items).length) return console.log("fix: #21 has unpriced lines, left as is: " + unpricedLines(items).join(" / "));
+    const total = linesSum(items) + 20;
+    const area = o.type === "del" ? (String(o.area || "").replace(/\s*\((?:توصيل[^)]*)\)\s*$/, "") + " (توصيل 20 ر)") : o.area;
+    await pool.query("UPDATE orders SET items=$2, total=$3, delivery_fee=CASE WHEN type='del' THEN 20 ELSE delivery_fee END, area=$4, updated=$5 WHERE id=$1", [o.id, items, total, area, Date.now()]);
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix21_1108', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.now())]);
+    console.log(`fix: #21 after total=${total} area=${area} items=${items.replace(/\n/g, " / ")}`);
+  })().catch(e => console.log("fix: #21 " + e.message));
   // 2026-11-07 #35: an Enter inside the item line split its price off, the total became 0
   pool.query(`UPDATE orders SET items='1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال', total=20, updated=$1
     WHERE op_day='2026-11-07' AND num=35 AND total=0 AND items LIKE '%قطعة — 20%' RETURNING num`, [Date.now()])

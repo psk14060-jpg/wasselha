@@ -61,3 +61,8 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - Read «القواعد المعتمدة» (subsidy on/off from its status/dates; any rule change → log + note) and «المنيو والتكاليف» (unified names via `unifiedName`, costs for the subsidy margin) every 10 minutes.
 - Mistakes in other agents' tabs → a row in «ملاحظات», never an edit. Phones: last 4 digits only. No shop (Rewaa) sales.
 - Do not add header buttons; secondary tools go in the ⋯ menu, card extras in their own row.
+
+## 2026-11-08 #21 — سعر مكتوب بشكل حر ما حرّك الإجمالي
+- `itemlines.mjs` (مشترك بين السيرفر واللوحة عبر `{{ITEMLINES}}`): يوحّد أي سعر آخر السطر («٦٩ ريال»، «- 69 ر»، «69ريال») إلى «— 69 ريال» ويجمع السطور المكسورة.
+- التعديل يحرك الإجمالي بفرق الأسعار؛ سطر بدون سعر يطلع تحته تنبيه أحمر «بدون سعر (ما دخل في الإجمالي)».
+- درس متكرر: أي CSS جديد يُضاف قبل `</style>` (فيه اختبار الحين).

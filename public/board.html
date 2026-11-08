@@ -232,6 +232,7 @@ textarea{resize:vertical;min-height:84px}
 #rwPanel .kah{margin:22px 0 8px;font-size:16px}
 #rwPanel .karec{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--surface)}
 #rwPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
+#itemsHint{margin:0;color:var(--late);font-size:12.5px;font-weight:600;grid-column:1/-1}
 </style>
 
 <style>
@@ -423,6 +424,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="textmode" id="textMode" hidden>
       <label class="f full"><span>الأصناف (سطر لكل صنف)</span><textarea id="items" rows="4" placeholder="2 × فطائر مثلثة 20 قطعة"></textarea></label>
       <label class="f"><span>الإجمالي (ريال)</span><input type="number" id="total" inputmode="decimal" min="0" step="0.5"></label>
+      <p class="hint full" id="itemsHint" hidden></p>
     </div>
 
     <p class="err" id="formErr" hidden></p>
@@ -787,6 +789,31 @@ function openOf(ms) {
   const d = new Date(ms + 3 * 3600e3 - 6 * 3600e3);
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - 3 * 3600e3 + OPEN_MIN * 60e3;
 }
+
+// Items text typed or edited on the board (shared by the server and the board page: plain JavaScript, no imports).
+// - A line that does not start with «N ×» continues the line above (an Enter inside #35 of 2026-11-07 split its price off).
+// - A price written loosely at the end of a line («٦٩ ريال», «- 69 ر», «69ر») becomes «— 69 ريال», the one form the board,
+//   the reports and the shared sheet read. #21 of 2026-11-08: a family box added at 69 SAR did not move the total.
+const ilLatin = s => String(s || "").replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d)).replace(/٫/g, ".");
+const IL_PRICE = /\s*[—–\-:=]?\s*(\d+(?:\.\d+)?)\s*(?:ريال|ر\.?\s*س|ر|sar)\.?\s*$/i;
+
+function normItemLines(t) {
+  const lines = String(t || "").split("\n").reduce((a, l) => {
+    const x = l.trim(); if (!x) return a;
+    if (!a.length || /^\s*[\d٠-٩۰-۹]+\s*[×xX*]/.test(x)) a.push(x); else a[a.length - 1] += " " + x;
+    return a;
+  }, []);
+  return lines.map(l => {
+    let x = l.replace(/^\s*([\d٠-٩۰-۹]+)\s*[×xX*]\s*/, (m, q) => ilLatin(q) + " × ");
+    const m = ilLatin(x).match(IL_PRICE);
+    if (m) x = ilLatin(x).slice(0, m.index).trim() + " — " + m[1] + " ريال";
+    return x;
+  }).join("\n");
+}
+// sum of the line prices («— 35 ريال»), after the same cleaning
+const linesSum = t => normItemLines(t).split("\n").reduce((s, l) => { const m = l.match(/—\s*([\d.]+)\s*ريال/); return s + (m ? +m[1] : 0); }, 0);
+// lines with no price (to warn the shop the total did not move for them)
+const unpricedLines = t => normItemLines(t).split("\n").filter(l => l && !/—\s*[\d.]+\s*ريال/.test(l));
 
 
 /* ---------- time (Riyadh, UTC+3 all year; operating day starts 06:00) ---------- */
@@ -1409,7 +1436,7 @@ function openSheet(o){
   if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=a;}}
   {const m=String(o&&o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);feeShown=o?(o.deliveryFee!=null?+o.deliveryFee:m?+m[1]:0):0;$("feeIn").value=feeShown?String(feeShown):"";}
   $("items").value=o?o.items||"":""; $("total").value=o&&o.total!=null?o.total:""; $("note").value=o?o.note||"":"";
-  S.editBase=o?{items:o.items||"",total:o.total,updated:o.updated,touched:false}:null;
+  S.editBase=o?{items:o.items||"",total:o.total,updated:o.updated,touched:false}:null; itemsHint();
   $("srcSeg").closest(".f").hidden=!!(o&&o.source==="web");
   renderTiles(); renderCart(); renderSlots();
   $("scrim").hidden=false;
@@ -1419,9 +1446,10 @@ function openSheet(o){
 /* edit: removing or changing a priced line ("— 35 ريال") moves the total by the same amount, unless the total was typed by hand */
 /* a line that does not start with «N ×» continues the line above (an Enter pressed inside an item broke #35 of 2026-11-07:
    its price fell on another line and the total became 0) */
-const joinItemLines=t=>String(t||"").split("\n").reduce((a,l)=>{const x=l.trim();if(!x)return a;if(!a.length||/^\s*[\d٠-٩]+\s*×/.test(x))a.push(x);else a[a.length-1]+=" "+x;return a;},[]).join("\n");
-const linesSum=t=>joinItemLines(t).split("\n").reduce((s,l)=>{const m=l.match(/—\s*([\d.]+)\s*ريال/);return s+(m?+m[1]:0);},0);
-$("items").addEventListener("input",()=>{const b=S.editBase;if(!b||b.touched||b.total==null)return;
+const joinItemLines=normItemLines; /* itemlines.mjs */
+function itemsHint(){const u=unpricedLines($("items").value),h=$("itemsHint");if(!h)return;
+  h.hidden=!(S.editBase&&u.length);h.textContent=u.length?"⚠ بدون سعر (ما دخل في الإجمالي): "+u.join(" · ")+" — اكتب السعر آخر السطر مثل «69 ريال» أو عدّل الإجمالي":"";}
+$("items").addEventListener("input",()=>{itemsHint();const b=S.editBase;if(!b||b.touched||b.total==null)return;
   $("total").value=Math.max(0,Math.round((b.total-linesSum(b.items)+linesSum($("items").value))*100)/100);});
 $("total").addEventListener("input",()=>{if(S.editBase)S.editBase.touched=true;});
 function closeSheet(){$("scrim").hidden=true;S.editing=null;}

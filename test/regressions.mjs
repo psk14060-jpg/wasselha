@@ -11,6 +11,19 @@ const { placeUnknown } = await import("../reader.mjs");
 const menu = await getMenu();
 let n = 0; const t = (name, fn) => { fn(); n++; console.log("✓", name); };
 
+const { normItemLines, linesSum, unpricedLines } = await import("../itemlines.mjs");
+t("2026-11-08 #21: بوكس مضاف بسعر مكتوب بأي شكل يدخل الإجمالي", () => {
+  const base = "1 × فطائر مثلثة 20 قطعة — 35 ريال";
+  for (const add of ["1 × بوكس تشكيلة العائلة ٦٩ ريال", "١ × بوكس تشكيلة العائلة - 69 ر", "1 x بوكس تشكيلة العائلة 69ريال", "1 × بوكس تشكيلة العائلة — ٦٩ ريال"]) {
+    const s = normItemLines(base + "\n" + add);
+    assert.equal(linesSum(s), 104, add);
+    assert.match(s.split("\n")[1], /^1 × بوكس تشكيلة العائلة — 69 ريال$/, add);
+  }
+  assert.equal(normItemLines("1 × كباجي 10 قطع\n— 20 ريال"), "1 × كباجي 10 قطع — 20 ريال");
+  assert.equal(normItemLines("2 × فطائر مثلثة 20 قطعة"), "2 × فطائر مثلثة 20 قطعة");
+  assert.deepEqual(unpricedLines(base + "\n1 × بوكس تشكيلة العائلة"), ["1 × بوكس تشكيلة العائلة"]);
+});
+
 t("2026-11-03 #12: «سمبوسة مشكل ٢٠» = فطائر مثلثة ٢٠", () => {
   const p = { items: [{ id: "samosa", tag: "20 قطعة", qty: 1, flavor: "مشكل" }] };
   fixSamosa(p, "ابي سمبوسه مشكل ٢٠ قطع", menu);
@@ -162,8 +175,8 @@ t("2026-11-06: صفحة اللوحة المبنية تشتغل (ملفات مش�
   }); }
 t("2026-11-07 #35: سطر صنف انكسر بـ Enter ما يصفّر الإجمالي", () => {
   const h = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
-  const code = h.match(/const joinItemLines=[^\n]+/)[0] + "\n" + h.match(/const linesSum=[^\n]+/)[0] + "\nreturn [joinItemLines, linesSum];";
-  const [join, sum] = new Function(code)();
+  assert.match(h, /const joinItemLines=normItemLines/); assert.match(h, /function normItemLines/);
+  const [join, sum] = [normItemLines, linesSum];
   const broken = "1 × كباجي جبن سائل برشة سكر 10\nقطعة — 20\n ريال";
   assert.equal(join(broken), "1 × كباجي جبن سائل برشة سكر 10 قطعة — 20 ريال");
   assert.equal(sum(broken), 20);
@@ -173,3 +186,7 @@ console.log(`\n${n} checks passed`);
 
 // the subsidy is off now (Hassan 2026-11-08)
 assert.equal(subsidyForReal({ type: "del", source: "call", deliveryFee: 10, total: 75, due: Date.parse("2026-11-08T19:00:00+03:00"), created: Date.now(), items: "1 × كب بيتزا 42 قطعة — 65 ريال" }).amount, 0);
+t("CSS كله داخل <style> (ما فيه شي بعد </style>)", () => {
+  const css = fs.readFileSync(new URL("../src/board.style.css", import.meta.url), "utf8");
+  assert.equal(css.trim().endsWith("</style>"), true);
+});
