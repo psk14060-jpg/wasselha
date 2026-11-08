@@ -3,6 +3,7 @@
 // - GET  /                   : kitchen board (PIN protected)
 // - /api/board/*             : board reads and updates orders
 import { dayStats } from "./daystats.mjs";
+import { audit } from "./audit.mjs";
 import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -710,7 +711,7 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
-  setTimeout(() => dayStats(pool, "2026-11-01").catch(e => console.log("daystat: " + e.message)), 20e3); // one-off read (2026-11-09)
+  setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
     .then(r => r.rowCount && console.log("fix: delivery subsidy off (Hassan 2026-11-08)")).catch(() => {});
