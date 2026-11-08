@@ -43,6 +43,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 
 ## Who decides what (Hassan, 2026-11-05)
 - The marketing agent decides prices, offers, loyalty and delivery subsidy; this agent builds them. Rule changes come from there.
+- Delivery subsidy CANCELLED by Hassan 2026-11-08 16:13 (`subsidy_off_hassan` in board_settings forces it off whatever the sheet says; delete that row only if Hassan turns it back on).
 - Delivery subsidy (`subsidy.mjs`, shared with the board): Sun–Wed, items ≥ 60 SAR, shop pays 5 SAR, more while the margin after delivery stays ≥ 65% (price without VAT, food + box cost), never above the fee. None Thu/Fri 3–9 pm (and, as written, none Thu/Fri/Sat at all). Unknown item costs → base 5 only.
 - Loyalty: paused until the marketing agent sends the design. Do not build.
 - Rewaa POS integration: cancelled (13,800 SAR). Shop sales come from a weekly Rewaa Excel export; never enter shop sales on the board (the «المحل» source is hidden).

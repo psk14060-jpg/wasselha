@@ -135,7 +135,8 @@ export async function readShared(pool, log = console.log) {
   const rules = (await read(T.rules, "A2:E100")).filter(r => String(r[0] || "").trim());
   const today = opDayOf(Date.now());
   const sub = rules.find(r => /دعم التوصيل/.test(r[0]));
-  subsidyActive = sub ? inForce(sub, today) : false;
+  // Hassan stopped the delivery subsidy himself (2026-11-08 16:13): off whatever the sheet says, until he turns it back on
+  subsidyActive = sub && !(await getS(pool, "subsidy_off_hassan")) ? inForce(sub, today) : false;
   setSheetCosts(costs, subsidyActive);
   // a rule added or changed by the marketing agent: tell the shop's agent (the log) and leave a note that it was seen
   const seen = (await getS(pool, "sheet_rules")) || {};
@@ -267,7 +268,8 @@ export function startSheetJob(pool, log = console.log) {
         log("sheet: hello note written");
       }
       // one-off notes for the other agents about decisions Hassan gave this agent directly
-      for (const [k, tab, text] of [["note_free_areas_1105", T.rules, "قرار من حسن مباشرة (2026-11-05 18:39): التوصيل مجاني لحيّي النايفية والعزيزية. طُبّق في اللوحة وقارئ الواتساب. يحتاج إضافته في «القواعد المعتمدة» وفي موقع minigeesh.sa."]])
+      for (const [k, tab, text] of [["note_free_areas_1105", T.rules, "قرار من حسن مباشرة (2026-11-05 18:39): التوصيل مجاني لحيّي النايفية والعزيزية. طُبّق في اللوحة وقارئ الواتساب. يحتاج إضافته في «القواعد المعتمدة» وفي موقع minigeesh.sa."],
+        ["note_subsidy_off_1108", T.rules, "قرار من حسن مباشرة (2026-11-08 16:13): إلغاء دعم التوصيل. أُوقف في اللوحة من الآن مهما كانت حالته هنا. يحتاج تغيير حالة «دعم التوصيل» في «القواعد المعتمدة» إلى «موقوفة»، وإزالته من موقع minigeesh.sa إن كان مضافًا."]])
         if (!(await getS(pool, k))) { await note(tab, text); await setS(pool, k, Date.now()); log("sheet: note " + k); }
       // 2026-11-06 format change (arrival time, requested time column, one spelling per neighbourhood): rewrite what is there
       if (!(await getS(pool, "sheet_v2"))) {

@@ -708,6 +708,9 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
+  // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
+  pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
+    .then(r => r.rowCount && console.log("fix: delivery subsidy off (Hassan 2026-11-08)")).catch(() => {});
   // 2026-11-07 #35: an Enter inside the item line split its price off, the total became 0
   pool.query(`UPDATE orders SET items='1 × كباجي جبن سائل برشة سكر 10 قطع — 20 ريال', total=20, updated=$1
     WHERE op_day='2026-11-07' AND num=35 AND total=0 AND items LIKE '%قطعة — 20%' RETURNING num`, [Date.now()])
