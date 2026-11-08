@@ -223,4 +223,5 @@ textarea{resize:vertical;min-height:84px}
 #rwPanel .karec{display:grid;gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--surface)}
 #rwPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
 #itemsHint{margin:0;color:var(--late);font-size:12.5px;font-weight:600;grid-column:1/-1}
+.total .split{display:block;font-size:11.5px;font-weight:600;color:var(--muted);line-height:1.3}
 </style>

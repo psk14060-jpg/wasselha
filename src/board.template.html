@@ -441,7 +441,7 @@ function ticket(o,t){
         ${u.cls.startsWith("late")&&!o.alertMuted?`<button type="button" class="sm mute" data-act="mute">🔕 إيقاف التنبيه</button>`:""}
       </div>`:""}
     <div class="foot">
-      ${o.total!=null?`<span class="total">${esc(subOf(o).amount?subOf(o).pay:o.total)} <small>ريال</small></span>`:""}
+      ${o.total!=null?`<span class="total">${esc(subOf(o).amount?subOf(o).pay:o.total)} <small>ريال</small>${splitTxt(o)}</span>`:""}
       <div class="acts">
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
@@ -913,6 +913,9 @@ function openSheet(o){
 /* edit: removing or changing a priced line ("— 35 ريال") moves the total by the same amount, unless the total was typed by hand */
 /* a line that does not start with «N ×» continues the line above (an Enter pressed inside an item broke #35 of 2026-11-07:
    its price fell on another line and the total became 0) */
+/* 2026-11-08 #21: the card total is what the courier collects at the door; show the split «طلب 145 + توصيل 20» */
+function splitTxt(o){if(o.type!=="del"||o.total==null||isApp(o.source))return "";const m=String(o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);
+  const f=o.deliveryFee!=null?+o.deliveryFee||0:m?+m[1]:0;if(!f)return "";return `<small class="split">طلب ${Math.round((+o.total-f)*100)/100} + توصيل ${f}</small>`;}
 const joinItemLines=normItemLines; /* itemlines.mjs */
 function itemsHint(){const u=unpricedLines($("items").value),h=$("itemsHint");if(!h)return;
   h.hidden=!(S.editBase&&u.length);h.textContent=u.length?"⚠ بدون سعر (ما دخل في الإجمالي): "+u.join(" · ")+" — اكتب السعر آخر السطر مثل «69 ريال» أو عدّل الإجمالي":"";}
