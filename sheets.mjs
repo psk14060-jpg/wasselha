@@ -117,7 +117,7 @@ export async function note(tab, text) {
 // ---------- read: approved rules and menu costs ----------
 let names = [];       // unified names from «المنيو والتكاليف»
 let costs = {};       // unified name → cost without VAT
-let subsidyActive = true;
+let subsidyActive = false;
 export const sheetState = () => ({ costs, subsidyActive, names });
 
 function inForce(row, today) {

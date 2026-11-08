@@ -12,7 +12,7 @@ export const SUBSIDY_RULE = {
   days: [0, 1, 2, 3],                            // Riyadh weekday of the delivery: Sun..Wed
   blocked: [{ days: [4, 5], fromHour: 15, toHour: 21 }],
   minItems: 60, base: 5, targetMargin: 0.65, vat: 0.15,
-  active: true,                                  // turned off if the shared sheet marks the rule as not in force
+  active: false,                                 // cancelled by Hassan 2026-11-08; the shared sheet can only turn it on if he lifts that
 };
 
 // Costs from the shared sheet («المنيو والتكاليف»: unified name → cost without VAT, box included), set by the server
