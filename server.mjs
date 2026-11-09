@@ -712,6 +712,7 @@ migrate().then(() => {
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(() => getMenu().then(m => { console.log(`menu: source=${m.source} products=${m.products.length}`); for (const p of m.products) console.log(`menu: ${p.id} | ${p.name} | ${p.description} | ${p.variants.map(v => v.tag + "=" + v.price).join(", ")}`); }).catch(e => console.log("menu: " + e.message)), 25e3); // one-off: compare with the printed menus (2026-11-09)
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
     .then(r => r.rowCount && console.log("fix: delivery subsidy off (Hassan 2026-11-08)")).catch(() => {});
