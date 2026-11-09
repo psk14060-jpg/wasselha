@@ -4,6 +4,7 @@
 // - /api/board/*             : board reads and updates orders
 import { dayStats } from "./daystats.mjs";
 import { audit } from "./audit.mjs";
+import { migratePurchases } from "./purchases.mjs";
 import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
 import http from "node:http";
 import crypto from "node:crypto";
@@ -83,6 +84,7 @@ async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS orders_day_num_uidx ON orders (op_day, num);
   `);
   await migrateWa(pool);
+  await migratePurchases(pool);
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
   await migrateTts(pool);
   await migrateGifts(pool);

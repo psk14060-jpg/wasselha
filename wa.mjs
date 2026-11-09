@@ -8,6 +8,7 @@ import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
 import { isCourier, courierDelivered } from "./courier.mjs";
+import { onPurchaseMessage } from "./purchases.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 import { subsidyFor } from "./subsidy.mjs";
 import { nextReady, openOf, kitchenJobs } from "./capacity.mjs";
@@ -81,7 +82,7 @@ export function extractMessages(body) {
         const names = Object.fromEntries((v.contacts || []).map(c => [c.wa_id, c.profile?.name || ""]));
         for (const m of v.messages || []) {
           console.log(`wa-probe: in keys=${Object.keys(m).join(",")} value_keys=${Object.keys(v).join(",")}${m.group_id || m.group ? " GROUP" : ""}`);
-          out.push({ id: m.id, from: m.from, name: names[m.from] || "", type: m.type, dir: "in", raw: m.type === "image" ? m.image : undefined,
+          out.push({ id: m.id, from: m.from, name: names[m.from] || "", type: m.type, dir: "in", raw: m.type === "image" ? m.image : m.type === "document" ? m.document : undefined,
             text: String(msgText(m)).slice(0, 4000), ts: Number(m.timestamp) * 1000 || Date.now() });
         }
       } else if (ch.field === "smb_message_echoes") {
@@ -515,6 +516,8 @@ export async function handleWebhook(body, ctx) {
         if (APPROVAL.test(m.text)) { result = await approveFromConversation(m, phone, ctx, apiKey); log("wa: " + result); }
         continue;
       }
+      // purchase invoices sent to the board number («مشتريات …», Hassan 2026-11-09): kept as they are, never an order
+      { const pr = await onPurchaseMessage(pool, m); if (pr) { result = pr; log("wa: " + pr); continue; } }
       // the free-delivery courier: «تم توصيل الطلب» closes his order; he is never a customer (Hassan 2026-11-09)
       if (isCourier(m.from)) { result = await courierDelivered(pool, m.text); log("wa: " + result); continue; }
       // a customer message carrying a website order number links that order to this chat.

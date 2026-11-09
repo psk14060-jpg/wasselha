@@ -60,7 +60,7 @@ export async function token(scope = "https://www.googleapis.com/auth/spreadsheet
   toks[scope] = { value: j.access_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
   return toks[scope].value;
 }
-async function api(method, path, body) {
+export async function api(method, path, body) {
   const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}${path}`, {
     method, headers: { authorization: "Bearer " + await token(), "content-type": "application/json" },
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(30000),
@@ -70,16 +70,17 @@ async function api(method, path, body) {
   return j;
 }
 const rng = (tab, a1) => encodeURIComponent(`'${tab}'!${a1}`);
-async function read(tab, a1) {
+export async function read(tab, a1) {
   return (await api("GET", `/values/${rng(tab, a1)}?valueRenderOption=UNFORMATTED_VALUE`)).values || [];
 }
-async function append(tab, rows) {
+export async function append(tab, rows) {
   if (!rows.length) return;
   for (let i = 0; i < rows.length; i += 500)
     await api("POST", `/values/${rng(tab, "A1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, { values: rows.slice(i, i + 500) });
 }
 let sheetIds = null;
-async function sheetId(tab) {
+export const resetSheetIds = () => { sheetIds = null; };
+export async function sheetId(tab) {
   if (!sheetIds) sheetIds = Object.fromEntries(((await api("GET", "?fields=sheets.properties")).sheets || []).map(s => [s.properties.title, s.properties.sheetId]));
   if (sheetIds[tab] === undefined) throw new Error("tab_missing " + tab);
   return sheetIds[tab];
@@ -286,6 +287,12 @@ export function startSheetJob(pool, log = console.log) {
       if (r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "sheet_sales_done")) !== today) {
         await syncDay(pool, today, log); await setS(pool, "sheet_sales_done", today);
       } else if (first) await syncDay(pool, today, log); // on start: today so far (rewritten in full at 02:00)
+      // purchase invoices: photos to Drive + rows in «فواتير_المشتريات» at 02:00 (and anything pending on start)
+      if ((r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "purchases_done")) !== today) || first) {
+        const { syncPurchases } = await import("./purchases.mjs");
+        await syncPurchases(pool, log).catch(e => log("purchases: " + e.message));
+        if (!first) await setS(pool, "purchases_done", today);
+      }
       const weekKey = dateOf(Date.now());
       if ((r.getUTCDay() === 0 && r.getUTCHours() >= 3 && (await getS(pool, "sheet_customers_done")) !== weekKey) || !(await getS(pool, "sheet_customers_done"))) {
         await syncCustomers(pool, log); await setS(pool, "sheet_customers_done", weekKey);
