@@ -725,6 +725,19 @@ migrate().then(() => {
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-10): purchase senders = Suleiman + Hassan (the number that sent the first test invoices)
+    if (await pool.query("SELECT 1 FROM board_settings WHERE key='purchase_senders'").then(r => r.rows.length)) return;
+    const h = (await pool.query("SELECT wa_from FROM purchases ORDER BY at LIMIT 1")).rows[0];
+    const list = [{ key: "530853547", name: "سليمان" }];
+    if (h) list.push({ key: String(h.wa_from).replace(/\D/g, "").slice(-9), name: "حسن" });
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('purchase_senders', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(list)]);
+    if (h) await pool.query("UPDATE purchases SET sender='حسن', file_name=replace(file_name, sender, 'حسن') WHERE wa_from=$1", [h.wa_from]);
+    const { api, read } = await import("./sheets.mjs");
+    const col = await read("فواتير_المشتريات", "B:B");
+    const rows = col.map((r, i) => [i, r[0]]).filter(([i, v]) => i > 0 && v === "البقاء لله");
+    for (const [i] of rows) await api("PUT", `/values/${encodeURIComponent("'فواتير_المشتريات'!B" + (i + 1))}?valueInputOption=RAW`, { values: [["حسن"]] });
+    console.log(`fix: purchase senders set (${list.length}), sheet rows renamed ${rows.length}`);
+  } catch (e) { console.log("fix: purchase senders " + e.message); } }, 40e3);
   setTimeout(async () => { try { // one-off: which env variable holds the Dualhook key, and is it accepted? (names/status only)
     const { dualhookKey } = await import("./purchases.mjs");
     const dk = dualhookKey();
