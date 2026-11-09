@@ -725,10 +725,13 @@ migrate().then(() => {
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
-  setTimeout(async () => { try { // one-off: is DUALHOOK_KEY set and accepted? (status only, the key is never logged)
-    if (!process.env.DUALHOOK_KEY) return console.log("dualhook-probe: no key");
-    { const k = process.env.DUALHOOK_KEY; console.log(`dualhook-probe: key shape len=${k.length} trimmed=${k.trim().length} prefix_ok=${k.trim().startsWith("dh_live_")} quoted=${/^["\x27]/.test(k.trim())}`); }
-    const r = await fetch("https://api.dualhook.com/v25.0/983224204880529?fields=id,status,quality_rating", { headers: { authorization: "Bearer " + process.env.DUALHOOK_KEY.trim() } });
+  setTimeout(async () => { try { // one-off: which env variable holds the Dualhook key, and is it accepted? (names/status only)
+    const { dualhookKey } = await import("./purchases.mjs");
+    const dk = dualhookKey();
+    const dh = Object.keys(process.env).filter(k => /DUAL|DH_/i.test(k));
+    console.log(`dualhook-probe: env names with dualhook=${dh.join(",") || "-"} key_from=${dk.name || "none"} len=${dk.value.length}`);
+    if (!dk.value) return;
+    const r = await fetch("https://api.dualhook.com/v25.0/983224204880529?fields=id,status,quality_rating", { headers: { authorization: "Bearer " + dk.value } });
     console.log(`dualhook-probe: status=${r.status} ${(await r.text()).replace(/\s+/g, " ").slice(0, 160)}`);
   } catch (e) { console.log("dualhook-probe: " + e.message); } }, 15e3);
   setTimeout(async () => { try { // one-off: why #21 of 2026-11-09 got 19:30 (Hassan: the customer said right after Isha)

@@ -84,11 +84,18 @@ export async function googleCaller(req) {
   return ok ? j.email : null;
 }
 async function download(mediaId) {
-  const key = String(process.env.DUALHOOK_KEY || "").trim().replace(/^Bearer\s+/i, "").replace(/^["']|["']$/g, "");
-  if (!key) throw new Error("no DUALHOOK_KEY");
+  const key = dualhookKey().value;
+  if (!key) throw new Error("no Dualhook key (no env value starting with dh_live_)");
   const r = await fetch(`https://api.dualhook.com/v25.0/${mediaId}/content`, { headers: { authorization: "Bearer " + key }, signal: AbortSignal.timeout(60000) });
   if (!r.ok) throw new Error(`media_${r.status} ${(await r.text()).slice(0, 120)}`);
   return { bytes: Buffer.from(await r.arrayBuffer()), type: (r.headers.get("content-type") || "image/jpeg").split(";")[0] };
+}
+// the Dualhook runtime key: whichever env variable holds a value starting with «dh_live_» (Hassan has more than one Dualhook value)
+export function dualhookKey() {
+  const clean = v => String(v || "").trim().replace(/^Bearer\s+/i, "").replace(/^["']|["']$/g, "").trim();
+  const names = ["DUALHOOK_KEY", ...Object.keys(process.env).filter(k => k !== "DUALHOOK_KEY")];
+  for (const n of names) { const v = clean(process.env[n]); if (v.startsWith("dh_live_")) return { name: n, value: v }; }
+  return { name: null, value: "" };
 }
 const extOf = t => /png/.test(t) ? "png" : /pdf/.test(t) ? "pdf" : /webp/.test(t) ? "webp" : "jpg";
 export async function pendingPurchases(pool, log = console.log, max = 15) {
