@@ -712,6 +712,16 @@ migrate().then(() => {
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off: why #21 of 2026-11-09 got 19:30 (Hassan: the customer said right after Isha)
+    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-09' AND num=21")).rows[0];
+    if (!o) return console.log("o21: not found");
+    console.log(`o21: created=${hm(o.created)} confirmed=${hm(o.confirmed_at)} due=${hm(o.due)} type=${o.type} status=${o.status} area=${o.area} note=${o.note} raw=${JSON.stringify(o.raw)}`);
+    const ms = (await pool.query("SELECT dir, body, at FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 3 * 3600e3])).rows;
+    for (const m of ms) console.log(`o21: ${hm(m.at)} ${m.dir} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 300)}`);
+    const ev = (await pool.query("SELECT kind, from_status, to_status, due, at FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows;
+    for (const e of ev) console.log(`o21: ev ${hm(e.at)} ${e.kind} ${e.from_status || ""}→${e.to_status || ""} due=${hm(e.due)}`);
+  } catch (e) { console.log("o21: " + e.message); } }, 30e3);
   setTimeout(() => getMenu().then(m => { console.log(`menu: source=${m.source} products=${m.products.length}`); for (const p of m.products) console.log(`menu: ${p.id} | ${p.name} | ${p.description} | ${p.variants.map(v => v.tag + "=" + v.price).join(", ")}`); }).catch(e => console.log("menu: " + e.message)), 25e3); // one-off: compare with the printed menus (2026-11-09)
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
