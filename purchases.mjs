@@ -70,9 +70,9 @@ export async function onPurchaseMessage(pool, m) {
 // photos are saved by a Google Apps Script that runs as Hassan's own Google account every night at ~02:15:
 //   GET  /api/purchases/pending  → photos not saved yet (bytes fetched here from Dualhook), with the file and month folder names
 //   POST /api/purchases/saved    → {id, link}: the board records the link and adds the row to «فواتير_المشتريات»
-// Both carry the script's Google identity token; the board accepts only the Drive owner's verified e-mail (no shared secret).
+// Both carry the script's Google identity token; the board accepts only the shop's verified Google accounts (the script lives in minigeesh@gmail.com) (no shared secret).
 const dayOf = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(0, 10);
-const OWNER = String(process.env.PURCHASES_GOOGLE_EMAIL || "psk14060@gmail.com").toLowerCase();
+const OWNERS = String(process.env.PURCHASES_GOOGLE_EMAILS || "minigeesh@gmail.com,psk14060@gmail.com").toLowerCase().split(",").map(x => x.trim());
 export async function googleCaller(req) {
   const m = String(req.headers.authorization || "").match(/^Bearer\s+([\w.-]+)$/);
   if (!m) return null;
@@ -80,7 +80,7 @@ export async function googleCaller(req) {
   if (!r.ok) return null;
   const j = await r.json();
   const ok = ["accounts.google.com", "https://accounts.google.com"].includes(j.iss) && String(j.email_verified) === "true" &&
-    String(j.email || "").toLowerCase() === OWNER && Number(j.exp) * 1000 > Date.now();
+    OWNERS.includes(String(j.email || "").toLowerCase()) && Number(j.exp) * 1000 > Date.now();
   return ok ? j.email : null;
 }
 async function download(mediaId) {
