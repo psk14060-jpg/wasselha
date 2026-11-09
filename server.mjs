@@ -725,6 +725,13 @@ migrate().then(() => {
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-10 00:22): Hassan gave his own number for purchases
+    const h = (await pool.query("SELECT wa_from FROM purchases ORDER BY at LIMIT 1")).rows[0];
+    const testKey = h ? String(h.wa_from).replace(/\D/g, "").slice(-9) : "";
+    const list = [{ key: "530853547", name: "سليمان" }, { key: "561044464", name: "حسن" }];
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('purchase_senders', $1) ON CONFLICT (key) DO UPDATE SET value=$1", [JSON.stringify(list)]);
+    console.log(`fix: purchase senders = Suleiman + Hassan 561044464; first test sender ${testKey === "561044464" ? "IS" : "is NOT"} Hassan's number (…${testKey.slice(-4)})`);
+  } catch (e) { console.log("fix: purchase senders2 " + e.message); } }, 45e3);
   setTimeout(async () => { try { // one-off (2026-11-10): purchase senders = Suleiman + Hassan (the number that sent the first test invoices)
     if (await pool.query("SELECT 1 FROM board_settings WHERE key='purchase_senders'").then(r => r.rows.length)) return;
     const h = (await pool.query("SELECT wa_from FROM purchases ORDER BY at LIMIT 1")).rows[0];
