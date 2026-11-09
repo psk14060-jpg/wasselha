@@ -84,7 +84,7 @@ export async function googleCaller(req) {
   return ok ? j.email : null;
 }
 async function download(mediaId) {
-  const key = process.env.DUALHOOK_KEY;
+  const key = String(process.env.DUALHOOK_KEY || "").trim().replace(/^Bearer\s+/i, "").replace(/^["']|["']$/g, "");
   if (!key) throw new Error("no DUALHOOK_KEY");
   const r = await fetch(`https://api.dualhook.com/v25.0/${mediaId}/content`, { headers: { authorization: "Bearer " + key }, signal: AbortSignal.timeout(60000) });
   if (!r.ok) throw new Error(`media_${r.status} ${(await r.text()).slice(0, 120)}`);
