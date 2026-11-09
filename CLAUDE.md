@@ -76,3 +76,4 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - القروبات ما توصل (رقم Coexistence عبر Dualhook، وDualhook ما يقدم Groups API). البديل: صورة لرقم اللوحة مع سطر يبدأ «مشتريات» + كاش/تحويل/آجل، أو نص «مشتريات …» خلال 3 دقائق من الصور.
 - 02:00 كل ليلة (مع جوب الشيت): تنزيل الصورة من Dualhook runtime (`DUALHOOK_KEY`، يضيفه حسن بنفسه)، رفعها لدرايف «فواتير المشتريات/YYYY-MM/DATE_SENDER_N.jpg»، وسطر في تبويب «فواتير_المشتريات» بالحالة «جديدة».
 - ما نقرأ الفاتورة ولا نستخرج أرقامها. المرسلون المسموحون: board_settings «purchase_senders» (فاضية = أي أحد يكتب «مشتريات»).
+- تعديل: حساب الخدمة ما يقدر يملك ملفات في درايف شخصي (Service Accounts do not have storage quota). الحفظ في درايف يسويه Apps Script في حساب حسن (tools/purchases-apps-script) يسحب من `/api/purchases/pending` ويرجع الرابط لـ `/api/purchases/saved`؛ التحقق بـ Google identity token لإيميل مالك المجلد، بدون سر مشترك. اللوحة تضيف سطر الشيت لما يوصلها الرابط.

@@ -66,35 +66,43 @@ export async function onPurchaseMessage(pool, m) {
 }
 
 // ---------- nightly ----------
+// A service account cannot own files in a personal Drive («Service Accounts do not have storage quota», tested 2026-11-09), so the
+// photos are saved by a Google Apps Script that runs as Hassan's own Google account every night at ~02:15:
+//   GET  /api/purchases/pending  → photos not saved yet (bytes fetched here from Dualhook), with the file and month folder names
+//   POST /api/purchases/saved    → {id, link}: the board records the link and adds the row to «فواتير_المشتريات»
+// Both carry the script's Google identity token; the board accepts only the Drive owner's verified e-mail (no shared secret).
 const dayOf = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(0, 10);
-async function driveFetch(method, url, body, headers = {}) {
-  const r = await fetch(url, { method, headers: { authorization: "Bearer " + await token("https://www.googleapis.com/auth/drive"), ...headers }, body, signal: AbortSignal.timeout(60000) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(`drive_${r.status} ${(j.error && j.error.message) || ""}`.trim());
-  return j;
-}
-const monthFolders = {};
-async function monthFolder(ym) {
-  if (monthFolders[ym]) return monthFolders[ym];
-  const q = encodeURIComponent(`'${ROOT_FOLDER}' in parents and name='${ym}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const f = await driveFetch("GET", `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`);
-  if (f.files && f.files[0]) return (monthFolders[ym] = f.files[0].id);
-  const c = await driveFetch("POST", "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", JSON.stringify({ name: ym, mimeType: "application/vnd.google-apps.folder", parents: [ROOT_FOLDER] }), { "content-type": "application/json" });
-  return (monthFolders[ym] = c.id);
+const OWNER = String(process.env.PURCHASES_GOOGLE_EMAIL || "psk14060@gmail.com").toLowerCase();
+export async function googleCaller(req) {
+  const m = String(req.headers.authorization || "").match(/^Bearer\s+([\w.-]+)$/);
+  if (!m) return null;
+  const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(m[1]), { signal: AbortSignal.timeout(15000) });
+  if (!r.ok) return null;
+  const j = await r.json();
+  const ok = ["accounts.google.com", "https://accounts.google.com"].includes(j.iss) && String(j.email_verified) === "true" &&
+    String(j.email || "").toLowerCase() === OWNER && Number(j.exp) * 1000 > Date.now();
+  return ok ? j.email : null;
 }
 async function download(mediaId) {
   const key = process.env.DUALHOOK_KEY;
   if (!key) throw new Error("no DUALHOOK_KEY");
   const r = await fetch(`https://api.dualhook.com/v25.0/${mediaId}/content`, { headers: { authorization: "Bearer " + key }, signal: AbortSignal.timeout(60000) });
   if (!r.ok) throw new Error(`media_${r.status} ${(await r.text()).slice(0, 120)}`);
-  return { bytes: Buffer.from(await r.arrayBuffer()), type: r.headers.get("content-type") || "image/jpeg" };
+  return { bytes: Buffer.from(await r.arrayBuffer()), type: (r.headers.get("content-type") || "image/jpeg").split(";")[0] };
 }
 const extOf = t => /png/.test(t) ? "png" : /pdf/.test(t) ? "pdf" : /webp/.test(t) ? "webp" : "jpg";
-async function upload(folder, name, bytes, type) {
-  const bnd = "mgp" + Date.now();
-  const head = Buffer.from(`--${bnd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [folder] })}\r\n--${bnd}\r\nContent-Type: ${type}\r\n\r\n`);
-  const body = Buffer.concat([head, bytes, Buffer.from(`\r\n--${bnd}--`)]);
-  return driveFetch("POST", "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,webViewLink", body, { "content-type": "multipart/related; boundary=" + bnd });
+export async function pendingPurchases(pool, log = console.log, max = 15) {
+  const rows = (await pool.query("SELECT * FROM purchases WHERE status<>'saved' ORDER BY at LIMIT $1", [max])).rows;
+  const out = [];
+  for (const p of rows) {
+    try {
+      const { bytes, type } = await download(p.media_id);
+      const day = dayOf(p.at);
+      const n = Number((await pool.query("SELECT count(*) AS c FROM purchases WHERE sender=$1 AND at < $2 AND at >= $3", [p.sender, p.at, Date.parse(day + "T00:00:00+03:00")])).rows[0].c) + 1;
+      out.push({ id: p.msg_id, folder: day.slice(0, 7), name: `${day}_${p.sender}_${n}.${extOf(type || p.mime)}`, mime: type, b64: bytes.toString("base64") });
+    } catch (e) { await pool.query("UPDATE purchases SET status='error', err=$2 WHERE msg_id=$1", [p.msg_id, String(e.message).slice(0, 200)]); log(`purchases: ${String(p.msg_id).slice(-6)} ${e.message}`); }
+  }
+  return out;
 }
 async function ensureTab() {
   const tabs = ((await api("GET", "?fields=sheets.properties")).sheets || []).map(s => s.properties.title);
@@ -105,26 +113,15 @@ async function ensureTab() {
   const h = await read(TAB, "A1:F1");
   if (!(h[0] && h[0][0])) await api("PUT", `/values/${encodeURIComponent(`'${TAB}'!A1:F1`)}?valueInputOption=RAW`, { values: [["التاريخ", "المرسل", "رابط الصورة", "النص المرفق", "طريقة الدفع", "الحالة"]] });
 }
-export async function syncPurchases(pool, log = console.log) {
-  const rows = (await pool.query("SELECT * FROM purchases WHERE status<>'saved' OR NOT sheet_done ORDER BY at")).rows;
-  if (!rows.length) return;
-  let saved = 0, failed = 0;
-  for (const p of rows.filter(r => r.status !== "saved")) {
-    try {
-      const { bytes, type } = await download(p.media_id);
-      const day = dayOf(p.at);
-      const n = Number((await pool.query("SELECT count(*) AS c FROM purchases WHERE sender=$1 AND status='saved' AND file_name LIKE $2", [p.sender, day + "_%"])).rows[0].c) + 1;
-      const name = `${day}_${p.sender}_${n}.${extOf(type || p.mime)}`;
-      const f = await upload(await monthFolder(day.slice(0, 7)), name, bytes, type);
-      await pool.query("UPDATE purchases SET status='saved', drive_link=$2, file_name=$3, err=NULL WHERE msg_id=$1", [p.msg_id, f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`, name]);
-      saved++;
-    } catch (e) { failed++; await pool.query("UPDATE purchases SET status='error', err=$2 WHERE msg_id=$1", [p.msg_id, String(e.message).slice(0, 200)]); log(`purchases: ${p.msg_id.slice(-6)} ${e.message}`); }
-  }
-  const ready = (await pool.query("SELECT * FROM purchases WHERE status='saved' AND NOT sheet_done ORDER BY at")).rows;
-  if (ready.length) {
+export async function markSaved(pool, id, link, name, log = console.log) {
+  const up = await pool.query("UPDATE purchases SET status='saved', drive_link=$2, file_name=$3, err=NULL WHERE msg_id=$1 RETURNING *", [id, String(link).slice(0, 300), String(name || "").slice(0, 120)]);
+  if (!up.rows.length) return false;
+  const p = up.rows[0];
+  if (!p.sheet_done) {
     await ensureTab();
-    await append(TAB, ready.map(p => [dayOf(p.at), p.sender, p.drive_link, p.caption || "", p.pay, "جديدة"]));
-    await pool.query("UPDATE purchases SET sheet_done=true WHERE msg_id = ANY($1)", [ready.map(p => p.msg_id)]);
+    await append(TAB, [[dayOf(p.at), p.sender, p.drive_link, p.caption || "", p.pay, "جديدة"]]);
+    await pool.query("UPDATE purchases SET sheet_done=true WHERE msg_id=$1", [id]);
   }
-  log(`purchases: saved ${saved}, failed ${failed}, sheet rows ${ready.length}`);
+  log(`purchases: saved ${p.file_name}`);
+  return true;
 }

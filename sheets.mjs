@@ -287,12 +287,6 @@ export function startSheetJob(pool, log = console.log) {
       if (r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "sheet_sales_done")) !== today) {
         await syncDay(pool, today, log); await setS(pool, "sheet_sales_done", today);
       } else if (first) await syncDay(pool, today, log); // on start: today so far (rewritten in full at 02:00)
-      // purchase invoices: photos to Drive + rows in «فواتير_المشتريات» at 02:00 (and anything pending on start)
-      if ((r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "purchases_done")) !== today) || first) {
-        const { syncPurchases } = await import("./purchases.mjs");
-        await syncPurchases(pool, log).catch(e => log("purchases: " + e.message));
-        if (!first) await setS(pool, "purchases_done", today);
-      }
       const weekKey = dateOf(Date.now());
       if ((r.getUTCDay() === 0 && r.getUTCHours() >= 3 && (await getS(pool, "sheet_customers_done")) !== weekKey) || !(await getS(pool, "sheet_customers_done"))) {
         await syncCustomers(pool, log); await setS(pool, "sheet_customers_done", weekKey);
