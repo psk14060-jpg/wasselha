@@ -105,7 +105,7 @@ export async function pendingPurchases(pool, log = console.log, max = 15) {
     try {
       const { bytes, type } = await download(p.media_id);
       const day = dayOf(p.at);
-      const n = Number((await pool.query("SELECT count(*) AS c FROM purchases WHERE sender=$1 AND at < $2 AND at >= $3", [p.sender, p.at, Date.parse(day + "T00:00:00+03:00")])).rows[0].c) + 1;
+      const n = Number((await pool.query("SELECT count(*) AS c FROM purchases WHERE sender=$1 AND (at < $2 OR (at = $2 AND msg_id < $4)) AND at >= $3", [p.sender, p.at, Date.parse(day + "T00:00:00+03:00"), p.msg_id])).rows[0].c) + 1;
       out.push({ id: p.msg_id, folder: day.slice(0, 7), name: `${day}_${p.sender}_${n}.${extOf(type || p.mime)}`, mime: type, b64: bytes.toString("base64") });
     } catch (e) { await pool.query("UPDATE purchases SET status='error', err=$2 WHERE msg_id=$1", [p.msg_id, String(e.message).slice(0, 200)]); log(`purchases: ${String(p.msg_id).slice(-6)} ${e.message}`); }
   }
