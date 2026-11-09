@@ -190,3 +190,9 @@ t("CSS كله داخل <style> (ما فيه شي بعد </style>)", () => {
   const css = fs.readFileSync(new URL("../src/board.style.css", import.meta.url), "utf8");
   assert.equal(css.trim().endsWith("</style>"), true);
 });
+t("2026-11-09 مندوب التوصيل المجاني: «تم توصيل الطلب» تُفهم، والكلام العادي لا", async () => {
+  const { DELIVERED, isCourier } = await import("../courier.mjs");
+  for (const s of ["تم توصيل الطلب", "تم تسليم اطلب", "تم تسليم الطلب ✅", "سلمت الطلب", "وصلته", "تم", "تمت التوصيل #12"]) assert.ok(DELIVERED.test(s), s);
+  for (const s of ["وين الموقع؟", "العميل ما يرد", "بطلع الحين", "كم الحساب"]) assert.ok(!DELIVERED.test(s), s);
+  assert.ok(isCourier("966560390218")); assert.ok(isCourier("0560390218")); assert.ok(!isCourier("966553214828"));
+});

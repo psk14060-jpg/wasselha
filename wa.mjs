@@ -7,6 +7,7 @@ import { getMenu } from "./menu.mjs";
 import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
+import { isCourier, courierDelivered } from "./courier.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 import { subsidyFor } from "./subsidy.mjs";
 import { nextReady, openOf, kitchenJobs } from "./capacity.mjs";
@@ -502,6 +503,8 @@ export async function handleWebhook(body, ctx) {
         if (APPROVAL.test(m.text)) { result = await approveFromConversation(m, phone, ctx, apiKey); log("wa: " + result); }
         continue;
       }
+      // the free-delivery courier: «تم توصيل الطلب» closes his order; he is never a customer (Hassan 2026-11-09)
+      if (isCourier(m.from)) { result = await courierDelivered(pool, m.text); log("wa: " + result); continue; }
       // a customer message carrying a website order number links that order to this chat.
       // It stays off the board (pending) until the shop writes its approval phrase in the chat (Hassan, 2026-11-03).
       const ref = (m.text.match(/MG-[A-Z0-9]{4,8}/i) || [])[0];
