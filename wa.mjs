@@ -62,7 +62,17 @@ const msgText = m => {
 // Pull messages out of a webhook body: customer messages (dir "in") and, with coexistence,
 // the replies the business sent from the WhatsApp Business app (smb_message_echoes, dir "out").
 // `from` is always the customer's number, so one conversation shares one key.
+// Diagnostic (2026-11-09, purchases group question): can the board download a WhatsApp image? Logs HTTP status only, keeps nothing.
+const WA_TOKEN_NAMES = Object.keys(process.env).filter(k => /WA|WHATSAPP|META|GRAPH|FB/i.test(k));
+console.log("wa-probe: env names " + (WA_TOKEN_NAMES.join(",") || "(none)"));
+async function probeMedia(img, log) {
+  try {
+    const r = await fetch(img.url, { method: "GET", redirect: "manual" });
+    log(`wa-probe: media without token status=${r.status} type=${r.headers.get("content-type")} len=${r.headers.get("content-length")} host=${new URL(img.url).host}`);
+  } catch (e) { log("wa-probe: media fetch error " + e.message); }
+}
 export function extractMessages(body) {
+  for (const e of body?.entry || []) for (const c of e.changes || []) if (c.field && !["messages", "smb_message_echoes"].includes(c.field)) console.log(`wa-probe: field ${c.field} keys=${Object.keys(c.value || {}).join(",")}`);
   const out = [];
   for (const entry of body?.entry || []) {
     for (const ch of entry?.changes || []) {
@@ -70,10 +80,12 @@ export function extractMessages(body) {
       if (!ch.field || ch.field === "messages") {
         const names = Object.fromEntries((v.contacts || []).map(c => [c.wa_id, c.profile?.name || ""]));
         for (const m of v.messages || []) {
+          console.log(`wa-probe: in keys=${Object.keys(m).join(",")} value_keys=${Object.keys(v).join(",")}${m.group_id || m.group ? " GROUP" : ""}`);
           out.push({ id: m.id, from: m.from, name: names[m.from] || "", type: m.type, dir: "in", raw: m.type === "image" ? m.image : undefined,
             text: String(msgText(m)).slice(0, 4000), ts: Number(m.timestamp) * 1000 || Date.now() });
         }
       } else if (ch.field === "smb_message_echoes") {
+        console.log(`wa-probe: echo value_keys=${Object.keys(v).join(",")}`);
         for (const m of v.message_echoes || v.messages || []) {
           if (!m.to) continue;
           out.push({ id: m.id, from: m.to, name: "", type: m.type, dir: "out",
@@ -485,7 +497,7 @@ export async function handleWebhook(body, ctx) {
   log(`wa: webhook received fields=${fields || "-"} messages=${msgs.length}`);
   for (const m of msgs) {
     if (!m.text && (m.type === "audio" || m.type === "voice")) m.text = "[رسالة صوتية]";
-    if (m.type === "image" && m.raw) log("wa: image fields " + Object.keys(m.raw).join(","));
+    if (m.type === "image" && m.raw) { log("wa: image fields " + Object.keys(m.raw).join(",")); probeMedia(m.raw, log); }
     // de-duplicate (providers retry)
     const ins = await pool.query("INSERT INTO wa_messages (id, wa_from, kind, body, at, dir) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING RETURNING id",
       [m.id, m.from, m.type, m.text, m.ts, m.dir]);
