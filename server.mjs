@@ -712,6 +712,15 @@ migrate().then(() => {
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
   setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off: can the service account upload into «فواتير المشتريات» (personal Drive)?
+    const { token } = await import("./sheets.mjs");
+    const t = await token("https://www.googleapis.com/auth/drive");
+    const meta = { name: "اختبار_رفع_اللوحة.txt", parents: ["1MTDswrTU23t1vSX8vhUoNBZXoqXWH6EA"] };
+    const bnd = "mgb" + Date.now();
+    const body = `--${bnd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${bnd}\r\nContent-Type: text/plain\r\n\r\nاختبار\r\n--${bnd}--`;
+    const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true", { method: "POST", headers: { authorization: "Bearer " + t, "content-type": "multipart/related; boundary=" + bnd }, body });
+    console.log(`drive-probe: upload status=${r.status} ${(await r.text()).replace(/\s+/g, " ").slice(0, 300)}`);
+  } catch (e) { console.log("drive-probe: " + e.message); } }, 35e3);
   setTimeout(async () => { try { // one-off: why #21 of 2026-11-09 got 19:30 (Hassan: the customer said right after Isha)
     const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
     const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-09' AND num=21")).rows[0];

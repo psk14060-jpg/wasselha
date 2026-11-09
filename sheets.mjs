@@ -39,15 +39,16 @@ const areaName = canonArea;
 export const enabled = () => !!process.env.GOOGLE_SA_JSON;
 
 // ---------- Google auth (service account JWT → access token) ----------
-let tok = null;
-async function token() {
+const toks = {};
+export async function token(scope = "https://www.googleapis.com/auth/spreadsheets") {
+  const tok = toks[scope];
   if (tok && tok.exp > Date.now() + 60e3) return tok.value;
   const sa = JSON.parse(process.env.GOOGLE_SA_JSON);
   const key = String(sa.private_key).replace(/\\n/g, "\n");
   const now = Math.floor(Date.now() / 1000);
   const b64 = o => Buffer.from(JSON.stringify(o)).toString("base64url");
   const head = b64({ alg: "RS256", typ: "JWT" });
-  const claim = b64({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/spreadsheets", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 });
+  const claim = b64({ iss: sa.client_email, scope, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 });
   const sig = crypto.createSign("RSA-SHA256").update(head + "." + claim).sign(key).toString("base64url");
   const r = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -56,8 +57,8 @@ async function token() {
   });
   const j = await r.json();
   if (!r.ok) throw new Error("google_token " + r.status + " " + (j.error_description || j.error || ""));
-  tok = { value: j.access_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
-  return tok.value;
+  toks[scope] = { value: j.access_token, exp: Date.now() + (j.expires_in || 3600) * 1000 };
+  return toks[scope].value;
 }
 async function api(method, path, body) {
   const r = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}${path}`, {
