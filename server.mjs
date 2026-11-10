@@ -724,7 +724,18 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
-  setTimeout(() => dayStats(pool, "2026-11-02").then(() => audit(pool, "2026-11-09")).catch(e => console.log("daystat: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-10): board sales per operating day, counted like the sales chip
+    const { rows } = await pool.query(`SELECT op_day::text AS d, source, type, area, total, delivery_fee FROM orders WHERE status NOT IN ('cancelled','dismissed','pending') AND total IS NOT NULL ORDER BY op_day`);
+    const rets = Object.fromEntries((await pool.query("SELECT op_day::text AS d, COALESCE(SUM(amount),0) AS s FROM returns_waste WHERE kind='return' GROUP BY op_day").catch(() => ({ rows: [] }))).rows.map(r => [r.d, Number(r.s)]));
+    const APPS = ["chefz", "hunger", "keeta", "ninja"], days = {};
+    for (const o of rows) {
+      if (o.source === "chefz") continue;
+      const own = o.type === "del" && !APPS.includes(o.source);
+      const fee = own ? Number(o.delivery_fee) || Number((String(o.area).match(/توصيل\s*([\d.]+)\s*ر/) || [])[1]) || 0 : 0;
+      const d = days[o.d] = days[o.d] || { n: 0, s: 0 }; d.n++; d.s += Number(o.total) - fee;
+    }
+    for (const [d, v] of Object.entries(days)) console.log(`sales-day: ${d} orders=${v.n} sales=${Math.round(v.s - (rets[d] || 0))}`);
+  } catch (e) { console.log("sales-day: " + e.message); } }, 20e3); // one-off check (2026-11-09)
   setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
     const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;
     const { api, read } = await import("./sheets.mjs");
