@@ -724,7 +724,7 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
-  setTimeout(() => ["2026-11-07", "2026-11-08"].reduce((p, d) => p.then(() => audit(pool, d)), Promise.resolve()).catch(e => console.log("audit: " + e.message)), 20e3); // one-off check (2026-11-09)
+  setTimeout(() => dayStats(pool, "2026-11-02").then(() => audit(pool, "2026-11-09")).catch(e => console.log("daystat: " + e.message)), 20e3); // one-off check (2026-11-09)
   setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
     const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;
     const { api, read } = await import("./sheets.mjs");
