@@ -724,25 +724,18 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
-  setTimeout(async () => { try { // one-off (2026-11-11): mini pizza / manaqeesh boxes by size, last 7 operating days
-    const { rows } = await pool.query(`SELECT op_day::text AS d, num, source, items FROM orders WHERE op_day BETWEEN '2026-11-04' AND '2026-11-10' AND status NOT IN ('cancelled','dismissed','pending') ORDER BY op_day, num`);
+  setTimeout(async () => { try { // one-off (2026-11-11): sets sold in the last 7 operating days (set 48 carries 10 manaqeesh)
+    const { rows } = await pool.query(`SELECT op_day::text AS d, num, items FROM orders WHERE op_day BETWEEN '2026-11-04' AND '2026-11-10' AND status NOT IN ('cancelled','dismissed','pending') ORDER BY op_day, num`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const tot = {}, other = [];
+    const tot = {};
     for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
-      const l = lat(raw);
-      const isP = /بيتزا/.test(l) && !/كب|كوب/.test(l), isM = /مناقيش|منقوش/.test(l);
-      if (!(isP || isM)) continue;
-      if (/تشكيل/.test(l)) { other.push(`${o.d} #${o.num} ${l.slice(0, 60)}`); continue; }
+      const l = lat(raw); if (!/تشكيل|عائل|مشاركة/.test(l)) continue;
       const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
-      const size = Number((l.match(/(\d+)\s*(?:قطع|قطعة|قطعه|حب|حبة|حبات|حبه)/) || [])[1] || 0);
-      const k = `${isP ? "pizza" : "manaqeesh"}_${size || "?"}`;
-      tot[k] = (tot[k] || 0) + q; (tot[k + "@" + o.d] = (tot[k + "@" + o.d] || 0) + q);
-      if (!size) other.push(`${o.d} #${o.num} nosize ${l.slice(0, 60)}`);
+      const k = /\b48\b|تكفي\s*10|— 72|72 ريال/.test(l) ? "set48" : /\b80\b|— 115|115 ريال/.test(l) ? "set80" : /\b115\b|145/.test(l) ? "set115" : "other:" + l.replace(/^\s*\d+\s*[×x*]\s*/, "").slice(0, 50);
+      tot[k] = (tot[k] || 0) + q;
     }
-    console.log("boxes: " + JSON.stringify(Object.fromEntries(Object.entries(tot).filter(([k]) => !k.includes("@")))));
-    console.log("boxes-day: " + JSON.stringify(Object.fromEntries(Object.entries(tot).filter(([k]) => k.includes("@")))));
-    for (const x of other.slice(0, 25)) console.log("boxes-other: " + x);
-  } catch (e) { console.log("boxes: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+    console.log("sets: " + JSON.stringify(tot));
+  } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
   setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
     const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;
     const { api, read } = await import("./sheets.mjs");
