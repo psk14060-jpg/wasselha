@@ -737,13 +737,13 @@ migrate().then(() => {
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
   setTimeout(async () => { try { // one-off (2026-11-11): re-read chat …8905 with its photos (approved 15:18, nothing reached the board)
-    if (await pool.query("SELECT 1 FROM board_settings WHERE key='fix_8905'").then(r => r.rows.length)) return;
-    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_8905', '1') ON CONFLICT DO NOTHING");
+    if (await pool.query("SELECT 1 FROM board_settings WHERE key='fix_8905b'").then(r => r.rows.length)) return;
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_8905b', '1') ON CONFLICT DO NOTHING");
     const a = (await pool.query("SELECT id, wa_from, body, at FROM wa_messages WHERE right(regexp_replace(wa_from,'\\D','','g'),4)='8905' AND dir='out' AND body LIKE '%تاكيد الطلب%' AND at > $1 ORDER BY at DESC LIMIT 1", [Date.now() - 24 * 3600e3])).rows[0];
     if (!a) return console.log("fix8905: approval not found");
     const wa = await import("./wa.mjs");
     const m = { id: a.id, from: a.wa_from, ts: Number(a.at), text: a.body, name: "", dir: "out" };
-    const r = await wa.approveFromConversation(m, wa.localPhone(a.wa_from), { pool, log: s => console.log("fix8905: " + s) }, process.env.ANTHROPIC_API_KEY);
+    const r = await wa.approveFromConversation(m, wa.localPhone(a.wa_from), { pool, insertOrder, applyGift, log: s => console.log("fix8905: " + s) }, process.env.ANTHROPIC_API_KEY);
     console.log("fix8905: " + r);
     const o = (await pool.query("SELECT id, num, items, total, status FROM orders WHERE wa_from=$1 AND created > $2 ORDER BY created DESC LIMIT 1", [a.wa_from, Date.now() - 5 * 60e3])).rows[0];
     if (o) { await pool.query("UPDATE orders SET status='done', note=TRIM(BOTH ' ·' FROM note || ' · أُدخل متأخرًا من صور الواتساب (تم تسليمه)'), updated=$2 WHERE id=$1", [o.id, Date.now()]);
