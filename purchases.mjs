@@ -21,6 +21,7 @@ export function payOf(t) {
 }
 const clean = t => String(t || "").replace(/^\s*\[(?:صورة|ملف)\]\s*/, "").trim();
 
+export const isPurchaseSender = async (pool, from) => (await senders(pool)).some(x => k9(x.key) === k9(from));
 export async function migratePurchases(pool) {
   await pool.query(`ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS media_id TEXT`);
   await pool.query(`ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS mime TEXT`);
@@ -28,7 +29,7 @@ export async function migratePurchases(pool) {
     msg_id TEXT PRIMARY KEY, wa_from TEXT, sender TEXT, at BIGINT NOT NULL, media_id TEXT, mime TEXT, caption TEXT, pay TEXT,
     drive_link TEXT, file_name TEXT, status TEXT NOT NULL DEFAULT 'wait', err TEXT, sheet_done BOOLEAN NOT NULL DEFAULT false)`);
 }
-// allowed senders: board_settings «purchase_senders» = [{"key":"5xxxxxxxx","name":"سليمان"}]; empty list = anyone writing «مشتريات»
+// allowed senders: board_settings «purchase_senders» = [{"key":"5xxxxxxxx","name":"سليمان"}]; nobody else, ever
 async function senders(pool) {
   const r = (await pool.query("SELECT value FROM board_settings WHERE key='purchase_senders'")).rows[0];
   try { return r ? JSON.parse(r.value) : []; } catch { return []; }
@@ -44,8 +45,8 @@ export async function onPurchaseMessage(pool, m) {
   if (media) await pool.query("UPDATE wa_messages SET media_id=$2, mime=$3 WHERE id=$1", [m.id, m.raw.id, m.raw.mime_type || ""]);
   const list = await senders(pool);
   const who = list.find(x => k9(x.key) === k9(m.from));
-  if (list.length && !who) return null;
-  const sender = who ? who.name : (m.name || "…" + k9(m.from).slice(-4));
+  if (!who) return null; // only Hassan and Suleiman: a customer's photo never becomes a purchase invoice (empty list = nobody)
+  const sender = who.name;
   const own = isPurchaseText(m.text);
   if (media && own) { await claim(pool, { id: m.id, wa_from: m.from, at: m.ts, media_id: m.raw.id, mime: m.raw.mime_type || "" }, clean(m.text), sender); return `purchase: photo from ${sender} (${payOf(m.text)})`; }
   if (media) {
@@ -72,7 +73,7 @@ export async function reclaimRecent(pool, sinceMs, log = console.log) {
   const rows = (await pool.query("SELECT id, wa_from, body, at FROM wa_messages WHERE dir='in' AND at > $1 AND media_id IS NULL ORDER BY at", [sinceMs])).rows;
   for (const r of rows) {
     if (!isPurchaseText(r.body)) continue;
-    const who = list.find(x => k9(x.key) === k9(r.wa_from)); if (list.length && !who) continue;
+    const who = list.find(x => k9(x.key) === k9(r.wa_from)); if (!who) continue;
     const prev = (await pool.query(`SELECT id, wa_from, at, media_id, mime FROM wa_messages WHERE wa_from=$1 AND dir='in' AND media_id IS NOT NULL
       AND at BETWEEN $2 AND $3 AND id NOT IN (SELECT msg_id FROM purchases)`, [r.wa_from, Number(r.at) - WINDOW, Number(r.at) + WINDOW])).rows;
     let n = 0; for (const p of prev) n += await claim(pool, p, clean(r.body), who ? who.name : "…" + k9(r.wa_from).slice(-4));

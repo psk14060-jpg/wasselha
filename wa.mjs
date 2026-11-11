@@ -8,7 +8,7 @@ import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
 import { isCourier, courierDelivered } from "./courier.mjs";
-import { onPurchaseMessage, download } from "./purchases.mjs";
+import { onPurchaseMessage, download, isPurchaseSender } from "./purchases.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 import { subsidyFor } from "./subsidy.mjs";
 import { nextReady, openOf, kitchenJobs } from "./capacity.mjs";
@@ -387,7 +387,9 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (prev && !customerRows.length) return `already_approved #${prev.num}`;
   if (!customerRows.length) return "approval_without_customer_text";
   // the customer's photos (screenshots of the menu, a past order…) are read too (Hassan 2026-11-11: #8905 sent only photos)
-  const imgRows = customerRows.filter(r => r.media_id && /image/.test(r.mime || "image")).slice(-4);
+  // purchase invoices stay out: never from Hassan's / Suleiman's own chat, never a photo already kept as an invoice (Hassan 2026-11-11)
+  const invoiceIds = new Set((await pool.query("SELECT msg_id FROM purchases WHERE wa_from=$1", [m.from])).rows.map(r => r.msg_id));
+  const imgRows = (await isPurchaseSender(pool, m.from)) ? [] : customerRows.filter(r => r.media_id && /image/.test(r.mime || "image") && !invoiceIds.has(r.id)).slice(-4);
   const images = [];
   for (const [i, r] of imgRows.entries()) {
     try { const d = await download(r.media_id); if (/^image\/(jpeg|png|webp|gif)$/.test(d.type) && d.bytes.length < 4.5e6) { images.push({ b64: d.bytes.toString("base64"), mime: d.type }); r.body = r.body.replace("[صورة]", `[صورة ${images.length}]`); } }

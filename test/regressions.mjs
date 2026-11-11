@@ -196,3 +196,9 @@ t("2026-11-09 مندوب التوصيل المجاني: «تم توصيل الط
   for (const s of ["وين الموقع؟", "العميل ما يرد", "بطلع الحين", "كم الحساب"]) assert.ok(!DELIVERED.test(s), s);
   assert.ok(isCourier("966560390218")); assert.ok(isCourier("0560390218")); assert.ok(!isCourier("966553214828"));
 });
+t("2026-11-11 فصل الفواتير عن صور العملاء: صورة عميل ما تصير فاتورة، وفاتورة ما تروح للقارئ", async () => {
+  const src = fs.readFileSync(new URL("../purchases.mjs", import.meta.url), "utf8");
+  assert.ok(src.includes("if (!who) return null;"), "purchases only from allowed senders");
+  const wa = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
+  assert.ok(wa.includes("isPurchaseSender(pool, m.from)") && wa.includes("!invoiceIds.has(r.id)"), "reader skips invoices");
+});
