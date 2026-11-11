@@ -724,18 +724,25 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
-  setTimeout(async () => { try { // one-off (2026-11-10): board sales per operating day, counted like the sales chip
-    const { rows } = await pool.query(`SELECT op_day::text AS d, source, type, area, total, delivery_fee FROM orders WHERE status NOT IN ('cancelled','dismissed','pending') AND total IS NOT NULL ORDER BY op_day`);
-    const rets = Object.fromEntries((await pool.query("SELECT op_day::text AS d, COALESCE(SUM(amount),0) AS s FROM returns_waste WHERE kind='return' GROUP BY op_day").catch(() => ({ rows: [] }))).rows.map(r => [r.d, Number(r.s)]));
-    const APPS = ["chefz", "hunger", "keeta", "ninja"], days = {};
-    for (const o of rows) {
-      if (o.source === "chefz") continue;
-      const own = o.type === "del" && !APPS.includes(o.source);
-      const fee = own ? Number(o.delivery_fee) || Number((String(o.area).match(/توصيل\s*([\d.]+)\s*ر/) || [])[1]) || 0 : 0;
-      const d = days[o.d] = days[o.d] || { n: 0, s: 0 }; d.n++; d.s += Number(o.total) - fee;
+  setTimeout(async () => { try { // one-off (2026-11-11): mini pizza / manaqeesh boxes by size, last 7 operating days
+    const { rows } = await pool.query(`SELECT op_day::text AS d, num, source, items FROM orders WHERE op_day BETWEEN '2026-11-04' AND '2026-11-10' AND status NOT IN ('cancelled','dismissed','pending') ORDER BY op_day, num`);
+    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+    const tot = {}, other = [];
+    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
+      const l = lat(raw);
+      const isP = /بيتزا/.test(l) && !/كب|كوب/.test(l), isM = /مناقيش|منقوش/.test(l);
+      if (!(isP || isM)) continue;
+      if (/تشكيل/.test(l)) { other.push(`${o.d} #${o.num} ${l.slice(0, 60)}`); continue; }
+      const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
+      const size = Number((l.match(/(\d+)\s*(?:قطع|قطعة|قطعه|حب|حبة|حبات|حبه)/) || [])[1] || 0);
+      const k = `${isP ? "pizza" : "manaqeesh"}_${size || "?"}`;
+      tot[k] = (tot[k] || 0) + q; (tot[k + "@" + o.d] = (tot[k + "@" + o.d] || 0) + q);
+      if (!size) other.push(`${o.d} #${o.num} nosize ${l.slice(0, 60)}`);
     }
-    for (const [d, v] of Object.entries(days)) console.log(`sales-day: ${d} orders=${v.n} sales=${Math.round(v.s - (rets[d] || 0))}`);
-  } catch (e) { console.log("sales-day: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+    console.log("boxes: " + JSON.stringify(Object.fromEntries(Object.entries(tot).filter(([k]) => !k.includes("@")))));
+    console.log("boxes-day: " + JSON.stringify(Object.fromEntries(Object.entries(tot).filter(([k]) => k.includes("@")))));
+    for (const x of other.slice(0, 25)) console.log("boxes-other: " + x);
+  } catch (e) { console.log("boxes: " + e.message); } }, 20e3); // one-off check (2026-11-09)
   setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
     const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;
     const { api, read } = await import("./sheets.mjs");
