@@ -736,6 +736,14 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-11 20:24): full refund of today's #14, approved by Hassan (complaint)
+    const o = (await pool.query("SELECT id, num, total, delivery_fee FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
+    if (!o) return console.log("ret14: not found");
+    if ((await pool.query("SELECT 1 FROM returns_waste WHERE kind='return' AND order_id=$1", [o.id])).rows.length) return console.log("ret14: already refunded");
+    const amount = Math.max(0, Number(o.total || 0) - Number(o.delivery_fee || 0));
+    await pool.query(`INSERT INTO returns_waste (kind, op_day, at, order_id, order_num, amount, reason, note, by_dev) VALUES ('return','2026-11-11',$1,$2,14,$3,'شكوى من العميل','استرجاع كامل بموافقة حسن','حسن (عن طريق كلود)')`, [Date.now(), o.id, amount]);
+    console.log(`ret14: refunded ${amount} SAR (total ${o.total}, delivery ${o.delivery_fee || 0})`);
+  } catch (e) { console.log("ret14: " + e.message); } }, 26e3);
   setTimeout(async () => { try { // one-off (2026-11-11 18:54): Hassan — today's #14 on the blacklist (order stays delivered, sales untouched)
     const o = (await pool.query("SELECT id, num, name, phone, wa_from FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
     if (!o) return console.log("bl14: not found");
