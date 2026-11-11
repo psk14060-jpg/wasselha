@@ -736,6 +736,13 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-11): chat …8905 — why no order
+    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
+    const ms = (await pool.query("SELECT id, wa_from, dir, kind, body, at, media_id FROM wa_messages WHERE right(regexp_replace(wa_from,'\\D','','g'),4)='8905' AND at > $1 ORDER BY at", [Date.now() - 36 * 3600e3])).rows;
+    for (const m of ms) console.log(`c8905: ${hm(m.at)} ${m.dir} ${m.kind || ""}${m.media_id ? " [media]" : ""} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 220)}`);
+    const os = (await pool.query("SELECT num, op_day::text d, status, source, total FROM orders WHERE right(regexp_replace(coalesce(wa_from,phone,''),'\\D','','g'),4)='8905' AND created > $1", [Date.now() - 36 * 3600e3])).rows;
+    console.log("c8905: orders " + JSON.stringify(os));
+  } catch (e) { console.log("c8905: " + e.message); } }, 25e3);
   setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T09:00:00Z"))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-11)
   setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
     const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;
