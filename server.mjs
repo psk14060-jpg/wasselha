@@ -736,6 +736,14 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-11 17:52): timeline of today's #14
+    const hm = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 19) : "-";
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
+    if (!o) return console.log("o14: not found");
+    console.log(`o14: created=${hm(o.created)} confirmed=${hm(o.confirmed_at)} due=${hm(o.due)} travel=${o.travel_min} type=${o.type} source=${o.source} status=${o.status} items=${String(o.items).replace(/\n/g, " / ").slice(0, 160)}`);
+    for (const e of (await pool.query("SELECT kind, from_status, to_status, due, at FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows)
+      console.log(`o14: ${hm(e.at)} ${e.kind} ${e.from_status || ""}→${e.to_status || ""} due=${hm(e.due)}`);
+  } catch (e) { console.log("o14: " + e.message); } }, 22e3);
   setTimeout(async () => { try { // one-off (2026-11-11): purchases must hold only Hassan's / Suleiman's photos
     const { rows } = await pool.query("SELECT sender, right(regexp_replace(wa_from,'\\D','','g'),4) AS l4, status, count(*) AS n FROM purchases GROUP BY 1,2,3 ORDER BY 1");
     console.log("purch-check: " + JSON.stringify(rows));
