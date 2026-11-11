@@ -736,6 +736,16 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-11 18:54): Hassan — today's #14 on the blacklist (order stays delivered, sales untouched)
+    const o = (await pool.query("SELECT id, num, name, phone, wa_from FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
+    if (!o) return console.log("bl14: not found");
+    const k = keyOf(o.wa_from, o.phone);
+    if (!k) return console.log("bl14: no phone");
+    await pool.query(`INSERT INTO blacklist (key, name, reason, order_num, op_day, created) VALUES ($1,$2,'بطلب من حسن',14,'2026-11-11',$3)
+      ON CONFLICT (key) DO UPDATE SET reason='بطلب من حسن', order_num=14, op_day='2026-11-11'`, [k, o.name || "", Date.now()]);
+    await pool.query("UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · 🚫 قائمة سوداء (حسن)'), updated=$2 WHERE id=$1 AND note NOT LIKE '%قائمة سوداء%'", [o.id, Date.now()]);
+    console.log(`bl14: added …${k.slice(-4)} (${o.name || "-"})`);
+  } catch (e) { console.log("bl14: " + e.message); } }, 24e3);
   setTimeout(async () => { try { // one-off (2026-11-11 17:52): timeline of today's #14
     const hm = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 19) : "-";
     const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
