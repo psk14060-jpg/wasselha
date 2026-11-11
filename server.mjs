@@ -739,6 +739,8 @@ migrate().then(() => {
   setTimeout(async () => { try { // one-off (2026-11-11): purchases must hold only Hassan's / Suleiman's photos
     const { rows } = await pool.query("SELECT sender, right(regexp_replace(wa_from,'\\D','','g'),4) AS l4, status, count(*) AS n FROM purchases GROUP BY 1,2,3 ORDER BY 1");
     console.log("purch-check: " + JSON.stringify(rows));
+    const f = await pool.query("UPDATE purchases SET sender='حسن' WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='561044464' AND sender<>'حسن' AND status<>'saved'");
+    if (f.rowCount) console.log(`purch-check: renamed ${f.rowCount} → حسن`);
   } catch (e) { console.log("purch-check: " + e.message); } }, 28e3);
   setTimeout(async () => { try { // one-off (2026-11-11): re-read chat …8905 with its photos (approved 15:18, nothing reached the board)
     if (await pool.query("SELECT 1 FROM board_settings WHERE key='fix_8905b'").then(r => r.rows.length)) return;
