@@ -97,7 +97,7 @@ export async function googleCaller(req) {
     OWNERS.includes(String(j.email || "").toLowerCase()) && Number(j.exp) * 1000 > Date.now();
   return ok ? j.email : null;
 }
-async function download(mediaId) {
+export async function download(mediaId) {
   const key = dualhookKey().value;
   if (!key) throw new Error("no Dualhook key (no env value starting with dh_live_)");
   const r = await fetch(`https://api.dualhook.com/v25.0/${mediaId}/content`, { headers: { authorization: "Bearer " + key }, signal: AbortSignal.timeout(60000) });

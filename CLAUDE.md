@@ -77,3 +77,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - 02:00 كل ليلة (مع جوب الشيت): تنزيل الصورة من Dualhook runtime (`DUALHOOK_KEY`، يضيفه حسن بنفسه)، رفعها لدرايف «فواتير المشتريات/YYYY-MM/DATE_SENDER_N.jpg»، وسطر في تبويب «فواتير_المشتريات» بالحالة «جديدة».
 - ما نقرأ الفاتورة ولا نستخرج أرقامها. المرسلون المسموحون: board_settings «purchase_senders» (فاضية = أي أحد يكتب «مشتريات»).
 - تعديل: حساب الخدمة ما يقدر يملك ملفات في درايف شخصي (Service Accounts do not have storage quota). الحفظ في درايف يسويه Apps Script في حساب حسن (tools/purchases-apps-script) يسحب من `/api/purchases/pending` ويرجع الرابط لـ `/api/purchases/saved`؛ التحقق بـ Google identity token لإيميل مالك المجلد، بدون سر مشترك. اللوحة تضيف سطر الشيت لما يوصلها الرابط.
+
+## 2026-11-11 قراءة صور العملاء
+- عند الاعتماد، صور العميل في المحادثة (آخر 4) تنزل من Dualhook وتُرسل للقارئ مرقّمة [صورة 1]… مع النص. كلام العميل يغلب الصورة. (#8905 أرسل صورتين بس، وطلع approved_without_items).
+- media_id/mime يتخزنون في wa_messages لكل صورة واردة (onPurchaseMessage).

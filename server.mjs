@@ -736,13 +736,19 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
-  setTimeout(async () => { try { // one-off (2026-11-11): chat …8905 — why no order
-    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
-    const ms = (await pool.query("SELECT id, wa_from, dir, kind, body, at, media_id FROM wa_messages WHERE right(regexp_replace(wa_from,'\\D','','g'),4)='8905' AND at > $1 ORDER BY at", [Date.now() - 36 * 3600e3])).rows;
-    for (const m of ms) console.log(`c8905: ${hm(m.at)} ${m.dir} ${m.kind || ""}${m.media_id ? " [media]" : ""} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 220)}`);
-    const os = (await pool.query("SELECT num, op_day::text d, status, source, total FROM orders WHERE right(regexp_replace(coalesce(wa_from,phone,''),'\\D','','g'),4)='8905' AND created > $1", [Date.now() - 36 * 3600e3])).rows;
-    console.log("c8905: orders " + JSON.stringify(os));
-  } catch (e) { console.log("c8905: " + e.message); } }, 25e3);
+  setTimeout(async () => { try { // one-off (2026-11-11): re-read chat …8905 with its photos (approved 15:18, nothing reached the board)
+    if (await pool.query("SELECT 1 FROM board_settings WHERE key='fix_8905'").then(r => r.rows.length)) return;
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_8905', '1') ON CONFLICT DO NOTHING");
+    const a = (await pool.query("SELECT id, wa_from, body, at FROM wa_messages WHERE right(regexp_replace(wa_from,'\\D','','g'),4)='8905' AND dir='out' AND body LIKE '%تاكيد الطلب%' AND at > $1 ORDER BY at DESC LIMIT 1", [Date.now() - 24 * 3600e3])).rows[0];
+    if (!a) return console.log("fix8905: approval not found");
+    const wa = await import("./wa.mjs");
+    const m = { id: a.id, from: a.wa_from, ts: Number(a.at), text: a.body, name: "", dir: "out" };
+    const r = await wa.approveFromConversation(m, wa.localPhone(a.wa_from), { pool, log: s => console.log("fix8905: " + s) }, process.env.ANTHROPIC_API_KEY);
+    console.log("fix8905: " + r);
+    const o = (await pool.query("SELECT id, num, items, total, status FROM orders WHERE wa_from=$1 AND created > $2 ORDER BY created DESC LIMIT 1", [a.wa_from, Date.now() - 5 * 60e3])).rows[0];
+    if (o) { await pool.query("UPDATE orders SET status='done', note=TRIM(BOTH ' ·' FROM note || ' · أُدخل متأخرًا من صور الواتساب (تم تسليمه)'), updated=$2 WHERE id=$1", [o.id, Date.now()]);
+      console.log(`fix8905: #${o.num} total=${o.total} items=${String(o.items).replace(/\n/g, " / ")}`); }
+  } catch (e) { console.log("fix8905: " + e.message); } }, 25e3);
   setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T09:00:00Z"))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-11)
   setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
     const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;

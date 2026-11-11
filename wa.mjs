@@ -8,7 +8,7 @@ import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
 import { keyOf, notePing } from "./blacklist.mjs";
 import { isCourier, courierDelivered } from "./courier.mjs";
-import { onPurchaseMessage } from "./purchases.mjs";
+import { onPurchaseMessage, download } from "./purchases.mjs";
 import { recentExamples, examplesText, placeUnknown } from "./reader.mjs";
 import { subsidyFor } from "./subsidy.mjs";
 import { nextReady, openOf, kitchenJobs } from "./capacity.mjs";
@@ -98,7 +98,7 @@ export function extractMessages(body) {
   return out;
 }
 
-async function askClaude(apiKey, transcript, nowMs, previous, menu, examples = "") {
+async function askClaude(apiKey, transcript, nowMs, previous, menu, examples = "", images = []) {
   const MENU = menu.products.map(p => `${p.id} | ${p.name}${p.flavors.length ? " | حشوات: " + p.flavors.join("، ") : ""} | الأحجام: ` +
     p.variants.map(v => `«${v.tag}» ${v.price} ريال`).join("، ")).join("\n");
   const AREAS = menu.areas.map(a => a.name).join("، ");
@@ -118,7 +118,7 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
 - items: لكل صنف id و tag مطابقين حرفيًا لما في المنيو أعلاه، و qty عدد البوكسات، و flavor الحشوة إن ذُكرت (وإلا ""). إذا طلب حشوتين لنفس الصنف فاجعل كل حشوة عنصرًا مستقلًا.
 - «نوتيلا» وحدها تعني دائمًا كباجي نوتيلا: 10 أو 20 حبة = kabajiNutella، و35 حبة = miniNutella. وإذا قال «ميني» فهي miniNutella.
 - «بوكس المشاركة» أو «المشاركة» = shareBox (عرض اليوم إن كان في المنيو).
-- إذا كتب العميل [صورة] وقال «ابي نفس هذي/هذا» أو «مثل الصورة» ولم يتضح الصنف من الكلام، فلا تخمّن: اكتب في unclear «العميل طلب مثل الصورة — شوف الصورة في المحادثة».
+- صور العميل مرفقة مرقّمة بنفس ترتيب [صورة 1] و[صورة 2] في المحادثة: اقرأها. غالبًا لقطة من المنيو أو الموقع أو طلب سابق؛ خذ منها الأصناف والأحجام والكميات الظاهرة، وما يقوله العميل في الكلام يغلب الصورة. إذا كانت [صورة] بدون رقم (لم تُرفق) أو الصورة غير واضحة ولم يتضح الصنف من الكلام، فلا تخمّن: اكتب في unclear «العميل طلب مثل الصورة — شوف الصورة في المحادثة».
 - «سمبوسة» أو «سمبوسك» عند العملاء تعني الفطائر المثلثة (triangles)، حتى لو ذكر حشوة دجاج أو جبن أو قال «بالفرن»، إلا إذا قال «جنوبية» أو «مقلية» أو «بالبر» فهي السمبوسة الجنوبية (samosa). «سمبوسة مشكل 20» = فطائر مثلثة «20 قطعة» flavor=مشكل.
 - المشروبات: «بيبسي، كولا، سفن، ميرندا، حمضيات، غازي» = softDrink (qty بعدد العلب)، و«ماء، موية، مويه» = water (qty بعدد القوارير).
 - العدد قد يكون بالقطع: «10 بيتزا» = بيتزا بحجم «10 قطع» qty=1، و«20 فطاير» = فطائر مثلثة «20 قطعة» qty=1، و«40 فطاير» = «20 قطعة» qty=2.
@@ -136,8 +136,8 @@ ${previous ? `ملاحظة: هذا العميل عنده طلب معتمد سا�
     // a forced tool call: the answer always comes back as structured fields, never as prose
     // some models refuse a forced tool call: ask for it ("auto") and insist in the prompt; a reply without the call is retried
     body: JSON.stringify({ model: READER_MODEL, max_tokens: 1500, system: system + "\nيجب أن تكون إجابتك استدعاء أداة save_order فقط، بدون أي نص.", tools: [ORDER_TOOL], tool_choice: { type: "auto" },
-      messages: [{ role: "user", content: transcript }] }),
-    signal: AbortSignal.timeout(30000),
+      messages: [{ role: "user", content: images.length ? [...images.flatMap((im, i) => [{ type: "text", text: `صورة ${i + 1}:` }, { type: "image", source: { type: "base64", media_type: im.mime, data: im.b64 } }]), { type: "text", text: transcript }] : transcript }] }),
+    signal: AbortSignal.timeout(images.length ? 60000 : 30000),
   });
   if (!r.ok) throw new Error("claude_http_" + r.status + " " + (await r.text()).slice(0, 200));
   const j = await r.json();
@@ -369,7 +369,7 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     [m.from, now - APPROVAL_WINDOW, now - 3 * 3600e3, manual ? manual.id : 0, String(phone || "").replace(/^0/, "")])).rows[0]; // also a booking approved earlier (e.g. last night) that is still to come
   const since = prev && !pendingWeb ? Math.max(Number(prev.confirmed_at) - 5000, now - 24 * 3600e3) : now - APPROVAL_WINDOW; // WhatsApp timestamps are whole seconds
   const all = (await pool.query(
-    `SELECT id, dir, body, at FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
+    `SELECT id, dir, body, at, media_id, mime FROM wa_messages WHERE wa_from=$1 AND at >= $2 AND at <= $3 AND body<>'' ORDER BY at ASC, id ASC LIMIT 200`,
     [m.from, since, m.ts + 1000])).rows;
   // keep only the latest conversation: start after the previous approval, after a website order message,
   // or after a silence longer than SESSION_GAP
@@ -386,13 +386,20 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
   if (pendingWeb && !customerRows.length) return `approved_website_order #${pendingWeb.num}`;
   if (prev && !customerRows.length) return `already_approved #${prev.num}`;
   if (!customerRows.length) return "approval_without_customer_text";
+  // the customer's photos (screenshots of the menu, a past order…) are read too (Hassan 2026-11-11: #8905 sent only photos)
+  const imgRows = customerRows.filter(r => r.media_id && /image/.test(r.mime || "image")).slice(-4);
+  const images = [];
+  for (const [i, r] of imgRows.entries()) {
+    try { const d = await download(r.media_id); if (/^image\/(jpeg|png|webp|gif)$/.test(d.type) && d.bytes.length < 4.5e6) { images.push({ b64: d.bytes.toString("base64"), mime: d.type }); r.body = r.body.replace("[صورة]", `[صورة ${images.length}]`); } }
+    catch (e) { log("wa: photo not read " + String(e.message).slice(0, 80)); }
+  }
   const transcript = rows.map(r => (r.dir === "out" ? "[المحل] " : "[العميل] ") + r.body).join("\n").slice(-7000);
 
   const menu = await getMenu();
   let p = null;
   if (apiKey) {
     for (let attempt = 1; attempt <= 2 && !p; attempt++) {
-      try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu, examplesText(await recentExamples(pool, 8).catch(() => []))); }
+      try { p = await askClaude(apiKey, transcript, now, prev ? { num: prev.num, items: prev.items } : null, menu, examplesText(await recentExamples(pool, 8).catch(() => [])), images); }
       catch (e) { log(`wa: claude failed (try ${attempt}) ` + String(e.message || e).slice(0, 200)); }
     }
   }
@@ -559,7 +566,7 @@ export async function handleWebhook(body, ctx) {
   }
   return msgs.length;
 }
-export { askClaude, fixSamosa, shopQuote, priceOrder };
+export { askClaude, fixSamosa, shopQuote, priceOrder, approveFromConversation, localPhone };
 
 // Read a stored transcript the way an approval does (used to score the reader against past corrections).
 export async function readTranscript(pool, transcript, orderId) {
