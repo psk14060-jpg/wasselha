@@ -8,9 +8,10 @@
 import { token, api, append, read, resetSheetIds } from "./sheets.mjs";
 export const ROOT_FOLDER = process.env.PURCHASES_FOLDER_ID || "1MTDswrTU23t1vSX8vhUoNBZXoqXWH6EA";
 export const TAB = "فواتير_المشتريات";
-const WINDOW = 3 * 60e3;
+const WINDOW = 10 * 60e3; // photos taken one by one: a «مشتريات …» text covers the sender's photos of the 10 minutes before it
 const k9 = s => String(s || "").replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/\D/g, "").slice(-9);
-export const isPurchaseText = t => /^\s*\[?(?:صورة|ملف)?\]?\s*مشتريات/.test(String(t || ""));
+// «مشتريات …» at the start of any line, also «فاتورة مشتريات» (Hassan 2026-11-11 wrote «فاتورة مشتريات\nمشتريات تحويل»)
+export const isPurchaseText = t => /(?:^|\n)\s*(?:\[(?:صورة|ملف)\]\s*)?(?:فاتور[ةه]\s+)?مشتريات/.test(String(t || ""));
 export function payOf(t) {
   const s = String(t || "");
   if (/آجل|اجل|أجل|دين/.test(s)) return "آجل";
@@ -65,6 +66,19 @@ export async function onPurchaseMessage(pool, m) {
   return `purchase: text from ${sender} (${payOf(m.text)}), covers ${n} earlier photo(s)`;
 }
 
+// re-read recent texts once (after a rule change): claim what the new rule covers
+export async function reclaimRecent(pool, sinceMs, log = console.log) {
+  const list = await senders(pool);
+  const rows = (await pool.query("SELECT id, wa_from, body, at FROM wa_messages WHERE dir='in' AND at > $1 AND media_id IS NULL ORDER BY at", [sinceMs])).rows;
+  for (const r of rows) {
+    if (!isPurchaseText(r.body)) continue;
+    const who = list.find(x => k9(x.key) === k9(r.wa_from)); if (list.length && !who) continue;
+    const prev = (await pool.query(`SELECT id, wa_from, at, media_id, mime FROM wa_messages WHERE wa_from=$1 AND dir='in' AND media_id IS NOT NULL
+      AND at BETWEEN $2 AND $3 AND id NOT IN (SELECT msg_id FROM purchases)`, [r.wa_from, Number(r.at) - WINDOW, Number(r.at) + WINDOW])).rows;
+    let n = 0; for (const p of prev) n += await claim(pool, p, clean(r.body), who ? who.name : "…" + k9(r.wa_from).slice(-4));
+    log(`purchase: re-read text (${payOf(r.body)}) covers ${n} photo(s)`);
+  }
+}
 // ---------- nightly ----------
 // A service account cannot own files in a personal Drive («Service Accounts do not have storage quota», tested 2026-11-09), so the
 // photos are saved by a Google Apps Script that runs as Hassan's own Google account every night at ~02:15:
