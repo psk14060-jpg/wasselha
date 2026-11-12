@@ -282,8 +282,29 @@ export function dayHint(lines, nowMs) {
 
 // «سمبوسة» in a customer's mouth means the baked triangles; only fried / southern / whole-wheat means the southern samosa.
 // The pieces asked for are rebuilt from the triangle sizes (30 pieces = one box of 30), with the fillings kept as one note.
+// the reverse (Hassan 2026-11-12, #3): «30 سمبوسة جنوبية بر» was read as triangles 30 (45). Southern samosa only comes as
+// 10 and 20: rebuild the asked pieces from those sizes (30 = 20 + 10).
+const SOUTH = /جنوب|مقلي|مقليه|مقليّة|قلي|\bبر\b|بالبر|البر/;
+function fixSouthern(p, customerText, menu) {
+  if (!p || !Array.isArray(p.items) || !/سمبوس/.test(customerText) || !SOUTH.test(customerText)) return;
+  const sam = menu.products.find(x => x.id === "samosa");
+  const tri = p.items.filter(it => it && it.id === "triangles");
+  if (!sam || !tri.length || /فطا[يئ]ر|مثلث/.test(customerText)) return; // he also asked for triangles: leave both
+  const lat = String(customerText).replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
+  const asked = (lat.match(/(\d+)\s*(?:حبه|حبة|قطعه|قطعة|قطع|حبات)?\s*(?:سمبوس)/) || lat.match(/سمبوس\S*\s*(?:\S+\s*){0,3}?(\d+)/) || [])[1];
+  const want = asked ? Number(asked) : tri.reduce((n, it) => n + (parseInt(String(it.tag), 10) || 10) * (parseInt(it.qty, 10) || 1), 0);
+  const sizes = sam.variants.map(v => ({ v, n: parseInt(v.tag, 10) || 0 })).filter(x => x.n).sort((a, b) => b.n - a.n);
+  const out = []; let left = want;
+  for (const x of sizes) while (left >= x.n) { out.push(x.v.tag); left -= x.n; }
+  if (left > 0 || !out.length) return;
+  const flavors = [...new Set(tri.map(it => it.flavor).filter(Boolean))].join(" و");
+  const counts = out.reduce((m, t) => (m[t] = (m[t] || 0) + 1, m), {});
+  p.items = p.items.filter(it => !(it && it.id === "triangles"))
+    .concat(Object.entries(counts).map(([tag, qty]) => ({ id: "samosa", tag, qty, flavor: flavors })));
+}
 function fixSamosa(p, customerText, menu) {
-  if (!p || !Array.isArray(p.items) || /جنوب|مقلي|مقليه|مقليّة|قلي|بالبر|البر/.test(customerText)) return;
+  fixSouthern(p, customerText, menu);
+  if (!p || !Array.isArray(p.items) || SOUTH.test(customerText)) return;
   const sam = p.items.filter(it => it && it.id === "samosa");
   const tri = menu.products.find(x => x.id === "triangles");
   if (!sam.length || !tri) return;

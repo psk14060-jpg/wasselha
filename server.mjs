@@ -736,6 +736,22 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-12): today's #3 — southern samosa 30 = 20 (38) + 10 (20), not triangles 30 (45)
+    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-12' AND num=3")).rows[0];
+    if (!o) return console.log("o3: not found");
+    console.log(`o3: before total=${o.total} fee=${o.delivery_fee} status=${o.status} items=${String(o.items).replace(/\n/g, " / ")}`);
+    if (o.wa_from) for (const m of (await pool.query("SELECT dir, body, at FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 3 * 3600e3])).rows.slice(-14))
+      console.log(`o3: ${hm(m.at)} ${m.dir} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 160)}`);
+    if (/سمبوسة جنوبية 20/.test(o.items)) return console.log("o3: already fixed");
+    const lines = String(o.items).split("\n"), keep = lines.filter(l => !/فطا[يئ]ر مثلث/.test(l)), gone = lines.filter(l => /فطا[يئ]ر مثلث/.test(l));
+    if (!gone.length) return console.log("o3: no triangles line");
+    const goneSum = gone.reduce((n, l) => n + Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0), 0);
+    const items = keep.concat(["1 × سمبوسة جنوبية 20 قطعة — 38 ريال", "1 × سمبوسة جنوبية 10 قطع — 20 ريال"]).join("\n");
+    const total = o.total == null ? null : Number(o.total) - goneSum + 58;
+    await pool.query("UPDATE orders SET items=$2, total=$3, note=TRIM(BOTH ' ·' FROM note || ' · صُحّح: سمبوسة جنوبية لا فطائر (حسن)'), updated=$4 WHERE id=$1", [o.id, items, total, Date.now()]);
+    console.log(`o3: after total=${total} items=${items.replace(/\n/g, " / ")}`);
+  } catch (e) { console.log("o3: " + e.message); } }, 27e3);
   setTimeout(async () => { try { // one-off (2026-11-11 20:24): full refund of today's #14, approved by Hassan (complaint)
     const o = (await pool.query("SELECT id, num, total, delivery_fee FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
     if (!o) return console.log("ret14: not found");

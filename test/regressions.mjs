@@ -202,3 +202,15 @@ t("2026-11-11 فصل الفواتير عن صور العملاء: صورة عم�
   const wa = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
   assert.ok(wa.includes("isPurchaseSender(pool, m.from)") && wa.includes("!invoiceIds.has(r.id)"), "reader skips invoices");
 });
+t("2026-11-12 #3: «30 سمبوسة جنوبية بر» = سمبوسة جنوبية 20 + 10 (مو فطائر 30)", async () => {
+  const { fixSamosa } = await import("../wa.mjs");
+  const menu = { products: [
+    { id: "samosa", variants: [{ tag: "10 قطع", price: 20 }, { tag: "20 قطعة", price: 38 }] },
+    { id: "triangles", variants: [{ tag: "10 قطع", price: 20 }, { tag: "20 قطعة", price: 35 }, { tag: "30 قطعة", price: 45 }] }] };
+  const p = { items: [{ id: "triangles", tag: "30 قطعة", qty: 1, flavor: "" }] };
+  fixSamosa(p, "ابي ٣٠ قطعه سمبوسة جنوبية بر", menu);
+  assert.deepEqual(p.items.map(i => i.id + ":" + i.tag + "x" + i.qty).sort(), ["samosa:10 قطعx1", "samosa:20 قطعةx1"]);
+  const q = { items: [{ id: "triangles", tag: "20 قطعة", qty: 1, flavor: "" }] };
+  fixSamosa(q, "20 سمبوسة دجاج", menu); // plain «سمبوسة» stays triangles
+  assert.equal(q.items[0].id, "triangles");
+});
