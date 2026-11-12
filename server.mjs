@@ -743,11 +743,11 @@ migrate().then(() => {
     console.log(`o3: before total=${o.total} fee=${o.delivery_fee} status=${o.status} items=${String(o.items).replace(/\n/g, " / ")}`);
     if (o.wa_from) for (const m of (await pool.query("SELECT dir, body, at FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 3 * 3600e3])).rows.slice(-14))
       console.log(`o3: ${hm(m.at)} ${m.dir} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 160)}`);
-    if (/سمبوسة جنوبية 20/.test(o.items)) return console.log("o3: already fixed");
+    if (/سمبوسة جنوبية 20/.test(o.items)) { if (!/عكاوي/.test(o.items)) { await pool.query("UPDATE orders SET items=replace(replace(items, 'سمبوسة جنوبية 20 قطعة —', 'سمبوسة جنوبية 20 قطعة (عكاوي ودجاج) —'), 'سمبوسة جنوبية 10 قطع —', 'سمبوسة جنوبية 10 قطع (عكاوي ودجاج) —'), updated=$2 WHERE id=$1", [o.id, Date.now()]); console.log("o3: flavors added"); } return; }
     const lines = String(o.items).split("\n"), keep = lines.filter(l => !/فطا[يئ]ر مثلث/.test(l)), gone = lines.filter(l => /فطا[يئ]ر مثلث/.test(l));
     if (!gone.length) return console.log("o3: no triangles line");
     const goneSum = gone.reduce((n, l) => n + Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0), 0);
-    const items = keep.concat(["1 × سمبوسة جنوبية 20 قطعة — 38 ريال", "1 × سمبوسة جنوبية 10 قطع — 20 ريال"]).join("\n");
+    const items = keep.concat(["1 × سمبوسة جنوبية 20 قطعة (عكاوي ودجاج) — 38 ريال", "1 × سمبوسة جنوبية 10 قطع (عكاوي ودجاج) — 20 ريال"]).join("\n");
     const total = o.total == null ? null : Number(o.total) - goneSum + 58;
     await pool.query("UPDATE orders SET items=$2, total=$3, note=TRIM(BOTH ' ·' FROM note || ' · صُحّح: سمبوسة جنوبية لا فطائر (حسن)'), updated=$4 WHERE id=$1", [o.id, items, total, Date.now()]);
     console.log(`o3: after total=${total} items=${items.replace(/\n/g, " / ")}`);

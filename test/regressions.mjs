@@ -211,6 +211,9 @@ t("2026-11-12 #3: «30 سمبوسة جنوبية بر» = سمبوسة جنوب�
   fixSamosa(p, "ابي ٣٠ قطعه سمبوسة جنوبية بر", menu);
   assert.deepEqual(p.items.map(i => i.id + ":" + i.tag + "x" + i.qty).sort(), ["samosa:10 قطعx1", "samosa:20 قطعةx1"]);
   const q = { items: [{ id: "triangles", tag: "20 قطعة", qty: 1, flavor: "" }] };
+  const r = { items: [{ id: "triangles", tag: "30 قطعة", qty: 1, flavor: "جبن ودجاج" }] };
+  fixSamosa(r, "لا\n30 حبه مكس بر عكاوي دجاج\nخلاص كباجي", menu); // the real #3 chat: no «سمبوسة» word, «بر» alone
+  assert.equal(r.items.filter(i => i.id === "samosa").length, 2);
   fixSamosa(q, "20 سمبوسة دجاج", menu); // plain «سمبوسة» stays triangles
   assert.equal(q.items[0].id, "triangles");
 });

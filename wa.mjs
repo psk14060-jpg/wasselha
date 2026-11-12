@@ -284,9 +284,10 @@ export function dayHint(lines, nowMs) {
 // The pieces asked for are rebuilt from the triangle sizes (30 pieces = one box of 30), with the fillings kept as one note.
 // the reverse (Hassan 2026-11-12, #3): «30 سمبوسة جنوبية بر» was read as triangles 30 (45). Southern samosa only comes as
 // 10 and 20: rebuild the asked pieces from those sizes (30 = 20 + 10).
-const SOUTH = /جنوب|مقلي|مقليه|مقليّة|قلي|\bبر\b|بالبر|البر/;
+// «بر» alone is the southern samosa's dough (#3: «30 حبه مكس بر عكاوي دجاج»); \b does not work on Arabic letters, so spaces are matched
+const SOUTH = /جنوب|مقلي|مقليه|مقليّة|قلي|(?:^|[\s،,.])بر(?:$|[\s،,.])|بالبر|البر/;
 function fixSouthern(p, customerText, menu) {
-  if (!p || !Array.isArray(p.items) || !/سمبوس/.test(customerText) || !SOUTH.test(customerText)) return;
+  if (!p || !Array.isArray(p.items) || !SOUTH.test(customerText)) return;
   const sam = menu.products.find(x => x.id === "samosa");
   const tri = p.items.filter(it => it && it.id === "triangles");
   if (!sam || !tri.length || /فطا[يئ]ر|مثلث/.test(customerText)) return; // he also asked for triangles: leave both
