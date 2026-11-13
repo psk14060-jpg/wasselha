@@ -4,6 +4,7 @@
 // - /api/board/*             : board reads and updates orders
 import { dayStats } from "./daystats.mjs";
 import { audit } from "./audit.mjs";
+import { weekSales } from "./weeksales.mjs";
 import { migratePurchases, googleCaller, pendingPurchases, markSaved } from "./purchases.mjs";
 import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
 import http from "node:http";
@@ -529,7 +530,8 @@ const server = http.createServer(async (req, res) => {
         const batches = Object.fromEntries(Object.entries(groups).map(([k, g]) => { g.sort((a, b) => (a.batch_seq || 0) - (b.batch_seq || 0));
           return [k, { nums: g.map(o => o.num), ids: g.map(o => String(o.id)), route: routeUrl(g.map(o => o.dest)) }]; }));
         const batchTips = !from && day === opDayOf(Date.now()) ? await suggestBatches(rows).catch(e => (console.log("batch: " + e.message), [])) : [];
-        return send(res, 200, { now: Date.now(), day: from || day, orders: rows.map(rowToOrder), batches, batchTips, kitchenModel: kitchenModel(), rw: from ? [] : await listRw(pool, day), supervisorSet: !!process.env.SUPERVISOR_CODE, upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
+        const week = !from ? await weekSales(pool, opDayOf(Date.now())).catch(e => (console.log("week: " + e.message), null)) : null;
+        return send(res, 200, { now: Date.now(), day: from || day, week, orders: rows.map(rowToOrder), batches, batchTips, kitchenModel: kitchenModel(), rw: from ? [] : await listRw(pool, day), supervisorSet: !!process.env.SUPERVISOR_CODE, upcoming: up.rows[0].n, ver: BOARD_VER, costs: sheetState().costs, subsidyActive: sheetState().subsidyActive, screens: seen,
           blacklist: await listBlacklist(pool), blackPings: recentPings(), reviews: recentReviews(),
           alerts: (await pool.query("SELECT * FROM kitchen_alerts WHERE at > $1 ORDER BY at DESC LIMIT 15", [Date.now() - 24 * 3600e3])).rows.map(a => ({
             id: String(a.id), text: a.text, at: Number(a.at), fromDev: a.from_dev, fromName: a.from_name, heard: a.heard || [], ackAt: a.ack_at == null ? null : Number(a.ack_at), ackBy: a.ack_by })),
@@ -736,6 +738,7 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(() => weekSales(pool, opDayOf(Date.now())).then(w => console.log(`week: ${w.from}→${w.to} sales=${w.sales} n=${w.n} days=${w.days.map(d => d.sales).join(",")} prevSame=${w.prev.sameDays} prev=${w.prev.sales}`)).catch(e => console.log("week: " + e.message)), 20e3);
   setTimeout(async () => { try { // one-off (2026-11-13 21:44): today's products, most ordered first
     const { rows } = await pool.query(`SELECT items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));

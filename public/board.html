@@ -234,6 +234,15 @@ textarea{resize:vertical;min-height:84px}
 #rwPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
 #itemsHint{margin:0;color:var(--late);font-size:12.5px;font-weight:600;grid-column:1/-1}
 .total .split{display:block;font-size:11.5px;font-weight:600;color:var(--muted);line-height:1.3}
+.weekchip{cursor:pointer;font:inherit;font-size:13px;font-weight:600;color:inherit}
+.weekbox{margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.weekbox .wk-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.weekbox .up{color:#1f8a4c;font-weight:600}.weekbox .down{color:var(--late);font-weight:600}
+.weekbox .wk-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:8px}
+.weekbox .wk-day{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:8px;border:1px solid var(--line);font-size:12px}
+.weekbox .wk-day b{font-size:15px}.weekbox .wk-day.today{outline:2px solid currentColor}.weekbox .wk-day.future{opacity:.45}
+.weekbox .wk-note{margin:8px 0 0;font-size:12px}
+@media (max-width:520px){.weekbox .wk-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 
 <style>
@@ -341,6 +350,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
       <button type="button" data-f="pick" aria-pressed="false">استلام</button>
     </div>
     <div class="pulse" id="pulse"></div>
+    <div class="weekbox" id="weekBox" hidden></div>
   </div>
   <div id="banner" class="banner" hidden></div>
   <div id="blBar" class="blbar" role="alert" hidden></div>
@@ -893,7 +903,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
-    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[]; if(!j.day||S.dayOff===0)S.rw=j.rw||[]; S.supervisorSet=j.supervisorSet; if(j.kitchenModel)S.kitchenModel=j.kitchenModel;
+    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[]; if(!j.day||S.dayOff===0)S.rw=j.rw||[];S.week=j.week||S.week;renderWeek(); S.supervisorSet=j.supervisorSet; if(j.kitchenModel)S.kitchenModel=j.kitchenModel;
     { const before=new Map((S.alerts||[]).map(a=>[a.id,a])); S.alerts=j.alerts||[];
       /* sender: tell them when the kitchen pressed «تم» */
       S.alerts.forEach(a=>{const b=before.get(a.id);if(b&&!b.ackAt&&a.ackAt&&a.fromDev===DEV.id)toast("✅ المطبخ ضغط «تم» على تنبيهك: "+a.text.slice(0,40));});
@@ -1047,6 +1057,7 @@ function render(){
     ((S.screens||[]).length?`<span class="chip screens" title="الشاشات المفتوحة الآن">${S.screens.map(x=>`${x.id===DEV.id?"(هذا) ":""}${esc(x.name)} ${!x.master?"🔇":x.unlocked?"🔊":"⚠ يحتاج لمسة"}${x.ver!==BOARD_VER?" ⟳":""}${x.lastPlay&&!x.lastPlay.ok?" ✗ صوت":""}`).join(" · ")}</span>`:"")+
 
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`+
+    (S.week?`<button type="button" class="chip weekchip" id="weekChip" aria-expanded="${!$("weekBox").hidden}" title="من الأحد لين نهاية دوام السبت">مبيعات الأسبوع <b>${S.week.sales}</b> ر</button>`:"")+
     `<span class="chip">رسوم التوصيل <b>${Math.round(fees)}</b> ر</span>`+
     (returned?`<span class="chip">مرتجع <b>${Math.round(returned)}</b> ر</span>`:"")+
     (wasted?`<span class="chip">هدر <b>${Math.round(wasted)}</b> ر تكلفة</span>`:"")+
@@ -1450,6 +1461,14 @@ function openSheet(o){
 /* 2026-11-08 #21: the card total is what the courier collects at the door; show the split «طلب 145 + توصيل 20» */
 function splitTxt(o){if(o.type!=="del"||o.total==null||isApp(o.source))return "";const m=String(o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);
   const f=o.deliveryFee!=null?+o.deliveryFee||0:m?+m[1]:0;if(!f)return "";return `<small class="split">طلب ${Math.round((+o.total-f)*100)/100} + توصيل ${f}</small>`;}
+/* 2026-11-13 weekly sales: Sunday → end of Saturday's shift */
+function renderWeek(){const w=S.week,b=$("weekBox");if(!w||!b)return;
+  const diff=w.prev.sameDays?Math.round((w.sales-w.prev.sameDays)/w.prev.sameDays*100):null;
+  b.innerHTML=`<div class="wk-head"><strong>مبيعات الأسبوع ${w.sales} ر</strong><span class="muted">${w.n} طلب · متوسط الفاتورة ${w.avgTicket} ر</span>`+
+    (diff!=null?`<span class="${diff>=0?"up":"down"}">${diff>=0?"▲":"▼"} ${Math.abs(diff)}٪ عن نفس الأيام الأسبوع الماضي (${w.prev.sameDays} ر)</span>`:"")+`</div>`+
+    `<div class="wk-days">${w.days.map(d=>`<div class="wk-day ${d.today?"today":""} ${d.future?"future":""}"><span>${d.name}</span><b>${d.future?"—":d.sales}</b><small>${d.future?"":d.n+" طلب"}</small></div>`).join("")}</div>`+
+    `<p class="muted wk-note">الأسبوع الماضي كامل: ${w.prev.sales} ر · بدون التوصيل وذا شفز، والمرتجع مخصوم</p>`;}
+document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("#weekChip")){const b=$("weekBox");b.hidden=!b.hidden;renderWeek();const c=$("weekChip");if(c)c.setAttribute("aria-expanded",String(!b.hidden));}});
 const joinItemLines=normItemLines; /* itemlines.mjs */
 function itemsHint(){const u=unpricedLines($("items").value),h=$("itemsHint");if(!h)return;
   h.hidden=!(S.editBase&&u.length);h.textContent=u.length?"⚠ بدون سعر (ما دخل في الإجمالي): "+u.join(" · ")+" — اكتب السعر آخر السطر مثل «69 ريال» أو عدّل الإجمالي":"";}

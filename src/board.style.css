@@ -224,4 +224,13 @@ textarea{resize:vertical;min-height:84px}
 #rwPanel .karec small{color:var(--muted);font-size:13px;line-height:1.6}
 #itemsHint{margin:0;color:var(--late);font-size:12.5px;font-weight:600;grid-column:1/-1}
 .total .split{display:block;font-size:11.5px;font-weight:600;color:var(--muted);line-height:1.3}
+.weekchip{cursor:pointer;font:inherit;font-size:13px;font-weight:600;color:inherit}
+.weekbox{margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.weekbox .wk-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.weekbox .up{color:#1f8a4c;font-weight:600}.weekbox .down{color:var(--late);font-weight:600}
+.weekbox .wk-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;margin-top:8px}
+.weekbox .wk-day{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:8px;border:1px solid var(--line);font-size:12px}
+.weekbox .wk-day b{font-size:15px}.weekbox .wk-day.today{outline:2px solid currentColor}.weekbox .wk-day.future{opacity:.45}
+.weekbox .wk-note{margin:8px 0 0;font-size:12px}
+@media (max-width:520px){.weekbox .wk-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
