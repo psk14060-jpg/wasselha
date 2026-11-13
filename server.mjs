@@ -736,6 +736,17 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-13 21:32): cup pizza today, alone and inside sets (48 → 28 pcs, 80/115 → 42 pcs)
+    const { rows } = await pool.query(`SELECT status, items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
+    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+    const c = { cup28: 0, cup42: 0, cupOther: 0, set48: 0, set80: 0, set115: 0, open: 0 };
+    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
+      const l = lat(raw); const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
+      if (/كب|كوب/.test(l) && /بيتزا/.test(l)) { const n = /42/.test(l) ? "cup42" : /28/.test(l) ? "cup28" : "cupOther"; c[n] += q; if (o.status !== "done") c.open += q; }
+      else if (/تشكيل/.test(l) && !/قوارب|عائل/.test(l)) { if (/\b48\b|— 72/.test(l)) c.set48 += q; else if (/\b80\b|— 115/.test(l)) c.set80 += q; else if (/\b115\b|— 145/.test(l)) c.set115 += q; }
+    }
+    console.log(`cup13: orders=${rows.length} ${JSON.stringify(c)}`);
+  } catch (e) { console.log("cup13: " + e.message); } }, 21e3);
   setTimeout(async () => { try { // one-off (2026-11-13): top products of 2026-11-12
     const { rows } = await pool.query(`SELECT source, items FROM orders WHERE op_day='2026-11-12' AND status NOT IN ('cancelled','dismissed','pending')`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
