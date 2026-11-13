@@ -736,6 +736,23 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-13): top products of 2026-11-12
+    const { rows } = await pool.query(`SELECT source, items FROM orders WHERE op_day='2026-11-12' AND status NOT IN ('cancelled','dismissed','pending')`);
+    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+    const agg = {}; let orders = 0;
+    for (const o of rows) { orders++; for (const raw of String(o.items || "").split(/\n/)) {
+      const l = lat(raw).trim(); if (!l) continue;
+      const q = Number((l.match(/^(\d+)\s*[×x*]/) || [])[1] || 1);
+      const price = Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0);
+      const name = l.replace(/^\d+\s*[×x*]\s*/, "").replace(/\s*—.*$/, "").replace(/\s*\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+      const pcs = Number((name.match(/(\d+)\s*(?:قطع|قطعة|قطعه|حب|حبة|حبات|حبه)/) || [])[1] || 0);
+      const a = agg[name] = agg[name] || { boxes: 0, pcs: 0, sar: 0, orders: 0 };
+      a.boxes += q; a.pcs += pcs * q; a.sar += price; a.orders++;
+    } }
+    const top = Object.entries(agg).sort((x, y) => y[1].boxes - x[1].boxes).slice(0, 15);
+    console.log(`top12: orders=${orders}`);
+    for (const [n, a] of top) console.log(`top12: ${n} | boxes=${a.boxes} pcs=${a.pcs} sar=${a.sar} orders=${a.orders}`);
+  } catch (e) { console.log("top12: " + e.message); } }, 23e3);
   setTimeout(async () => { try { // one-off (2026-11-12): today's #3 — southern samosa 30 = 20 (38) + 10 (20), not triangles 30 (45)
     const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
     const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-12' AND num=3")).rows[0];
