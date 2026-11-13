@@ -736,6 +736,18 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-13 21:40): boats today, alone and inside sets 80/115 (18 boats each)
+    const { rows } = await pool.query(`SELECT status, items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
+    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+    const c = {}; let open = 0;
+    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
+      const l = lat(raw); const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
+      const name = l.replace(/^\s*\d+\s*[×x*]\s*/, "").replace(/\s*\([^)]*\)/g, "").trim();
+      if (/قوارب|قارب/.test(l)) { c[name] = (c[name] || 0) + q; if (o.status !== "done") open += q; }
+      else if (/تشكيل/.test(l) && !/عائل/.test(l) && (/\b80\b|— 115/.test(l) || /\b115\b|— 145/.test(l))) c["SET:" + name] = (c["SET:" + name] || 0) + q;
+    }
+    console.log(`boat13: ${JSON.stringify(c)} open=${open}`);
+  } catch (e) { console.log("boat13: " + e.message); } }, 21e3);
   setTimeout(async () => { try { // one-off (2026-11-13 21:32): cup pizza today, alone and inside sets (48 → 28 pcs, 80/115 → 42 pcs)
     const { rows } = await pool.query(`SELECT status, items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
