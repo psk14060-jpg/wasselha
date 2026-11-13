@@ -1,5 +1,13 @@
 // Weekly sales (Hassan 2026-11-13): the week runs Sunday → end of Saturday's shift (operating days, so Saturday's late night counts).
 // Counted exactly like the «مبيعات اليوم» chip: no cancelled/unconfirmed orders, no The Chefz, no delivery fee, minus returns.
+import crypto from "node:crypto";
+// Owner only (Hassan 2026-11-13: «لا أريد الكاشير يراه»): the numbers are served only with the owner's code —
+// env OWNER_CODE, which Hassan sets himself in Render (falls back to SUPERVISOR_CODE, also his alone while OWNER_CODE is unset).
+export function ownerOk(code) {
+  const want = String(process.env.OWNER_CODE || process.env.SUPERVISOR_CODE || ""), got = String(code || "");
+  if (!want || got.length !== want.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+}
 const APPS = ["chefz", "hunger", "keeta", "ninja"];
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const addDays = (d, n) => new Date(Date.parse(d + "T00:00:00Z") + n * 864e5).toISOString().slice(0, 10);

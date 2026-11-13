@@ -242,6 +242,9 @@ textarea{resize:vertical;min-height:84px}
 .weekbox .wk-day{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:8px;border:1px solid var(--line);font-size:12px}
 .weekbox .wk-day b{font-size:15px}.weekbox .wk-day.today{outline:2px solid currentColor}.weekbox .wk-day.future{opacity:.45}
 .weekbox .wk-note{margin:8px 0 0;font-size:12px}
+.weekbox .wk-lock label{display:block;font-weight:600;margin-bottom:6px}.weekbox .wk-row{display:flex;gap:6px;flex-wrap:wrap}
+.weekbox .wk-row input{flex:1;min-width:120px;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line)}.weekbox .wk-err{color:var(--late);margin:6px 0 0;font-weight:600}
+.weekbox .wk-head .sm{margin-inline-start:auto}
 @media (max-width:520px){.weekbox .wk-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
 
@@ -903,7 +906,7 @@ async function load(){
     if(j.settings&&j.settings.sound!==S.master){S.master=j.settings.sound;syncSound();}
     if(j.ver&&j.ver!==BOARD_VER)$("updBar").hidden=false;
     S.screens=j.screens||[];
-    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[]; if(!j.day||S.dayOff===0)S.rw=j.rw||[];S.week=j.week||S.week;renderWeek(); S.supervisorSet=j.supervisorSet; if(j.kitchenModel)S.kitchenModel=j.kitchenModel;
+    S.reviews=j.reviews||[]; S.batches=j.batches||{}; S.batchTips=j.batchTips||[]; if(!j.day||S.dayOff===0)S.rw=j.rw||[]; S.supervisorSet=j.supervisorSet; if(j.kitchenModel)S.kitchenModel=j.kitchenModel;
     { const before=new Map((S.alerts||[]).map(a=>[a.id,a])); S.alerts=j.alerts||[];
       /* sender: tell them when the kitchen pressed «تم» */
       S.alerts.forEach(a=>{const b=before.get(a.id);if(b&&!b.ackAt&&a.ackAt&&a.fromDev===DEV.id)toast("✅ المطبخ ضغط «تم» على تنبيهك: "+a.text.slice(0,40));});
@@ -1057,7 +1060,7 @@ function render(){
     ((S.screens||[]).length?`<span class="chip screens" title="الشاشات المفتوحة الآن">${S.screens.map(x=>`${x.id===DEV.id?"(هذا) ":""}${esc(x.name)} ${!x.master?"🔇":x.unlocked?"🔊":"⚠ يحتاج لمسة"}${x.ver!==BOARD_VER?" ⟳":""}${x.lastPlay&&!x.lastPlay.ok?" ✗ صوت":""}`).join(" · ")}</span>`:"")+
 
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`+
-    (S.week?`<button type="button" class="chip weekchip" id="weekChip" aria-expanded="${!$("weekBox").hidden}" title="من الأحد لين نهاية دوام السبت">مبيعات الأسبوع <b>${S.week.sales}</b> ر</button>`:"")+
+    `<button type="button" class="chip weekchip" id="weekChip" aria-expanded="${!$("weekBox").hidden}" title="للمالك فقط · من الأحد لين نهاية دوام السبت">🔒 مبيعات الأسبوع</button>`+
     `<span class="chip">رسوم التوصيل <b>${Math.round(fees)}</b> ر</span>`+
     (returned?`<span class="chip">مرتجع <b>${Math.round(returned)}</b> ر</span>`:"")+
     (wasted?`<span class="chip">هدر <b>${Math.round(wasted)}</b> ر تكلفة</span>`:"")+
@@ -1461,14 +1464,31 @@ function openSheet(o){
 /* 2026-11-08 #21: the card total is what the courier collects at the door; show the split «طلب 145 + توصيل 20» */
 function splitTxt(o){if(o.type!=="del"||o.total==null||isApp(o.source))return "";const m=String(o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);
   const f=o.deliveryFee!=null?+o.deliveryFee||0:m?+m[1]:0;if(!f)return "";return `<small class="split">طلب ${Math.round((+o.total-f)*100)/100} + توصيل ${f}</small>`;}
-/* 2026-11-13 weekly sales: Sunday → end of Saturday's shift */
-function renderWeek(){const w=S.week,b=$("weekBox");if(!w||!b)return;
+/* 2026-11-13 weekly sales: Sunday → end of Saturday's shift. Owner only: shown after the owner's code, hidden again
+   when closed or after 3 minutes; the numbers never travel with the normal board refresh. */
+let WEEK=null,weekTimer=0;
+function lockWeek(){WEEK=null;clearTimeout(weekTimer);const b=$("weekBox");if(b){b.hidden=true;b.innerHTML="";}const c=$("weekChip");if(c)c.setAttribute("aria-expanded","false");}
+function askWeek(msg){const b=$("weekBox");b.hidden=false;
+  b.innerHTML=`<form id="weekForm" class="wk-lock"><label for="weekCode">مبيعات الأسبوع للمالك فقط: اكتب الرقم السري</label>
+    <div class="wk-row"><input id="weekCode" type="password" inputmode="numeric" autocomplete="off" required><button type="submit" class="sm">عرض</button><button type="button" class="sm" data-weekclose>إغلاق</button></div>${msg?`<p class="wk-err">${esc(msg)}</p>`:""}</form>`;
+  setTimeout(()=>{const i=$("weekCode");if(i)i.focus();},30);}
+function renderWeek(){const w=WEEK,b=$("weekBox");if(!w||!b)return;
   const diff=w.prev.sameDays?Math.round((w.sales-w.prev.sameDays)/w.prev.sameDays*100):null;
   b.innerHTML=`<div class="wk-head"><strong>مبيعات الأسبوع ${w.sales} ر</strong><span class="muted">${w.n} طلب · متوسط الفاتورة ${w.avgTicket} ر</span>`+
-    (diff!=null?`<span class="${diff>=0?"up":"down"}">${diff>=0?"▲":"▼"} ${Math.abs(diff)}٪ عن نفس الأيام الأسبوع الماضي (${w.prev.sameDays} ر)</span>`:"")+`</div>`+
+    (diff!=null?`<span class="${diff>=0?"up":"down"}">${diff>=0?"▲":"▼"} ${Math.abs(diff)}٪ عن نفس الأيام الأسبوع الماضي (${w.prev.sameDays} ر)</span>`:"")+`<button type="button" class="sm" data-weekclose>إغلاق</button></div>`+
     `<div class="wk-days">${w.days.map(d=>`<div class="wk-day ${d.today?"today":""} ${d.future?"future":""}"><span>${d.name}</span><b>${d.future?"—":d.sales}</b><small>${d.future?"":d.n+" طلب"}</small></div>`).join("")}</div>`+
-    `<p class="muted wk-note">الأسبوع الماضي كامل: ${w.prev.sales} ر · بدون التوصيل وذا شفز، والمرتجع مخصوم</p>`;}
-document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("#weekChip")){const b=$("weekBox");b.hidden=!b.hidden;renderWeek();const c=$("weekChip");if(c)c.setAttribute("aria-expanded",String(!b.hidden));}});
+    `<p class="muted wk-note">الأسبوع الماضي كامل: ${w.prev.sales} ر · بدون التوصيل وذا شفز، والمرتجع مخصوم · تنقفل لحالها بعد 3 دقايق</p>`;}
+document.addEventListener("click",e=>{
+  if(!e.target.closest)return;
+  if(e.target.closest("[data-weekclose]")){lockWeek();return;}
+  if(e.target.closest("#weekChip")){const b=$("weekBox");if(!b.hidden){lockWeek();return;}askWeek();const c=$("weekChip");if(c)c.setAttribute("aria-expanded","true");}
+});
+document.addEventListener("submit",async e=>{if(e.target.id!=="weekForm")return;e.preventDefault();
+  const code=$("weekCode").value;
+  try{const r=await fetch("/api/board/week",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({code})});const j=await r.json().catch(()=>({}));
+    if(!r.ok)return askWeek(j.error||"تعذّر الفتح");
+    WEEK=j.week;renderWeek();clearTimeout(weekTimer);weekTimer=setTimeout(lockWeek,3*60e3);}catch{askWeek("تعذّر الاتصال");}
+});
 const joinItemLines=normItemLines; /* itemlines.mjs */
 function itemsHint(){const u=unpricedLines($("items").value),h=$("itemsHint");if(!h)return;
   h.hidden=!(S.editBase&&u.length);h.textContent=u.length?"⚠ بدون سعر (ما دخل في الإجمالي): "+u.join(" · ")+" — اكتب السعر آخر السطر مثل «69 ريال» أو عدّل الإجمالي":"";}

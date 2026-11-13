@@ -232,5 +232,8 @@ textarea{resize:vertical;min-height:84px}
 .weekbox .wk-day{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:8px;border:1px solid var(--line);font-size:12px}
 .weekbox .wk-day b{font-size:15px}.weekbox .wk-day.today{outline:2px solid currentColor}.weekbox .wk-day.future{opacity:.45}
 .weekbox .wk-note{margin:8px 0 0;font-size:12px}
+.weekbox .wk-lock label{display:block;font-weight:600;margin-bottom:6px}.weekbox .wk-row{display:flex;gap:6px;flex-wrap:wrap}
+.weekbox .wk-row input{flex:1;min-width:120px;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line)}.weekbox .wk-err{color:var(--late);margin:6px 0 0;font-weight:600}
+.weekbox .wk-head .sm{margin-inline-start:auto}
 @media (max-width:520px){.weekbox .wk-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
 </style>
