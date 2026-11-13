@@ -736,6 +736,19 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-13 21:44): today's products, most ordered first
+    const { rows } = await pool.query(`SELECT items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
+    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+    const agg = {};
+    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
+      const l = lat(raw).trim(); if (!l) continue;
+      const q = Number((l.match(/^(\d+)\s*[×x*]/) || [])[1] || 1);
+      const price = Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0);
+      const name = l.replace(/^\d+\s*[×x*]\s*/, "").replace(/\s*—.*$/, "").replace(/\s*\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
+      const a = agg[name] = agg[name] || { b: 0, s: 0, o: 0 }; a.b += q; a.s += price; a.o++;
+    }
+    for (const [n, a] of Object.entries(agg).sort((x, y) => y[1].b - x[1].b)) console.log(`rank13: ${n} | boxes=${a.b} sar=${a.s} orders=${a.o}`);
+  } catch (e) { console.log("rank13: " + e.message); } }, 21e3);
   setTimeout(async () => { try { // one-off (2026-11-13 21:40): boats today, alone and inside sets 80/115 (18 boats each)
     const { rows } = await pool.query(`SELECT status, items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
