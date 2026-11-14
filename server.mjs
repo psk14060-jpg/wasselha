@@ -743,15 +743,10 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
-  setTimeout(async () => { try { // one-off (2026-11-14): Hassan — yesterday's cup pizza waste was 4 pieces, not a box
-    const { wasteCost } = await import("./rw.mjs");
-    const ws = (await pool.query("SELECT id, item, qty, pieces, cost, reason FROM returns_waste WHERE kind='waste' AND op_day='2026-11-13' ORDER BY at")).rows;
-    for (const w of ws) console.log(`waste13: #${w.id} ${w.item} qty=${w.qty} pcs=${w.pieces} cost=${w.cost} (${w.reason})`);
-    const cup = ws.filter(w => /كب|كوب/.test(w.item) && /بيتزا/.test(w.item) && Number(w.qty) > 0 && !w.pieces);
-    if (cup.length !== 1) return console.log(`waste13: ${cup.length} cup-pizza box entries — not changed`);
-    const w = cup[0], cost = wasteCost(w.item, null, 4);
-    await pool.query("UPDATE returns_waste SET qty=NULL, pieces=4, cost=$2, note=TRIM(BOTH ' ·' FROM COALESCE(note,'') || ' · صُحّح: 4 قطع لا بوكس (حسن)') WHERE id=$1", [w.id, cost]);
-    console.log(`waste13: fixed #${w.id} → 4 pcs cost=${cost} (was ${w.cost})`);
+  setTimeout(async () => { try { // one-off (2026-11-14): yesterday's wrong waste entry #3 («4 بوكس») — the staff already re-entered it right as #4 (4 pieces)
+    const r = await pool.query("DELETE FROM returns_waste WHERE id=3 AND kind='waste' AND op_day='2026-11-13' AND item LIKE 'كب بيتزا%' RETURNING id");
+    const left = (await pool.query("SELECT id, item, qty, pieces, cost FROM returns_waste WHERE kind='waste' AND op_day='2026-11-13'")).rows;
+    console.log(`waste13: deleted ${r.rowCount}; left ${JSON.stringify(left)}`);
   } catch (e) { console.log("waste13: " + e.message); } }, 26e3);
   setTimeout(async () => { try { // one-off (2026-11-13 21:44): today's products, most ordered first
     const { rows } = await pool.query(`SELECT items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
