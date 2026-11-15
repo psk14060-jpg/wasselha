@@ -743,6 +743,14 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-15 17:14): today's #13 priced 16 — why
+    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-15' AND num=13")).rows[0];
+    if (!o) return console.log("o13: not found");
+    console.log(`o13: source=${o.source} type=${o.type} total=${o.total} fee=${o.delivery_fee} area=${o.area} status=${o.status} note=${o.note} items=${String(o.items).replace(/\n/g, " / ")}`);
+    if (o.wa_from) for (const m of (await pool.query("SELECT dir, body, at, media_id FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 4 * 3600e3])).rows.slice(-20))
+      console.log(`o13: ${hm(m.at)} ${m.dir}${m.media_id ? " [media]" : ""} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 200)}`);
+  } catch (e) { console.log("o13: " + e.message); } }, 22e3);
   setTimeout(async () => { try { // one-off (2026-11-15): pricing agent — flavours of done orders 2026-11-05 → 11-14
     const { rows } = await pool.query(`SELECT op_day::text d, num, source, items FROM orders WHERE op_day BETWEEN '2026-11-05' AND '2026-11-14' AND status='done' ORDER BY op_day, num`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
