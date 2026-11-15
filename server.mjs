@@ -743,6 +743,25 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-15): pricing agent — flavours of done orders 2026-11-05 → 11-14
+    const { rows } = await pool.query(`SELECT op_day::text d, num, source, items FROM orders WHERE op_day BETWEEN '2026-11-05' AND '2026-11-14' AND status='done' ORDER BY op_day, num`);
+    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
+    const agg = {}, src = {};
+    for (const o of rows) { src[o.source] = (src[o.source] || 0) + 1;
+      for (const raw of String(o.items || "").split(/\n/)) {
+        const l = lat(raw).trim(); if (!l) continue;
+        let cat = /سمبوس/.test(l) ? "samosa" : /فطا[يئ]ر|مثلث/.test(l) ? "triangles" : (/كب|كوب/.test(l) && /بيتزا/.test(l)) ? "cup" : /بيتزا/.test(l) && !/تشكيل/.test(l) ? "minipizza" : /قوارب|قارب/.test(l) ? "boats" : null;
+        if (!cat) continue;
+        const q = Number((l.match(/^(\d+)\s*[×x*]/) || [])[1] || 1);
+        const size = Number((l.match(/(\d+)\s*(?:قطع|قطعة|قطعه|حب|حبة|حبات|حبه)/) || [])[1] || 0);
+        const flav = ((l.match(/\(([^)]*)\)/) || [])[1] || "—").trim();
+        const name = l.replace(/^\d+\s*[×x*]\s*/, "").replace(/\s*\([^)]*\)/g, "").replace(/\s*—.*$/, "").trim();
+        const k = `${cat}|${name}|${flav}|${o.source}`;
+        const a = agg[k] = agg[k] || { lines: 0, boxes: 0, pcs: 0 }; a.lines++; a.boxes += q; a.pcs += size * q;
+      } }
+    console.log(`flav: done orders=${rows.length} by_source=${JSON.stringify(src)}`);
+    for (const [k, a] of Object.entries(agg).sort()) console.log(`flav: ${k} | lines=${a.lines} boxes=${a.boxes} pcs=${a.pcs}`);
+  } catch (e) { console.log("flav: " + e.message); } }, 21e3);
   setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T12:30:00Z")).then(() => pool.query("SELECT sender, at, pay, status FROM purchases WHERE status<>'saved' ORDER BY at")).then(r => console.log("purchase: pending " + JSON.stringify(r.rows.map(x => [x.sender, new Date(Number(x.at) + 3 * 3600e3).toISOString().slice(5, 16), x.pay]))))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-15): invoices missed 11-12 → 11-15
   setTimeout(async () => { try { // one-off (2026-11-14): yesterday's wrong waste entry #3 («4 بوكس») — the staff already re-entered it right as #4 (4 pieces)
     const r = await pool.query("DELETE FROM returns_waste WHERE id=3 AND kind='waste' AND op_day='2026-11-13' AND item LIKE 'كب بيتزا%' RETURNING id");
