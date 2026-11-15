@@ -221,3 +221,15 @@ t("2026-11-15 قائمة مرسلي المشتريات تُقرأ سواء رج�
   const src = fs.readFileSync(new URL("../purchases.mjs", import.meta.url), "utf8");
   assert.ok(src.includes('typeof r.value === "string"'), "senders() handles a parsed json value");
 });
+t("2026-11-15 #13: إجمالي طلب الواتساب = الأصناف + التوصيل (كان 16 والصحيح 26)", async () => {
+  const { expectedTotal } = await import("../totals.mjs");
+  assert.equal(expectedTotal({ source: "wa", type: "del", items: "1 × مناقيش 10 قطع — 21 ريال", delivery_fee: 5, total: 16 }), 26);
+  assert.equal(expectedTotal({ source: "wa", type: "pick", items: "1 × مناقيش 10 قطع — 21 ريال\n2 × كب بيتزا — 30 ريال", delivery_fee: 5 }), 51);
+  assert.equal(expectedTotal({ source: "call", type: "del", items: "1 × فطائر ٣٠ قطعة ٤٥ ريال", delivery_fee: 0 }), 45);
+  assert.equal(expectedTotal({ source: "web", type: "del", items: "1 × مناقيش 10 قطع — 21 ريال", delivery_fee: 5 }), null); // website keeps its own total
+  assert.equal(expectedTotal({ source: "chefz", type: "pick", items: "1 × مناقيش 10 قطع — 21 ريال" }), null);
+  assert.equal(expectedTotal({ source: "wa", type: "del", items: "1 × مناقيش 10 قطع — 21 ريال\n1 × صوص", delivery_fee: 5 }), null); // unpriced line: keep
+  assert.equal(expectedTotal({ source: "wa", type: "del", items: "1 × مناقيش 10 قطع — 21 ريال", note: "خصم 5", delivery_fee: 5 }), null); // typed discount: keep
+  const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(srv.includes("fixOpenTotals(pool)") && (srv.match(/fixTotal\(pool/g) || []).length >= 2, "checked on insert, edit and every minute");
+});

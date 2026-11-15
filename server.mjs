@@ -7,6 +7,7 @@ import { audit } from "./audit.mjs";
 import { weekSales, ownerOk } from "./weeksales.mjs";
 import { migratePurchases, googleCaller, pendingPurchases, markSaved } from "./purchases.mjs";
 import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
+import { fixTotal, fixOpenTotals } from "./totals.mjs";
 import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -642,6 +643,7 @@ const server = http.createServer(async (req, res) => {
         if (error) return send(res, 400, { error });
         let o = await insertOrder(order);
         if (await applyGift(pool, o.id, order.note).catch(() => null)) o = rowToOrder((await pool.query("SELECT * FROM orders WHERE id=$1", [o.id])).rows[0]);
+        if (await fixTotal(pool, o.id).catch(() => null) != null) o = rowToOrder((await pool.query("SELECT * FROM orders WHERE id=$1", [o.id])).rows[0]);
         return send(res, 201, { order: o });
       }
       const m = p.match(/^\/api\/board\/orders\/(\d+)$/);
@@ -699,6 +701,8 @@ const server = http.createServer(async (req, res) => {
         vals.push(m[1]);
         const { rows } = await pool.query(`UPDATE orders SET ${sets.join(",")} WHERE id=$${vals.length} RETURNING *`, vals);
         if (!rows.length) return send(res, 404, { error: "not_found" });
+        if ((b.items !== undefined || b.total !== undefined || b.deliveryFee !== undefined || b.type !== undefined) && await fixTotal(pool, m[1]).catch(() => null) != null)
+          rows[0] = (await pool.query("SELECT * FROM orders WHERE id=$1", [m[1]])).rows[0];
         if (before) await recordCorrection(pool, before, rows[0].items).catch(e => console.log("reader: " + e.message)); // the shop's fix teaches the reader
         // one courier: «خرج» or «تم» on one order of a group moves the others with it; cancelling one takes it out of the group
         if (rows[0].batch_id && ["out", "done"].includes(b.status))
@@ -743,16 +747,9 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
-  setTimeout(async () => { try { // one-off (2026-11-15 17:14): today's #13 priced 16 — why
-    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
-    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-15' AND num=13")).rows[0];
-    if (!o) return console.log("o13: not found");
-    for (const e of (await pool.query("SELECT kind, from_status, to_status, at FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows) console.log(`o13: ev ${hm(e.at)} ${e.kind} ${e.from_status || ""}→${e.to_status || ""}`);
-    const lg = (await pool.query("SELECT * FROM information_schema.columns WHERE table_name='orders' AND column_name IN ('quoted','sub_amount','subsidy')")).rows.map(r => r.column_name); console.log("o13: cols " + lg.join(","));
-    console.log(`o13: source=${o.source} type=${o.type} total=${o.total} fee=${o.delivery_fee} area=${o.area} status=${o.status} note=${o.note} items=${String(o.items).replace(/\n/g, " / ")}`);
-    if (o.wa_from) for (const m of (await pool.query("SELECT dir, body, at, media_id FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 4 * 3600e3])).rows.slice(-20))
-      console.log(`o13: ${hm(m.at)} ${m.dir}${m.media_id ? " [media]" : ""} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 200)}`);
-  } catch (e) { console.log("o13: " + e.message); } }, 22e3);
+  // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
+  setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
+  setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
   setTimeout(async () => { try { // one-off (2026-11-15): pricing agent — flavours of done orders 2026-11-05 → 11-14
     const { rows } = await pool.query(`SELECT op_day::text d, num, source, items FROM orders WHERE op_day BETWEEN '2026-11-05' AND '2026-11-14' AND status='done' ORDER BY op_day, num`);
     const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
