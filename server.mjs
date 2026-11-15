@@ -747,6 +747,8 @@ migrate().then(() => {
     const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
     const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-15' AND num=13")).rows[0];
     if (!o) return console.log("o13: not found");
+    for (const e of (await pool.query("SELECT kind, from_status, to_status, at FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows) console.log(`o13: ev ${hm(e.at)} ${e.kind} ${e.from_status || ""}→${e.to_status || ""}`);
+    const lg = (await pool.query("SELECT * FROM information_schema.columns WHERE table_name='orders' AND column_name IN ('quoted','sub_amount','subsidy')")).rows.map(r => r.column_name); console.log("o13: cols " + lg.join(","));
     console.log(`o13: source=${o.source} type=${o.type} total=${o.total} fee=${o.delivery_fee} area=${o.area} status=${o.status} note=${o.note} items=${String(o.items).replace(/\n/g, " / ")}`);
     if (o.wa_from) for (const m of (await pool.query("SELECT dir, body, at, media_id FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 4 * 3600e3])).rows.slice(-20))
       console.log(`o13: ${hm(m.at)} ${m.dir}${m.media_id ? " [media]" : ""} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 200)}`);
