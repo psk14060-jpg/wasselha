@@ -217,3 +217,7 @@ t("2026-11-12 #3: «30 سمبوسة جنوبية بر» = سمبوسة جنوب�
   fixSamosa(q, "20 سمبوسة دجاج", menu); // plain «سمبوسة» stays triangles
   assert.equal(q.items[0].id, "triangles");
 });
+t("2026-11-15 قائمة مرسلي المشتريات تُقرأ سواء رجعت نص أو كائن (عمود json)", async () => {
+  const src = fs.readFileSync(new URL("../purchases.mjs", import.meta.url), "utf8");
+  assert.ok(src.includes('typeof r.value === "string"'), "senders() handles a parsed json value");
+});

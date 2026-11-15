@@ -32,7 +32,11 @@ export async function migratePurchases(pool) {
 // allowed senders: board_settings «purchase_senders» = [{"key":"5xxxxxxxx","name":"سليمان"}]; nobody else, ever
 async function senders(pool) {
   const r = (await pool.query("SELECT value FROM board_settings WHERE key='purchase_senders'")).rows[0];
-  try { return r ? JSON.parse(r.value) : []; } catch { return []; }
+  // board_settings.value comes back already parsed (json column) — the old JSON.parse threw and left the list empty,
+  // which after the 2026-11-11 «nobody else» rule silently dropped every invoice (Hassan 2026-11-15)
+  if (!r) return [];
+  const v = typeof r.value === "string" ? (() => { try { return JSON.parse(r.value); } catch { return []; } })() : r.value;
+  return Array.isArray(v) ? v : [];
 }
 async function claim(pool, row, caption, sender) {
   const ins = await pool.query(`INSERT INTO purchases (msg_id, wa_from, sender, at, media_id, mime, caption, pay) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -45,7 +49,7 @@ export async function onPurchaseMessage(pool, m) {
   if (media) await pool.query("UPDATE wa_messages SET media_id=$2, mime=$3 WHERE id=$1", [m.id, m.raw.id, m.raw.mime_type || ""]);
   const list = await senders(pool);
   const who = list.find(x => k9(x.key) === k9(m.from));
-  if (!who) return null; // only Hassan and Suleiman: a customer's photo never becomes a purchase invoice (empty list = nobody)
+  if (!who) { if (!list.length && (media || isPurchaseText(m.text))) console.log("purchase: sender list is EMPTY — nothing can be kept"); return null; } // only Hassan and Suleiman: a customer's photo never becomes a purchase invoice (empty list = nobody)
   const sender = who.name;
   const own = isPurchaseText(m.text);
   if (media && own) { await claim(pool, { id: m.id, wa_from: m.from, at: m.ts, media_id: m.raw.id, mime: m.raw.mime_type || "" }, clean(m.text), sender); return `purchase: photo from ${sender} (${payOf(m.text)})`; }

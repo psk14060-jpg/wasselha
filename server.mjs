@@ -743,13 +743,7 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
-  setTimeout(async () => { try { // one-off (2026-11-15): Hassan's / Suleiman's messages 11-11 → 11-14 (invoice of the 12th missing)
-    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
-    const ms = (await pool.query(`SELECT id, wa_from, kind, body, at, media_id FROM wa_messages WHERE dir='in' AND right(regexp_replace(wa_from,'\\D','','g'),9) IN ('561044464','530853547') AND at BETWEEN $1 AND $2 ORDER BY at`, [Date.parse("2026-11-11T09:00:00Z"), Date.parse("2026-11-15T12:00:00Z")])).rows;
-    const claimed = new Set((await pool.query("SELECT msg_id FROM purchases")).rows.map(r => r.msg_id));
-    for (const m of ms) console.log(`p12: ${hm(m.at)} …${String(m.wa_from).slice(-4)} ${m.kind || ""}${m.media_id ? " [media]" : ""}${claimed.has(m.id) ? " [CLAIMED]" : ""} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 120)}`);
-    for (const r of (await pool.query("SELECT msg_id, sender, at, status, file_name, sheet_done, err FROM purchases ORDER BY at")).rows) console.log(`p12: row ${hm(r.at)} ${r.sender} ${r.status} ${r.file_name || ""} sheet=${r.sheet_done} ${r.err || ""}`);
-  } catch (e) { console.log("p12: " + e.message); } }, 22e3);
+  setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T12:30:00Z"))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-15): invoices missed 11-12 → 11-15
   setTimeout(async () => { try { // one-off (2026-11-14): yesterday's wrong waste entry #3 («4 بوكس») — the staff already re-entered it right as #4 (4 pieces)
     const r = await pool.query("DELETE FROM returns_waste WHERE id=3 AND kind='waste' AND op_day='2026-11-13' AND item LIKE 'كب بيتزا%' RETURNING id");
     const left = (await pool.query("SELECT id, item, qty, pieces, cost FROM returns_waste WHERE kind='waste' AND op_day='2026-11-13'")).rows;
