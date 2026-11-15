@@ -81,6 +81,7 @@ export async function reclaimRecent(pool, sinceMs, log = console.log) {
     const prev = (await pool.query(`SELECT id, wa_from, at, media_id, mime FROM wa_messages WHERE wa_from=$1 AND dir='in' AND media_id IS NOT NULL
       AND at BETWEEN $2 AND $3 AND id NOT IN (SELECT msg_id FROM purchases)`, [r.wa_from, Number(r.at) - WINDOW, Number(r.at) + WINDOW])).rows;
     let n = 0; for (const p of prev) n += await claim(pool, p, clean(r.body), who ? who.name : "…" + k9(r.wa_from).slice(-4));
+    if (payOf(r.body) !== "غير محدد") await pool.query(`UPDATE purchases SET pay=$3 WHERE wa_from=$1 AND at BETWEEN $2 AND $4 AND pay='غير محدد'`, [r.wa_from, Number(r.at) - WINDOW, payOf(r.body), Number(r.at) + WINDOW]);
     log(`purchase: re-read text (${payOf(r.body)}) covers ${n} photo(s)`);
   }
 }

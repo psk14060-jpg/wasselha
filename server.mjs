@@ -743,7 +743,7 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
-  setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T12:30:00Z"))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-15): invoices missed 11-12 → 11-15
+  setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T12:30:00Z")).then(() => pool.query("SELECT sender, at, pay, status FROM purchases WHERE status<>'saved' ORDER BY at")).then(r => console.log("purchase: pending " + JSON.stringify(r.rows.map(x => [x.sender, new Date(Number(x.at) + 3 * 3600e3).toISOString().slice(5, 16), x.pay]))))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-15): invoices missed 11-12 → 11-15
   setTimeout(async () => { try { // one-off (2026-11-14): yesterday's wrong waste entry #3 («4 بوكس») — the staff already re-entered it right as #4 (4 pieces)
     const r = await pool.query("DELETE FROM returns_waste WHERE id=3 AND kind='waste' AND op_day='2026-11-13' AND item LIKE 'كب بيتزا%' RETURNING id");
     const left = (await pool.query("SELECT id, item, qty, pieces, cost FROM returns_waste WHERE kind='waste' AND op_day='2026-11-13'")).rows;
