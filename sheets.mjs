@@ -7,6 +7,7 @@ import crypto from "node:crypto";
 import { subsidyFor, feeOfOrder, unifiedName, setSheetCosts } from "./subsidy.mjs";
 import { keyOf } from "./blacklist.mjs";
 import { getMenu } from "./menu.mjs";
+import { syncExec } from "./execsummary.mjs";
 
 const SHEET_ID = process.env.SHARED_SHEET_ID || "1TTXbWtikFPDkTN_2GJPpMwdOCsNOZCowbRsJodXEm1U";
 const WRITER = "وكيل التشغيل";
@@ -86,7 +87,7 @@ export async function sheetId(tab) {
   return sheetIds[tab];
 }
 // Remove the data rows of one date (column A) from one of our own tabs, so a day can be rewritten without duplicates.
-async function deleteDate(tab, date) {
+export async function deleteDate(tab, date) {
   const col = await read(tab, "A:A");
   const rows = [];
   col.forEach((r, i) => { if (i > 0 && String(r[0] ?? "") === date) rows.push(i); });
@@ -285,8 +286,14 @@ export function startSheetJob(pool, log = console.log) {
       const today = opDayOf(Date.now());
       // 02:00 every night: the operating day that is ending (it started at 06:00 yesterday)
       if (r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "sheet_sales_done")) !== today) {
-        await syncDay(pool, today, log); await setS(pool, "sheet_sales_done", today);
-      } else if (first) await syncDay(pool, today, log); // on start: today so far (rewritten in full at 02:00)
+        await syncDay(pool, today, log); await syncExec(pool, today, log); await setS(pool, "sheet_sales_done", today);
+      } else if (first) { await syncDay(pool, today, log); await syncExec(pool, today, log).catch(e => log("exec: " + e.message)); } // on start: today so far (rewritten in full at 02:00)
+      // «الملخص_التنفيذي» from the first board day, once (Hassan 2026-11-16: executive agent)
+      if (!(await getS(pool, "exec_backfill_v1"))) {
+        const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
+        for (const { d } of rows) await syncExec(pool, d, log);
+        await setS(pool, "exec_backfill_v1", Date.now()); log("exec: backfill " + rows.length + " days");
+      }
       const weekKey = dateOf(Date.now());
       if ((r.getUTCDay() === 0 && r.getUTCHours() >= 3 && (await getS(pool, "sheet_customers_done")) !== weekKey) || !(await getS(pool, "sheet_customers_done"))) {
         await syncCustomers(pool, log); await setS(pool, "sheet_customers_done", weekKey);

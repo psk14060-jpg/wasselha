@@ -233,3 +233,28 @@ t("2026-11-15 #13: إجمالي طلب الواتساب = الأصناف + ال�
   const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.ok(srv.includes("fixOpenTotals(pool)") && (srv.match(/fixTotal\(pool/g) || []).length >= 2, "checked on insert, edit and every minute");
 });
+t("2026-11-16 الملخص التنفيذي: سطر اليوم من كل القنوات (المحل محسوب، ذا شيفز والتوصيل والملغي برا المبيعات)", async () => {
+  const { execRow, HEADERS } = await import("../execsummary.mjs");
+  const due = Date.parse("2026-11-15T18:00:00+03:00");
+  const orders = [
+    { id: 1, source: "shop", type: "pick", status: "done", total: 50, due, phone: "0501111111" },
+    { id: 2, source: "wa", type: "del", status: "done", total: 26, delivery_fee: 5, due, wa_from: "966502222222" },
+    { id: 3, source: "chefz", type: "pick", status: "done", total: 67.5, due },
+    { id: 4, source: "call", type: "pick", status: "cancelled", total: 30, due, phone: "0503333333" },
+  ];
+  const events = [{ order_id: 1, to_status: "prep", at: due - 20 * 60e3 }, { order_id: 1, to_status: "ready", at: due - 8 * 60e3 },
+    { order_id: 2, to_status: "prep", at: due - 30 * 60e3 }, { order_id: 2, to_status: "ready", at: due - 22 * 60e3 }, { order_id: 2, to_status: "out", at: due + 10 * 60e3 }];
+  const row = execRow("2026-11-15", { orders, returns: [{ amount: 10 }], waste: [{ cost: 10 }], events, seenBefore: new Set(["966501111111"]) });
+  const col = n => row[HEADERS.indexOf(n)];
+  assert.equal(col("اليوم"), "الأحد");
+  assert.equal(col("عدد الطلبات"), 2);
+  assert.equal(col("المبيعات (بدون التوصيل وذا شيفز، بعد المرتجع)"), 50 + 21 - 10);
+  assert.equal(col("المحل"), 50); assert.equal(col("واتساب"), 21); assert.equal(col("ذا شيفز"), 67.5);
+  assert.equal(col("رسوم التوصيل المحصلة"), 5);
+  assert.equal(col("طلبات ملغية"), 1); assert.equal(col("قيمة الملغي"), 30);
+  assert.equal(col("الهدر بالتكلفة شامل الضريبة"), 11.5);
+  assert.equal(col("متوسط التحضير (دقيقة)"), 10);
+  assert.equal(col("طلبات متأخرة"), 1); // the delivery left after its departure time
+  assert.equal(col("عملاء جدد"), 1); assert.equal(col("عملاء متكررون"), 1);
+  assert.equal(row.length, HEADERS.length - 1); // «أُعدّ في» is added when written
+});

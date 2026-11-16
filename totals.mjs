@@ -4,7 +4,7 @@
 // total never stays, whatever path wrote it.
 import { linesSum, unpricedLines } from "./itemlines.mjs";
 
-const PRICED = ["wa", "call"];
+const PRICED = ["wa", "call", "shop"];
 // a typed discount or a line without a price: the shop's own total is kept
 const KEEP = /خصم|تخفيض|مجانا|مجاناً|هدية|discount/i;
 
