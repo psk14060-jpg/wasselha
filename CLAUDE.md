@@ -46,7 +46,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - Delivery subsidy CANCELLED by Hassan 2026-11-08 16:13 (`subsidy_off_hassan` in board_settings forces it off whatever the sheet says; delete that row only if Hassan turns it back on).
 - Delivery subsidy (`subsidy.mjs`, shared with the board): Sun–Wed, items ≥ 60 SAR, shop pays 5 SAR, more while the margin after delivery stays ≥ 65% (price without VAT, food + box cost), never above the fee. None Thu/Fri 3–9 pm (and, as written, none Thu/Fri/Sat at all). Unknown item costs → base 5 only.
 - Loyalty: paused until the marketing agent sends the design. Do not build.
-- Rewaa POS integration: cancelled (13,800 SAR). Shop sales come from a weekly Rewaa Excel export; never enter shop sales on the board (the «المحل» source is hidden).
+- Rewaa stopped when the board started (early Nov 2026); the shop now uses Kasheerk, not linked. Hassan 2026-11-16: ALL sales go on the board (shop, phone, website, WhatsApp, apps), so the «المحل» source is visible again and counted everywhere. Rewaa history (opening → early Nov) is with the pricing agent.
 - Weekly report every Sunday 08:00 (`reports.mjs`, board ⋯ → التقارير): sales by item/channel/hour without delivery fees, average order, repeat and lapsed customers, cancelled and reasons (picked when cancelling), subsidy paid. Taste report: 2026-11-18.
 - Kitchen alert (⋯ → 📢 تنبيه للمطبخ, table `kitchen_alerts`): written message shown on every screen with «تنبيه تنبيه» every minute until «تم»; not played on the sending device; sender sees heard/done. Sound file `public/sounds/kitchen-alert.mp3` (Hassan's recording, used whole) — until it exists a two-tone sound plays.
 - One courier for close deliveries (`batch.mjs`, Hassan 2026-11-05): board suggests pairs of our own deliveries leaving within 20 min, customers ≤ 6 km apart (or same neighbourhood without map points), every customer within 10 min late / 15 min early. Kitchen presses «دمج»: same batch_id, both prepared for the group departure (batch_out), one «خرج» moves the group, card shows drop order and a Google Maps route. Courier is paid by each customer, so fees do not change.
@@ -59,7 +59,7 @@ Deploy: push branch `minigeesh-orders`, then trigger the deploy (Render shows au
 - «المبيعات اليومية» columns (Hassan 2026-11-06): «الساعة» = time the order came in (created), column K «وقت الاستلام المطلوب» = requested time (due). Neighbourhoods written with one spelling (`canonArea`: website list name, «حي» dropped, «المطيرفي» → «المطرفي»).
 - Write only «المبيعات اليومية» (02:00 nightly, one row per item line + a negative «دعم توصيل من المحل» line), «الإلغاء والتأخير» (same run), «العملاء» (Sundays, whole tab rewritten). Same columns as the sheet. A day is deleted and rewritten, never appended twice.
 - Read «القواعد المعتمدة» (subsidy on/off from its status/dates; any rule change → log + note) and «المنيو والتكاليف» (unified names via `unifiedName`, costs for the subsidy margin) every 10 minutes.
-- Mistakes in other agents' tabs → a row in «ملاحظات», never an edit. Phones: last 4 digits only. No shop (Rewaa) sales.
+- Mistakes in other agents' tabs → a row in «ملاحظات», never an edit. Phones: last 4 digits only.
 - Do not add header buttons; secondary tools go in the ⋯ menu, card extras in their own row.
 
 ## 2026-11-08 #21 — سعر مكتوب بشكل حر ما حرّك الإجمالي

@@ -138,7 +138,7 @@ async function writeBrief(apiKey, data) {
 - «تنبيه على البيانات» إن وُجد: مثل قلة الطلبات المسجّل لها رقم، أو صغر العينة.
 لا تخترع أرقامًا غير موجودة، ولا توصِ بشيء لا تسنده البيانات. إذا كان الأسبوع السابق بلا بيانات فلا تقارن.
 الأسعار والعروض والولاء ودعم التوصيل يقررها وكيل التسويق: لا تقترح سعرًا أو عرضًا، بل اذكر ما يحتاج أن يراجعه وكيل التسويق ولماذا.
-المبيعات هنا بدون رسوم التوصيل وبدون الملغى، ولا تشمل مبيعات المحل المباشرة (تُسجَّل في رواء).`;
+المبيعات هنا بدون رسوم التوصيل وبدون الملغى. تشمل كل القنوات المسجلة في اللوحة (المحل، الاتصال، الموقع، الواتساب، التطبيقات).`;
   const r = await fetch((process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com") + "/v1/messages", {
     method: "POST",
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
@@ -164,7 +164,7 @@ export async function buildWeek(pool, weekStart, { save = true } = {}) {
     `SELECT count(*)::int AS n FROM (SELECT COALESCE(wa_from, phone) k FROM orders WHERE ${LIVE} AND op_day >= $1 AND op_day < $2 AND COALESCE(wa_from, phone, '') <> '' GROUP BY 1) w
       WHERE EXISTS (SELECT 1 FROM orders o WHERE ${LIVE} AND o.op_day < $1 AND COALESCE(o.wa_from, o.phone) = w.k)`, [weekStart, end])).rows[0].n;
   const data = {
-    returning, shopSalesNote: "مبيعات المحل المباشرة في رواء وليست هنا",
+    returning, shopSalesNote: "",
     week: { from: weekStart, to: addDays(weekStart, 6) }, current: cur, previous: prev, newCustomers,
     customers: { total: cust.total, repeat: cust.repeat, lapsed: cust.lapsed.length, since: cust.since,
       lapsedTop: cust.lapsed.slice(0, 10).map(c => ({ name: c.name, key: c.key, orders: c.orders, spend: c.spend, daysSince: c.daysSince, lastItems: c.lastItems })) },

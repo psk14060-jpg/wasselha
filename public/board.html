@@ -387,7 +387,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
         <div class="seg" id="srcSeg" role="group" aria-label="مصدر الطلب">
           <button type="button" data-v="call" aria-pressed="true">اتصال</button>
           <button type="button" data-v="chefz" aria-pressed="false">ذا شيفز</button>
-          <button type="button" data-v="shop" aria-pressed="false" hidden title="مبيعات المحل تُسجَّل في رواء، لا في اللوحة">المحل</button>
+          <button type="button" data-v="shop" aria-pressed="false">المحل</button>
           <button type="button" data-v="hunger" aria-pressed="false">هنقر</button>
           <button type="button" data-v="keeta" aria-pressed="false">كيتا</button>
           <button type="button" data-v="ninja" aria-pressed="false">نينجا</button>
@@ -1253,7 +1253,7 @@ function weekHtml(r){
   ${r.brief?`<div class="card brief"><h3>الخلاصة وأهم النقاط</h3>${briefHtml(r.brief)}</div>`:""}
   <div class="grid2">
     <div class="card"><h3>المبيعات حسب الصنف (ريال)</h3>${bars(Object.fromEntries(c.topProducts.slice().sort((a,b)=>b.sales-a.sales).map(x=>[x.name+" · "+x.boxes+" بوكس",x.sales])))}</div>
-    <div class="card"><h3>المبيعات حسب القناة (ريال)</h3>${bars(Object.fromEntries(Object.entries(c.bySource).sort((a,b)=>b[1].sales-a[1].sales).map(([k,v])=>[k+" · "+v.orders+" طلب",Math.round(v.sales)])))}<p class="muted">مبيعات المحل المباشرة في رواء وليست هنا.</p></div>
+    <div class="card"><h3>المبيعات حسب القناة (ريال)</h3>${bars(Object.fromEntries(Object.entries(c.bySource).sort((a,b)=>b[1].sales-a[1].sales).map(([k,v])=>[k+" · "+v.orders+" طلب",Math.round(v.sales)])))}</div>
     <div class="card"><h3>المبيعات حسب الساعة (ريال)</h3>${bars(hSales)}</div>
     <div class="card"><h3>الملغى وأسبابه</h3>${cx.orders?bars(Object.fromEntries(Object.entries(cx.reasons).sort((a,b)=>b[1].orders-a[1].orders).map(([k,v])=>[k+" · "+v.value+" ر",v.orders]))):`<div class="empty">ما فيه ملغى</div>`}</div>
     <div class="card"><h3>الأيام</h3>${bars(c.byWeekday,wd)}</div>
@@ -1441,7 +1441,6 @@ function openSheet(o){
   $("cancelOrderBtn").hidden=!o||o.status==="cancelled";
   $("delConfirm").hidden=true; $("formErr").hidden=true;
   setTextMode(!!o);
-  $("srcSeg").querySelector('[data-v="shop"]').hidden=!(o&&o.source==="shop"); /* shop sales live in Rewaa, not on the board */
   setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"call"); setSeg("typeSeg",o?o.type:"pick");
   {const k=o?opDayOf(o.due):dayKey(Math.min(S.dayOff,2));const n=daysFromToday(k);
    if(n===0||n===1)setSeg("daySeg",n);else{$("dueDate").value=k;setSeg("daySeg","x");}}

@@ -1,7 +1,7 @@
 // Shared Google Sheet between the agents («مينيقيش – ملف العمل المشترك للوكلاء»).
 // The board writes only «المبيعات اليومية», «العملاء», «الإلغاء والتأخير» (same columns as the sheet), and notes in «ملاحظات».
 // It reads «القواعد المعتمدة» (delivery subsidy on/off, rule changes) and «المنيو والتكاليف» (unified names and costs).
-// Dates 2026-11-05, 24-hour Riyadh time, amounts with VAT, phones as the last 4 digits only, no shop (Rewaa) sales.
+// Dates 2026-11-05, 24-hour Riyadh time, amounts with VAT, phones as the last 4 digits only, all channels incl. the shop (Hassan 2026-11-16).
 // Access: service account in GOOGLE_SA_JSON (shared on the file as editor).
 import crypto from "node:crypto";
 import { subsidyFor, feeOfOrder, unifiedName, setSheetCosts } from "./subsidy.mjs";
@@ -170,7 +170,7 @@ const rowO = o => ({ type: o.type, source: o.source, deliveryFee: o.delivery_fee
 
 export async function syncDay(pool, day, log = console.log) {
   const { rows: orders } = await pool.query(
-    `SELECT * FROM orders WHERE op_day=$1 AND status NOT IN ('pending','dismissed') AND source<>'shop' ORDER BY num`, [day]);
+    `SELECT * FROM orders WHERE op_day=$1 AND status NOT IN ('pending','dismissed') ORDER BY num`, [day]);
   const missing = new Set();
   const sales = [];
   for (const o of orders) {
@@ -233,7 +233,7 @@ export async function syncDay(pool, day, log = console.log) {
 
 // ---------- write: customers (whole tab rewritten) ----------
 export async function syncCustomers(pool, log = console.log) {
-  const { rows } = await pool.query(`SELECT * FROM orders WHERE status NOT IN ('pending','dismissed','cancelled') AND source<>'shop' ORDER BY due`);
+  const { rows } = await pool.query(`SELECT * FROM orders WHERE status NOT IN ('pending','dismissed','cancelled') ORDER BY due`);
   const by = new Map();
   for (const o of rows) {
     const k = keyOf(o.wa_from, o.phone); if (!k || k.length < 11) continue;
