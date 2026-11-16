@@ -22,7 +22,7 @@ import { migrateLocation, neighbourhoodOf, findPoint, applyLocation } from "./lo
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
 import { migrateReports, startWeeklyJob, buildWeek, weekStartOf, customers } from "./reports.mjs";
 import { migratePrefs, startTasteJob, tasteReport } from "./prefs.mjs";
-import { startSheetJob, sheetState } from "./sheets.mjs";
+import { startSheetJob, sheetState, read as sheetRead } from "./sheets.mjs";
 import { suggestBatches, routeUrl } from "./batch.mjs";
 import { startKitchenModel, kitchenModel } from "./kitchenstats.mjs";
 import { migrateRw, addRw, listRw } from "./rw.mjs";
@@ -747,6 +747,15 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-16): Rewaa vs board on the overlap days 10-31 → 11-09, to pick one source
+    const rows = await sheetRead("مبيعات_رواء", "A2:G");
+    const by = {};
+    for (const r of rows) { const d = String(r[0] || ""); if (d < "2026-10-24" || d > "2026-11-09") continue;
+      const x = by[d] = by[d] || { total: 0, inv: 0, ch: {} };
+      if (r[6] === "إجمالي يوم") { x.total += Number(r[4]) || 0; x.inv += Number(r[5]) || 0; }
+      else if (r[6] === "صنف") x.ch[r[1]] = (x.ch[r[1]] || 0) + (Number(r[4]) || 0); }
+    for (const d of Object.keys(by).sort()) console.log(`rewaa: ${d} total=${Math.round(by[d].total)} inv=${by[d].inv} ` + Object.entries(by[d].ch).map(([k, v]) => k + "=" + Math.round(v)).join(" "));
+  } catch (e) { console.log("rewaa: " + e.message); } }, 40e3);
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
