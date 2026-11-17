@@ -795,7 +795,7 @@ migrate().then(() => {
     const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-17' AND num=23")).rows[0];
     if (!o || o.wa_from || o.phone) return console.log("o23-fix: nothing to do");
     const c = Number(o.created);
-    const { rows } = await pool.query("SELECT wa_from, string_agg(left(text,60), ' ⏎ ' ORDER BY at) AS t FROM wa_messages WHERE dir='in' AND at BETWEEN $1 AND $2 GROUP BY wa_from", [c - 40 * 60e3, c + 3 * 60e3]);
+    const { rows } = await pool.query("SELECT wa_from, string_agg(left(body,60), ' ⏎ ' ORDER BY at) AS t FROM wa_messages WHERE dir='in' AND at BETWEEN $1 AND $2 GROUP BY wa_from", [c - 40 * 60e3, c + 3 * 60e3]);
     const other = new Set((await pool.query("SELECT wa_from FROM orders WHERE op_day='2026-11-17' AND wa_from IS NOT NULL AND id<>$1", [o.id])).rows.map(r => r.wa_from));
     const cand = rows.filter(r => /كباجي|كبا|ميني/.test(r.t || "") && !other.has(r.wa_from));
     console.log(`o23-fix: chats in window=${rows.length} kabaji=${cand.length} ` + rows.map(r => `…${String(r.wa_from).slice(-4)}${other.has(r.wa_from) ? "(has order)" : ""}: ${String(r.t).replace(/\d{7,}/g, "…").slice(0, 160)}`).join(" || "));
