@@ -29,6 +29,8 @@ main>*{min-width:0}
 .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
 header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .brand{font-family:var(--f-display);font-size:30px;line-height:1;font-weight:400;margin:0;color:var(--accent-ink)}
+.brand .logo{height:46px;width:auto;display:block;background:#fff;border-radius:9px;padding:3px 6px}
+header{align-items:center!important}
 header .sub{color:var(--muted)}
 header .upd{margin-inline-start:auto;color:var(--muted);font-size:13px}
 section{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
@@ -62,7 +64,7 @@ tr.part td{color:var(--muted)}
 <body>
 <div class="gate" id="gate" hidden>
   <form id="gf">
-    <div class="brand">مينيقيش</div>
+    <img src="{{LOGO}}" alt="مينيقيش" style="height:96px;width:auto;justify-self:center;background:#fff;border-radius:12px;padding:6px 10px">
     <label for="code">رمز الإدارة</label>
     <input id="code" type="password" inputmode="numeric" autocomplete="off">
     <button>دخول</button>
@@ -70,7 +72,7 @@ tr.part td{color:var(--muted)}
   </form>
 </div>
 <main id="main" hidden>
-  <header><h1 class="brand">مينيقيش</h1><span class="sub">لوحة الإدارة</span><span class="upd" id="upd"></span></header>
+  <header><h1 class="brand"><img class="logo" src="{{LOGO}}" alt="مينيقيش"></h1><span class="sub">لوحة الإدارة</span><span class="upd" id="upd"></span></header>
 
   <section>
     <h2>بطاقة الأسبوع</h2>

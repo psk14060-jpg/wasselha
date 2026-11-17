@@ -35,6 +35,8 @@ button{cursor:pointer}
 .row1{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .brand{font-family:var(--f-display);font-size:26px;line-height:1;letter-spacing:0;margin:0;font-weight:400}
 .brand small{font-family:var(--f-body);font-size:13px;color:var(--muted);font-weight:500;margin-inline-start:6px}
+.brand{display:flex;align-items:center}
+.brand .logo{height:40px;width:auto;background:#fff;border-radius:8px;padding:2px 5px;display:block}
 .clock{font-family:var(--f-mono);font-size:20px;font-weight:600;color:var(--ink);margin-inline-start:auto}
 .btn{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:8px 14px;font-weight:600;min-height:42px}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}

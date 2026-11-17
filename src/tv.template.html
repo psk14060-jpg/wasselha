@@ -21,6 +21,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);ov
 .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
 header{display:flex;align-items:baseline;gap:1.2em}
 .brand{font-family:var(--f-display);font-size:2.6em;line-height:1;font-weight:400;margin:0;color:var(--accent)}
+header .brand .logo{height:2.1em;width:auto;display:block;background:#fff;border-radius:.3em;padding:.12em .3em}
+header{align-items:center}
 .sub{color:var(--muted);font-size:1.05em}
 .clock{margin-inline-start:auto;font-family:var(--f-mono);font-size:2.2em;font-weight:600}
 .upd{color:var(--muted);font-size:.85em}
@@ -64,7 +66,7 @@ header{display:flex;align-items:baseline;gap:1.2em}
 <body>
 <div class="gate" id="gate" hidden>
   <form id="gf">
-    <div class="brand" style="font-size:44px">مينيقيش</div>
+    <img src="{{LOGO}}" alt="مينيقيش" style="height:110px;width:auto;justify-self:center;background:#fff;border-radius:14px;padding:8px 12px">
     <label for="code">رمز شاشة العرض</label>
     <input id="code" inputmode="numeric" autocomplete="off">
     <button>دخول</button>
@@ -73,7 +75,7 @@ header{display:flex;align-items:baseline;gap:1.2em}
 </div>
 
 <header>
-  <h1 class="brand">مينيقيش</h1>
+  <h1 class="brand"><img class="logo" src="{{LOGO}}" alt="مينيقيش"></h1>
   <span class="sub" id="dayname"></span>
   <span class="clock num" id="clock"></span>
   <span class="upd" id="upd"></span>
