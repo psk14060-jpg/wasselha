@@ -8,6 +8,7 @@ import { subsidyFor, feeOfOrder, unifiedName, setSheetCosts } from "./subsidy.mj
 import { keyOf } from "./blacklist.mjs";
 import { getMenu } from "./menu.mjs";
 import { syncExec } from "./execsummary.mjs";
+import { syncWa } from "./wastats.mjs";
 
 const SHEET_ID = process.env.SHARED_SHEET_ID || "1TTXbWtikFPDkTN_2GJPpMwdOCsNOZCowbRsJodXEm1U";
 const WRITER = "وكيل التشغيل";
@@ -167,6 +168,17 @@ function lines(items) {
   return out;
 }
 const cxMore = o => [hhmm(o.created), o.type === "del" ? "توصيل" : "استلام", SRC[o.source] || o.source];
+// L–N of «المبيعات اليومية» (المدير التنفيذي 2026-11-17): payment, who entered the order, how the customer heard of us
+export const PAY = { cash: "كاش", card: "شبكة", transfer: "تحويل", app: "تطبيق" };
+const salesMore = o => [PAY[o.pay] || (APPS.includes(o.source) ? "تطبيق" : "غير محدد"), o.entered_by || "", o.heard || ""];
+// J–K of «الإلغاء والتأخير»: real delivery minutes (left the shop → delivered) and the courier, for our own deliveries
+export function deliveryMore(o, ev) {
+  if (o.type !== "del" || APPS.includes(o.source)) return ["", ""];
+  const out = ev.find(e => e.to_status === "out"), done = ev.filter(e => e.to_status === "done").pop();
+  const from = out ? Number(out.at) : o.out_at ? Number(o.out_at) : null;
+  const mins = from && done && Number(done.at) > from ? Math.round((Number(done.at) - from) / 60e3) : "";
+  return [mins, /سلّمه المندوب/.test(o.note || "") ? "مندوب التوصيل المجاني" : ""];
+}
 const rowO = o => ({ type: o.type, source: o.source, deliveryFee: o.delivery_fee == null ? null : Number(o.delivery_fee), area: o.area,
   total: o.total == null ? null : Number(o.total), due: Number(o.due), created: Number(o.created), items: o.items });
 
@@ -185,18 +197,19 @@ export async function syncDay(pool, day, log = console.log) {
     ls.forEach((l, i) => {
       const u = unifiedName(l.text, names);
       if (!u && l.qty != null) missing.add(l.text.replace(/\s*\(.*?\)\s*$/, ""));
-      sales.push([...base, u || l.text.replace(/\s*\(.*?\)\s*$/, ""), l.qty ?? "", l.amount ?? "", i === 0 ? fee : "", STATUS[o.status] || o.status, o.type === "del" ? areaName(o.area) : "", want]);
+      sales.push([...base, u || l.text.replace(/\s*\(.*?\)\s*$/, ""), l.qty ?? "", l.amount ?? "", i === 0 ? fee : "", STATUS[o.status] || o.status, o.type === "del" ? areaName(o.area) : "", want, ...salesMore(o)]);
     });
     const sub = o.status === "cancelled" ? 0 : subsidyFor(rowO(o)).amount;
-    if (sub) sales.push([...base, "دعم توصيل من المحل", 1, -sub, "", STATUS[o.status] || o.status, areaName(o.area), want]);
+    if (sub) sales.push([...base, "دعم توصيل من المحل", 1, -sub, "", STATUS[o.status] || o.status, areaName(o.area), want, ...salesMore(o)]);
   }
   // returns (رمز المشرف): a negative line on the returned order, so the day's sum is what was really sold
   const rets = (await pool.query("SELECT order_id, amount, reason, at FROM returns_waste WHERE op_day=$1 AND kind='return'", [day]).catch(() => ({ rows: [] }))).rows;
   for (const r of rets) {
     const o = orders.find(x => String(x.id) === String(r.order_id)); if (!o || o.source === "chefz") continue;
-    sales.push([day, hhmm(r.at), o.num, SRC[o.source] || o.source, "مرتجع: " + r.reason, 1, -Number(r.amount), "", "مرتجع", o.type === "del" ? areaName(o.area) : "", hhmm(o.due)]);
+    sales.push([day, hhmm(r.at), o.num, SRC[o.source] || o.source, "مرتجع: " + r.reason, 1, -Number(r.amount), "", "مرتجع", o.type === "del" ? areaName(o.area) : "", hhmm(o.due), ...salesMore(o)]);
   }
   await ensureHeader(T.sales, "K1", "وقت الاستلام المطلوب");
+  for (const [c, t] of [["L1", "طريقة الدفع"], ["M1", "مدخل الطلب"], ["N1", "من وين عرفتنا"]]) await ensureHeader(T.sales, c, t);
   await deleteDate(T.sales, day);
   await append(T.sales, sales);
 
@@ -210,7 +223,7 @@ export async function syncDay(pool, day, log = console.log) {
     if (o.status === "cancelled") {
       const e = ev.filter(x => String(x.order_id) === String(o.id) && x.to_status === "cancelled").pop();
       const why = o.cancel_reason || (/مكرر|دُمج|تأكيد لحجز/.test(o.note || "") ? "مكرر" : black.includes(o.num) ? "ما جاء يستلم" : "غير محدد");
-      cx.push([day, o.num, "إلغاء", e && e.from_status ? STATUS[e.from_status] || e.from_status : "", "", why, ...cxMore(o)]);
+      cx.push([day, o.num, "إلغاء", e && e.from_status ? STATUS[e.from_status] || e.from_status : "", "", why, ...cxMore(o), "", ""]);
       continue;
     }
     const ourDel = o.type === "del" && !APPS.includes(o.source);
@@ -218,10 +231,10 @@ export async function syncDay(pool, day, log = console.log) {
     if (!e) continue;
     const must = Number(o.due) - (ourDel ? (Number(o.travel_min) || 15) * 60e3 : 0);
     const late = Math.round((Number(e.at) - must) / 60e3);
-    if (late >= 1) cx.push([day, o.num, "تأخير", ourDel ? "خروج للمندوب" : "التحضير", late, "", ...cxMore(o)]);
+    if (late >= 1) cx.push([day, o.num, "تأخير", ourDel ? "خروج للمندوب" : "التحضير", late, "", ...cxMore(o), ...deliveryMore(o, ev.filter(x => String(x.order_id) === String(o.id)))]);
   }
   // G–I (المدير التنفيذي 2026-11-17): when the order came in, delivery or pickup, channel — to see if lateness is one courier at peak
-  for (const [c, t] of [["G1", "ساعة الطلب"], ["H1", "توصيل/استلام"], ["I1", "القناة"]]) await ensureHeader(T.cx, c, t);
+  for (const [c, t] of [["G1", "ساعة الطلب"], ["H1", "توصيل/استلام"], ["I1", "القناة"], ["J1", "وقت التوصيل الفعلي (دقيقة)"], ["K1", "المندوب"]]) await ensureHeader(T.cx, c, t);
   await deleteDate(T.cx, day);
   await append(T.cx, cx);
 
@@ -304,7 +317,8 @@ export function startSheetJob(pool, log = console.log) {
       const today = opDayOf(Date.now());
       // 02:00 every night: the operating day that is ending (it started at 06:00 yesterday)
       if (r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "sheet_sales_done")) !== today) {
-        await syncDay(pool, today, log); await syncExec(pool, today, log); await purchaseGap(pool, log).catch(e => log("purchase-gap: " + e.message)); await setS(pool, "sheet_sales_done", today);
+        await syncDay(pool, today, log); await syncExec(pool, today, log); await purchaseGap(pool, log).catch(e => log("purchase-gap: " + e.message));
+        await syncWa(pool, today, log).catch(e => log("wa-stats: " + e.message)); await setS(pool, "sheet_sales_done", today);
       } else if (first) { await syncDay(pool, today, log); await syncExec(pool, today, log).catch(e => log("exec: " + e.message)); } // on start: today so far (rewritten in full at 02:00)
       // «الملخص_التنفيذي» from the first board day, once (Hassan 2026-11-16: executive agent)
       if (!(await getS(pool, "sheet_resync_v2"))) { // 2026-11-17: new columns in «الإلغاء والتأخير» and «الملخص_التنفيذي» for past days
@@ -321,6 +335,22 @@ export function startSheetJob(pool, log = console.log) {
         log("sheet: resync v2 " + rows.length + " days");
         await note(T.notes, "طلبات المدير التنفيذي (2026-11-17): «الإلغاء والتأخير» فيه الحين ساعة الطلب ونوعه (توصيل/استلام) والقناة (الأعمدة G–I)؛ «الملخص_التنفيذي» فيه «طلبات مسعّرة» (المباشرة اللي لها سعر) و«طلبات التطبيقات»، ومتوسط الطلب صار المبيعات ÷ الطلبات المسعّرة؛ «المبيعات اليومية» فيها أصلًا عمود «الساعة» (وقت دخول الطلب). كل الأيام من 31 أكتوبر أُعيدت كتابتها.").catch(() => {});
       }
+      // المدير التنفيذي 2026-11-17: «محادثات_واتساب» from the first board day (resumable, 5 s apart), then one note per finished item
+      if (!(await getS(pool, "wa_stats_v1"))) {
+        const done = new Set((await getS(pool, "wa_stats_v1_days")) || []);
+        for (let d = "2026-10-31"; d < today; d = new Date(Date.parse(d + "T00:00:00Z") + 864e5).toISOString().slice(0, 10)) {
+          if (done.has(d)) continue;
+          await syncWa(pool, d, log); done.add(d); await setS(pool, "wa_stats_v1_days", [...done]);
+          await new Promise(r => setTimeout(r, 5000));
+        }
+        await setS(pool, "wa_stats_v1", Date.now());
+      }
+      for (const [k, text] of [
+        ["note_exec_1117_courier", "طلب المدير التنفيذي (2026-11-17) تم: رقم مندوب التوصيل المجاني انتقل من الكود (courier.mjs) إلى متغير بيئة في Render اسمه COURIER_PHONES، وحُذفت من الكود أرقام سليمان وحسن اللي كانت في تصحيحات قديمة. الأرقام لا تزال في تاريخ المستودع القديم."],
+        ["note_exec_1117_health", "طلب المدير التنفيذي (2026-11-17): مسار فحص الصحة /healthz موجود ويفحص قاعدة البيانات (يرجع 200). ضبطه في إعدادات Render (Health Check Path) يسويه حسن من لوحة Render لأن أداة Render عندنا ما تعدّل هذا الإعداد."],
+        ["note_exec_1117_wa", "طلب المدير التنفيذي (2026-11-17) تم: تبويب «محادثات_واتساب» سطر لكل يوم تشغيل يُكتب الساعة 2 فجرًا: محادثات العملاء (رقم كتب لنا في اليوم، بدون المندوب ومرسلي الفواتير)، صارت طلب (له طلب انشأ نفس اليوم، بدون الملغي)، نسبة التحويل، متوسط ووسيط أول رد بالدقائق (من أول رسالة للعميل إلى أول رد من تطبيق واتساب للأعمال)، ومحادثات بلا رد خلال 12 ساعة. الأيام من 31 أكتوبر انكتبت."],
+        ["note_exec_1117_delivery", "طلب المدير التنفيذي (2026-11-17) تم: «الإلغاء والتأخير» فيه عمودان جديدان في الآخر: J «وقت التوصيل الفعلي (دقيقة)» = من «خرج» إلى «تم» لتوصيلاتنا، و K «المندوب». اللوحة ما فيها أسماء مناديب، فاللي يقفل الطلب برسالة واتساب يُكتب «مندوب التوصيل المجاني» والباقي فاضي إلى أن يعطينا حسن أسماء المناديب. السطور تبدأ من الأيام الجاية."],
+      ]) if (!(await getS(pool, k))) { await note(T.notes, text).catch(() => {}); await setS(pool, k, Date.now()); }
       if (!(await getS(pool, "exec_backfill_v1"))) {
         const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
         for (const { d } of rows) await syncExec(pool, d, log);

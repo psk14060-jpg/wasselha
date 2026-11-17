@@ -13,7 +13,9 @@ const APPS = ["chefz", "hunger", "keeta", "ninja"];
 const CH = [["shop", "المحل"], ["call", "اتصال"], ["wa", "واتساب"], ["web", "الموقع"], ["hunger", "هنقرستيشن"], ["keeta", "كيتا"], ["ninja", "نينجا"], ["chefz", "ذا شيفز"]];
 export const HEADERS = ["التاريخ", "اليوم", "عدد الطلبات", "المبيعات (بدون التوصيل وذا شيفز، بعد المرتجع)", "متوسط الطلب",
   ...CH.map(([, n]) => n), "رسوم التوصيل المحصلة", "طلبات ملغية", "قيمة الملغي", "المرتجع", "الهدر بالتكلفة شامل الضريبة",
-  "متوسط التحضير (دقيقة)", "طلبات متأخرة", "عملاء جدد", "عملاء متكررون", "طلبات مسعّرة", "طلبات التطبيقات", "أُعدّ في"];
+  "متوسط التحضير (دقيقة)", "طلبات متأخرة", "عملاء جدد", "عملاء متكررون", "طلبات مسعّرة", "طلبات التطبيقات", "أُعدّ في",
+  // after «أُعدّ في» (المدير التنفيذي 2026-11-17: new columns at the end): money collected per payment method, delivery fee included
+  "كاش (المحصّل)", "شبكة (المحصّل)", "تحويل (المحصّل)", "دفع غير محدد (المحصّل)"];
 const LIVE = ["new", "prep", "ready", "out", "done"];
 const r2 = x => Math.round(x * 100) / 100;
 
@@ -49,12 +51,22 @@ export function execRow(day, { orders, returns = [], waste = [], events = [], se
     preps.length ? Math.round(preps.reduce((a, b) => a + b, 0) / preps.length) : "", late, fresh, keys.length - fresh, priced, apps];
 }
 
+// collected per payment method: direct orders with a price, delivery fee included (what should be in the drawer / the bank)
+export function payCols(orders) {
+  const s = { cash: 0, card: 0, transfer: 0, none: 0 };
+  for (const o of orders) {
+    if (!LIVE.includes(o.status) || APPS.includes(o.source) || o.total == null) continue;
+    s[["cash", "card", "transfer"].includes(o.pay) ? o.pay : "none"] += Number(o.total) || 0;
+  }
+  return [r2(s.cash), r2(s.card), r2(s.transfer), r2(s.none)];
+}
+
 async function ensureTabs() {
   const tabs = ((await api("GET", "?fields=sheets.properties")).sheets || []).map(s => s.properties.title);
   const add = [TAB, MGMT_TAB].filter(t => !tabs.includes(t));
   if (add.length) { await api("POST", ":batchUpdate", { requests: add.map(title => ({ addSheet: { properties: { title, rightToLeft: true } } })) }); resetSheetIds(); }
   const put = async (tab, rows) => api("PUT", `/values/${encodeURIComponent(`'${tab}'!A1`)}?valueInputOption=RAW`, { values: rows });
-  const h = await read(TAB, "A1:Z1");
+  const h = await read(TAB, "A1:AH1");
   if (JSON.stringify((h[0] || [])) !== JSON.stringify(HEADERS)) await put(TAB, [HEADERS]); // columns added later rewrite the header
   const m = await read(MGMT_TAB, "A1:A1");
   // filled by Hassan once a month; the board never writes below the header and the example row
@@ -63,7 +75,7 @@ async function ensureTabs() {
 }
 
 export async function syncExec(pool, day, log = console.log) {
-  const { rows: orders } = await pool.query(`SELECT id, num, source, type, status, area, total, delivery_fee, due, travel_min, wa_from, phone
+  const { rows: orders } = await pool.query(`SELECT id, num, source, type, status, area, total, delivery_fee, due, travel_min, wa_from, phone, pay
     FROM orders WHERE op_day=$1 AND status NOT IN ('pending','dismissed')`, [day]);
   const q = (sql, p) => pool.query(sql, p).then(r => r.rows).catch(() => []);
   const returns = await q("SELECT amount FROM returns_waste WHERE op_day=$1 AND kind='return'", [day]);
@@ -73,7 +85,7 @@ export async function syncExec(pool, day, log = console.log) {
   const before = await q("SELECT DISTINCT wa_from, phone FROM orders WHERE op_day < $1 AND status IN ('new','prep','ready','out','done')", [day]);
   const seenBefore = new Set(before.map(o => keyOf(o.wa_from, o.phone)).filter(Boolean));
   const row = execRow(day, { orders, returns, waste, events, seenBefore });
-  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC");
+  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC", ...payCols(orders));
   await ensureTabs();
   await deleteDate(TAB, day);
   await append(TAB, [row]);

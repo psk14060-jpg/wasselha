@@ -3,9 +3,10 @@
 // Which order: a number in his message (#12 / 12) wins; otherwise the free delivery that left first («خرج»), and if none was
 // marked «خرج», the ready free delivery with the earliest time. Nothing to close → stored only, logged.
 import { isFreeArea } from "./menu.mjs";
-export const COURIER_KEYS = ["560390218"]; // last 9 digits
+// the courier's number lives in Render (env COURIER_PHONES, comma-separated): the repository is public (المدير التنفيذي 2026-11-17)
 const k9 = s => String(s || "").replace(/\D/g, "").slice(-9);
-export const isCourier = from => COURIER_KEYS.includes(k9(from));
+export const courierKeys = () => String(process.env.COURIER_PHONES || "").split(/[,\s]+/).map(k9).filter(k => k.length === 9);
+export const isCourier = from => { const k = k9(from); return k.length === 9 && courierKeys().includes(k); };
 export const DELIVERED = /(?:تمت?|خلاص)\s*(?:ال)?(?:توصيل|تسليم|تسلم)|(?:سل[ّ]?مت|وص[ّ]?لت)\s*(?:ال)?(?:طلب|ه|ها)?|^\s*(?:تم|وصل|سلمته|وصلته)\s*[.!✅👍]*\s*$/;
 const latin = s => String(s || "").replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d));
 const APPS = ["chefz", "hunger", "keeta", "ninja"];

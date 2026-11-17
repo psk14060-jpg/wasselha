@@ -194,7 +194,10 @@ t("2026-11-09 مندوب التوصيل المجاني: «تم توصيل الط
   const { DELIVERED, isCourier } = await import("../courier.mjs");
   for (const s of ["تم توصيل الطلب", "تم تسليم اطلب", "تم تسليم الطلب ✅", "سلمت الطلب", "وصلته", "تم", "تمت التوصيل #12"]) assert.ok(DELIVERED.test(s), s);
   for (const s of ["وين الموقع؟", "العميل ما يرد", "بطلع الحين", "كم الحساب"]) assert.ok(!DELIVERED.test(s), s);
-  assert.ok(isCourier("966560390218")); assert.ok(isCourier("0560390218")); assert.ok(!isCourier("966553214828"));
+  const keep = process.env.COURIER_PHONES; process.env.COURIER_PHONES = "0500000001";
+  assert.ok(isCourier("966500000001")); assert.ok(isCourier("0500000001")); assert.ok(!isCourier("966553214828"));
+  delete process.env.COURIER_PHONES; assert.ok(!isCourier("966500000001")); if (keep) process.env.COURIER_PHONES = keep;
+  assert.ok(!/\b5\d{8}\b/.test(fs.readFileSync(new URL("../courier.mjs", import.meta.url), "utf8")), "no phone number in courier.mjs (public repo)");
 });
 t("2026-11-11 فصل الفواتير عن صور العملاء: صورة عميل ما تصير فاتورة، وفاتورة ما تروح للقارئ", async () => {
   const src = fs.readFileSync(new URL("../purchases.mjs", import.meta.url), "utf8");
@@ -258,7 +261,7 @@ t("2026-11-16 الملخص التنفيذي: سطر اليوم من كل الق�
   assert.equal(col("عملاء جدد"), 1); assert.equal(col("عملاء متكررون"), 1);
   assert.equal(col("طلبات مسعّرة"), 2); assert.equal(col("طلبات التطبيقات"), 1);
   assert.equal(col("متوسط الطلب"), 30.5); // sales ÷ priced direct orders, apps without a price do not pull it down
-  assert.equal(row.length, HEADERS.length - 1); // «أُعدّ في» is added when written
+  assert.equal(row.length, HEADERS.indexOf("أُعدّ في")); // «أُعدّ في» and the payment columns are added when written
 });
 t("2026-11-17 /tv و/admin: جمع الأسبوع، الأسبوع الناقص، والرموز منفصلة", async () => {
   const { sumDays, codeOk, weekStart } = await import("../dash.mjs");
@@ -277,4 +280,30 @@ t("2026-11-17 /tv و/admin: جمع الأسبوع، الأسبوع الناقص�
   for (const bad of ["رصيد", "أرباح", "عمولة", "phone", "wa_from"]) assert.ok(!tv.includes(bad), "TV page must not show " + bad);
   const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.ok(/p === "\/tv" && !isAuthed\(req\)/.test(srv) && /kind === "tv"\) \{ if \(!isAuthed\(req\)\)/.test(srv), "/tv is never open without the board login");
+});
+
+t("2026-11-17 طلبات المدير التنفيذي: محادثات واتساب، الدفع، وقت التوصيل، ولا أرقام جوال في الكود", async () => {
+  const { waRow, dayWindow } = await import("../wastats.mjs");
+  const [f] = dayWindow("2026-11-16"); const min = 60e3;
+  const msgs = [
+    { wa_from: "966500000011", dir: "in", at: f + 60 * min }, { wa_from: "966500000011", dir: "out", at: f + 64 * min },
+    { wa_from: "966500000022", dir: "in", at: f + 120 * min }, { wa_from: "966500000022", dir: "in", at: f + 121 * min }, { wa_from: "966500000022", dir: "out", at: f + 130 * min },
+    { wa_from: "966500000033", dir: "in", at: f + 200 * min },                       // never answered
+    { wa_from: "966500000099", dir: "in", at: f + 10 * min },                        // the courier: not a customer
+    { wa_from: "966500000044", dir: "in", at: f - 30 * min },                        // the day before
+  ];
+  const orders = [{ wa_from: "966500000011", phone: "", status: "done", created: f + 70 * min }, { wa_from: "", phone: "0500000033", status: "cancelled", created: f + 210 * min }];
+  const r = waRow("2026-11-16", { msgs, orders, exclude: new Set(["500000099"]) });
+  assert.deepEqual(r.slice(2), [3, 1, 0.33, 7, 7, 1]); // 3 conversations, 1 order (the cancelled one not counted), replies 4 and 10 min, 1 without reply
+  const { payCols, HEADERS } = await import("../execsummary.mjs");
+  assert.deepEqual(payCols([{ status: "done", source: "wa", total: 50, pay: "cash" }, { status: "done", source: "call", total: 30, pay: "card" },
+    { status: "done", source: "shop", total: 20, pay: null }, { status: "cancelled", source: "wa", total: 99, pay: "cash" }, { status: "done", source: "hunger", total: 40, pay: "app" }]), [50, 30, 0, 20]);
+  assert.equal(HEADERS[HEADERS.indexOf("أُعدّ في") + 1], "كاش (المحصّل)"); // new columns go after the old last one
+  const { deliveryMore } = await import("../sheets.mjs");
+  assert.deepEqual(deliveryMore({ type: "del", source: "wa", note: "· سلّمه المندوب (واتساب)" }, [{ to_status: "out", at: 1000 }, { to_status: "done", at: 1000 + 18 * min }]), [18, "مندوب التوصيل المجاني"]);
+  assert.deepEqual(deliveryMore({ type: "pick", source: "wa" }, []), ["", ""]);
+  for (const f of ["server.mjs", "courier.mjs", "sheets.mjs", "wa.mjs", "purchases.mjs"]) {
+    const src = fs.readFileSync(new URL("../" + f, import.meta.url), "utf8");
+    assert.ok(!/["'](?:966|0)?5\d{8}["']/.test(src), "phone number in " + f + " (the repository is public)");
+  }
 });

@@ -173,6 +173,10 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_id TEXT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_seq INT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS batch_out BIGINT");
+  // المدير التنفيذي 2026-11-17: payment method, who entered the order, how the customer heard of us
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pay TEXT");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS entered_by TEXT");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS heard TEXT");
   // 2026-11-05 18:40: النايفية and العزيزية deliver free — open orders already booked there drop their fee (once)
   if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_free_areas_1105'")).rows.length) {
     const { rows } = await pool.query("SELECT id, num, op_day, area, total, delivery_fee FROM orders WHERE type='del' AND status IN ('new','prep','ready') AND op_day >= '2026-11-05' AND COALESCE(delivery_fee,0) > 0");
@@ -313,6 +317,7 @@ function rowToOrder(r) {
     giftOut: r.gift_out || null, giftIn: r.gift_in || null, alertMuted: !!r.alert_muted,
     travelMin: r.travel_min == null ? null : Number(r.travel_min), dest: r.dest || null,
     prepAt: r.prep_at == null ? null : Number(r.prep_at),
+    pay: r.pay || null, enteredBy: r.entered_by || null, heard: r.heard || null,
     batchId: r.batch_id || null, batchSeq: r.batch_seq == null ? null : Number(r.batch_seq), batchOut: r.batch_out == null ? null : Number(r.batch_out),
   };
 }
@@ -326,11 +331,12 @@ async function insertOrder(o) {
     const { rows: [{ n }] } = await client.query("SELECT COALESCE(MAX(num),0)+1 AS n FROM orders WHERE op_day=$1", [day]);
     const now = Date.now();
     const { rows } = await client.query(
-      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review,app_ref)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20,$21) RETURNING *`,
+      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review,app_ref,pay,entered_by,heard)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
       [day, n, o.ref || null, o.source, o.type, o.status, o.name, o.phone, o.area, o.items, o.total, o.deliveryFee,
         o.note, o.due, now, o.status === "pending" ? null : now, o.raw ? JSON.stringify(o.raw) : null,
-        o.waFrom || null, o.rawText || null, !!o.needsReview, o.appRef || null]);
+        o.waFrom || null, o.rawText || null, !!o.needsReview, o.appRef || null,
+        o.pay || (APPS.includes(o.source) ? "app" : null), o.enteredBy || null, o.heard || null]);
     await client.query("COMMIT");
     return rowToOrder(rows[0]);
   } catch (e) {
@@ -383,9 +389,13 @@ function fromBoardPayload(b) {
       appRef: APPS.includes(b.source) ? clip(b.appRef, 30) : null,
       name: clip(b.name, 60), phone: clip(b.phone, 20), area: b.type === "del" ? clip(b.area, 80) : "",
       items, total: num(b.total), deliveryFee: num(b.deliveryFee), note: clip(b.note, 300), due,
+      pay: cleanPay(b.pay), enteredBy: clip(b.enteredBy, 30) || null, heard: cleanHeard(b.heard),
     },
   };
 }
+const PAYS = ["cash", "card", "transfer", "app"];
+const cleanPay = v => PAYS.includes(v) ? v : null;
+const cleanHeard = v => clip(v, 40) || null;
 
 // ---------- CORS for the storefront ----------
 function corsHeaders(req) {
@@ -691,6 +701,9 @@ const server = http.createServer(async (req, res) => {
           before = (await pool.query("SELECT id, source, items, raw_text FROM orders WHERE id=$1", [m[1]])).rows[0]; }
         if (b.note !== undefined) put("note", clip(b.note, 300));
         if (b.appRef !== undefined) put("app_ref", clip(b.appRef, 30) || null);
+        if (b.pay !== undefined) put("pay", cleanPay(b.pay));
+        if (b.heard !== undefined) put("heard", cleanHeard(b.heard));
+        if (b.enteredBy !== undefined) put("entered_by", clip(b.enteredBy, 30) || null);
         if (b.total !== undefined) put("total", num(b.total));
         if (b.deliveryFee !== undefined) put("delivery_fee", b.deliveryFee === null ? null : num(b.deliveryFee));
         if (b.type !== undefined) { if (!TYPES.includes(b.type)) return send(res, 400, { error: "type" }); put("type", b.type); }
@@ -752,208 +765,9 @@ migrate().then(() => {
   startTasteJob(pool);
   startSheetJob(pool); // shared Google Sheet between the agents
   startKitchenModel(pool); // measured prep times → «أقرب وقت»
-  setTimeout(async () => { try { // one-off (2026-11-11): sets sold in the last 7 operating days (set 48 carries 10 manaqeesh)
-    const { rows } = await pool.query(`SELECT op_day::text AS d, num, items FROM orders WHERE op_day BETWEEN '2026-11-04' AND '2026-11-10' AND status NOT IN ('cancelled','dismissed','pending') ORDER BY op_day, num`);
-    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const tot = {};
-    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
-      const l = lat(raw); if (!/تشكيل|عائل|مشاركة/.test(l)) continue;
-      const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
-      const k = /\b48\b|تكفي\s*10|— 72|72 ريال/.test(l) ? "set48" : /\b80\b|— 115|115 ريال/.test(l) ? "set80" : /\b115\b|145/.test(l) ? "set115" : "other:" + l.replace(/^\s*\d+\s*[×x*]\s*/, "").slice(0, 50);
-      tot[k] = (tot[k] || 0) + q;
-    }
-    console.log("sets: " + JSON.stringify(tot));
-  } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  setTimeout(async () => { try { // one-off (2026-11-15): pricing agent — flavours of done orders 2026-11-05 → 11-14
-    const { rows } = await pool.query(`SELECT op_day::text d, num, source, items FROM orders WHERE op_day BETWEEN '2026-11-05' AND '2026-11-14' AND status='done' ORDER BY op_day, num`);
-    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const agg = {}, src = {};
-    for (const o of rows) { src[o.source] = (src[o.source] || 0) + 1;
-      for (const raw of String(o.items || "").split(/\n/)) {
-        const l = lat(raw).trim(); if (!l) continue;
-        let cat = /سمبوس/.test(l) ? "samosa" : /فطا[يئ]ر|مثلث/.test(l) ? "triangles" : (/كب|كوب/.test(l) && /بيتزا/.test(l)) ? "cup" : /بيتزا/.test(l) && !/تشكيل/.test(l) ? "minipizza" : /قوارب|قارب/.test(l) ? "boats" : null;
-        if (!cat) continue;
-        const q = Number((l.match(/^(\d+)\s*[×x*]/) || [])[1] || 1);
-        const size = Number((l.match(/(\d+)\s*(?:قطع|قطعة|قطعه|حب|حبة|حبات|حبه)/) || [])[1] || 0);
-        const flav = ((l.match(/\(([^)]*)\)/) || [])[1] || "—").trim();
-        const name = l.replace(/^\d+\s*[×x*]\s*/, "").replace(/\s*\([^)]*\)/g, "").replace(/\s*—.*$/, "").trim();
-        const k = `${cat}|${name}|${flav}|${o.source}`;
-        const a = agg[k] = agg[k] || { lines: 0, boxes: 0, pcs: 0 }; a.lines++; a.boxes += q; a.pcs += size * q;
-      } }
-    console.log(`flav: done orders=${rows.length} by_source=${JSON.stringify(src)}`);
-    for (const [k, a] of Object.entries(agg).sort()) console.log(`flav: ${k} | lines=${a.lines} boxes=${a.boxes} pcs=${a.pcs}`);
-  } catch (e) { console.log("flav: " + e.message); } }, 21e3);
-  setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T12:30:00Z")).then(() => pool.query("SELECT sender, at, pay, status FROM purchases WHERE status<>'saved' ORDER BY at")).then(r => console.log("purchase: pending " + JSON.stringify(r.rows.map(x => [x.sender, new Date(Number(x.at) + 3 * 3600e3).toISOString().slice(5, 16), x.pay]))))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-15): invoices missed 11-12 → 11-15
-  setTimeout(async () => { try { // one-off (2026-11-14): yesterday's wrong waste entry #3 («4 بوكس») — the staff already re-entered it right as #4 (4 pieces)
-    const r = await pool.query("DELETE FROM returns_waste WHERE id=3 AND kind='waste' AND op_day='2026-11-13' AND item LIKE 'كب بيتزا%' RETURNING id");
-    const left = (await pool.query("SELECT id, item, qty, pieces, cost FROM returns_waste WHERE kind='waste' AND op_day='2026-11-13'")).rows;
-    console.log(`waste13: deleted ${r.rowCount}; left ${JSON.stringify(left)}`);
-  } catch (e) { console.log("waste13: " + e.message); } }, 26e3);
-  setTimeout(async () => { try { // one-off (2026-11-13 21:44): today's products, most ordered first
-    const { rows } = await pool.query(`SELECT items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
-    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const agg = {};
-    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
-      const l = lat(raw).trim(); if (!l) continue;
-      const q = Number((l.match(/^(\d+)\s*[×x*]/) || [])[1] || 1);
-      const price = Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0);
-      const name = l.replace(/^\d+\s*[×x*]\s*/, "").replace(/\s*—.*$/, "").replace(/\s*\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
-      const a = agg[name] = agg[name] || { b: 0, s: 0, o: 0 }; a.b += q; a.s += price; a.o++;
-    }
-    for (const [n, a] of Object.entries(agg).sort((x, y) => y[1].b - x[1].b)) console.log(`rank13: ${n} | boxes=${a.b} sar=${a.s} orders=${a.o}`);
-  } catch (e) { console.log("rank13: " + e.message); } }, 21e3);
-  setTimeout(async () => { try { // one-off (2026-11-13 21:40): boats today, alone and inside sets 80/115 (18 boats each)
-    const { rows } = await pool.query(`SELECT status, items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
-    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const c = {}; let open = 0;
-    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
-      const l = lat(raw); const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
-      const name = l.replace(/^\s*\d+\s*[×x*]\s*/, "").replace(/\s*\([^)]*\)/g, "").trim();
-      if (/قوارب|قارب/.test(l)) { c[name] = (c[name] || 0) + q; if (o.status !== "done") open += q; }
-      else if (/تشكيل/.test(l) && !/عائل/.test(l) && (/\b80\b|— 115/.test(l) || /\b115\b|— 145/.test(l))) c["SET:" + name] = (c["SET:" + name] || 0) + q;
-    }
-    console.log(`boat13: ${JSON.stringify(c)} open=${open}`);
-  } catch (e) { console.log("boat13: " + e.message); } }, 21e3);
-  setTimeout(async () => { try { // one-off (2026-11-13 21:32): cup pizza today, alone and inside sets (48 → 28 pcs, 80/115 → 42 pcs)
-    const { rows } = await pool.query(`SELECT status, items FROM orders WHERE op_day='2026-11-13' AND status NOT IN ('cancelled','dismissed','pending')`);
-    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const c = { cup28: 0, cup42: 0, cupOther: 0, set48: 0, set80: 0, set115: 0, open: 0 };
-    for (const o of rows) for (const raw of String(o.items || "").split(/\n/)) {
-      const l = lat(raw); const q = Number((l.match(/^\s*(\d+)\s*[×x*]/) || [])[1] || 1);
-      if (/كب|كوب/.test(l) && /بيتزا/.test(l)) { const n = /42/.test(l) ? "cup42" : /28/.test(l) ? "cup28" : "cupOther"; c[n] += q; if (o.status !== "done") c.open += q; }
-      else if (/تشكيل/.test(l) && !/قوارب|عائل/.test(l)) { if (/\b48\b|— 72/.test(l)) c.set48 += q; else if (/\b80\b|— 115/.test(l)) c.set80 += q; else if (/\b115\b|— 145/.test(l)) c.set115 += q; }
-    }
-    console.log(`cup13: orders=${rows.length} ${JSON.stringify(c)}`);
-  } catch (e) { console.log("cup13: " + e.message); } }, 21e3);
-  setTimeout(async () => { try { // one-off (2026-11-13): top products of 2026-11-12
-    const { rows } = await pool.query(`SELECT source, items FROM orders WHERE op_day='2026-11-12' AND status NOT IN ('cancelled','dismissed','pending')`);
-    const lat = x => String(x).replace(/[٠-٩]/g, c => "٠١٢٣٤٥٦٧٨٩".indexOf(c));
-    const agg = {}; let orders = 0;
-    for (const o of rows) { orders++; for (const raw of String(o.items || "").split(/\n/)) {
-      const l = lat(raw).trim(); if (!l) continue;
-      const q = Number((l.match(/^(\d+)\s*[×x*]/) || [])[1] || 1);
-      const price = Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0);
-      const name = l.replace(/^\d+\s*[×x*]\s*/, "").replace(/\s*—.*$/, "").replace(/\s*\([^)]*\)/g, "").replace(/\s+/g, " ").trim();
-      const pcs = Number((name.match(/(\d+)\s*(?:قطع|قطعة|قطعه|حب|حبة|حبات|حبه)/) || [])[1] || 0);
-      const a = agg[name] = agg[name] || { boxes: 0, pcs: 0, sar: 0, orders: 0 };
-      a.boxes += q; a.pcs += pcs * q; a.sar += price; a.orders++;
-    } }
-    const top = Object.entries(agg).sort((x, y) => y[1].boxes - x[1].boxes).slice(0, 15);
-    console.log(`top12: orders=${orders}`);
-    for (const [n, a] of top) console.log(`top12: ${n} | boxes=${a.boxes} pcs=${a.pcs} sar=${a.sar} orders=${a.orders}`);
-  } catch (e) { console.log("top12: " + e.message); } }, 23e3);
-  setTimeout(async () => { try { // one-off (2026-11-12): today's #3 — southern samosa 30 = 20 (38) + 10 (20), not triangles 30 (45)
-    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
-    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-12' AND num=3")).rows[0];
-    if (!o) return console.log("o3: not found");
-    console.log(`o3: before total=${o.total} fee=${o.delivery_fee} status=${o.status} items=${String(o.items).replace(/\n/g, " / ")}`);
-    if (o.wa_from) for (const m of (await pool.query("SELECT dir, body, at FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 3 * 3600e3])).rows.slice(-14))
-      console.log(`o3: ${hm(m.at)} ${m.dir} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 160)}`);
-    if (/سمبوسة جنوبية 20/.test(o.items)) { if (!/عكاوي/.test(o.items)) { await pool.query("UPDATE orders SET items=replace(replace(items, 'سمبوسة جنوبية 20 قطعة —', 'سمبوسة جنوبية 20 قطعة (عكاوي ودجاج) —'), 'سمبوسة جنوبية 10 قطع —', 'سمبوسة جنوبية 10 قطع (عكاوي ودجاج) —'), updated=$2 WHERE id=$1", [o.id, Date.now()]); console.log("o3: flavors added"); } return; }
-    const lines = String(o.items).split("\n"), keep = lines.filter(l => !/فطا[يئ]ر مثلث/.test(l)), gone = lines.filter(l => /فطا[يئ]ر مثلث/.test(l));
-    if (!gone.length) return console.log("o3: no triangles line");
-    const goneSum = gone.reduce((n, l) => n + Number((l.match(/—\s*([\d.]+)\s*ريال/) || [])[1] || 0), 0);
-    const items = keep.concat(["1 × سمبوسة جنوبية 20 قطعة (عكاوي ودجاج) — 38 ريال", "1 × سمبوسة جنوبية 10 قطع (عكاوي ودجاج) — 20 ريال"]).join("\n");
-    const total = o.total == null ? null : Number(o.total) - goneSum + 58;
-    await pool.query("UPDATE orders SET items=$2, total=$3, note=TRIM(BOTH ' ·' FROM note || ' · صُحّح: سمبوسة جنوبية لا فطائر (حسن)'), updated=$4 WHERE id=$1", [o.id, items, total, Date.now()]);
-    console.log(`o3: after total=${total} items=${items.replace(/\n/g, " / ")}`);
-  } catch (e) { console.log("o3: " + e.message); } }, 27e3);
-  setTimeout(async () => { try { // one-off (2026-11-11 20:24): full refund of today's #14, approved by Hassan (complaint)
-    const o = (await pool.query("SELECT id, num, total, delivery_fee FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
-    if (!o) return console.log("ret14: not found");
-    if ((await pool.query("SELECT 1 FROM returns_waste WHERE kind='return' AND order_id=$1", [o.id])).rows.length) return console.log("ret14: already refunded");
-    const amount = Math.max(0, Number(o.total || 0) - Number(o.delivery_fee || 0));
-    await pool.query(`INSERT INTO returns_waste (kind, op_day, at, order_id, order_num, amount, reason, note, by_dev) VALUES ('return','2026-11-11',$1,$2,14,$3,'شكوى من العميل','استرجاع كامل بموافقة حسن','حسن (عن طريق كلود)')`, [Date.now(), o.id, amount]);
-    console.log(`ret14: refunded ${amount} SAR (total ${o.total}, delivery ${o.delivery_fee || 0})`);
-  } catch (e) { console.log("ret14: " + e.message); } }, 26e3);
-  setTimeout(async () => { try { // one-off (2026-11-11 18:54): Hassan — today's #14 on the blacklist (order stays delivered, sales untouched)
-    const o = (await pool.query("SELECT id, num, name, phone, wa_from FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
-    if (!o) return console.log("bl14: not found");
-    const k = keyOf(o.wa_from, o.phone);
-    if (!k) return console.log("bl14: no phone");
-    await pool.query(`INSERT INTO blacklist (key, name, reason, order_num, op_day, created) VALUES ($1,$2,'بطلب من حسن',14,'2026-11-11',$3)
-      ON CONFLICT (key) DO UPDATE SET reason='بطلب من حسن', order_num=14, op_day='2026-11-11'`, [k, o.name || "", Date.now()]);
-    await pool.query("UPDATE orders SET note=TRIM(BOTH ' ·' FROM note || ' · 🚫 قائمة سوداء (حسن)'), updated=$2 WHERE id=$1 AND note NOT LIKE '%قائمة سوداء%'", [o.id, Date.now()]);
-    console.log(`bl14: added …${k.slice(-4)} (${o.name || "-"})`);
-  } catch (e) { console.log("bl14: " + e.message); } }, 24e3);
-  setTimeout(async () => { try { // one-off (2026-11-11 17:52): timeline of today's #14
-    const hm = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 19) : "-";
-    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-11' AND num=14")).rows[0];
-    if (!o) return console.log("o14: not found");
-    console.log(`o14: created=${hm(o.created)} confirmed=${hm(o.confirmed_at)} due=${hm(o.due)} travel=${o.travel_min} type=${o.type} source=${o.source} status=${o.status} items=${String(o.items).replace(/\n/g, " / ").slice(0, 160)}`);
-    for (const e of (await pool.query("SELECT kind, from_status, to_status, due, at FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows)
-      console.log(`o14: ${hm(e.at)} ${e.kind} ${e.from_status || ""}→${e.to_status || ""} due=${hm(e.due)}`);
-  } catch (e) { console.log("o14: " + e.message); } }, 22e3);
-  setTimeout(async () => { try { // one-off (2026-11-11): purchases must hold only Hassan's / Suleiman's photos
-    const { rows } = await pool.query("SELECT sender, right(regexp_replace(wa_from,'\\D','','g'),4) AS l4, status, count(*) AS n FROM purchases GROUP BY 1,2,3 ORDER BY 1");
-    console.log("purch-check: " + JSON.stringify(rows));
-    const f = await pool.query("UPDATE purchases SET sender='حسن' WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='561044464' AND sender<>'حسن' AND status<>'saved'");
-    if (f.rowCount) console.log(`purch-check: renamed ${f.rowCount} → حسن`);
-  } catch (e) { console.log("purch-check: " + e.message); } }, 28e3);
-  setTimeout(async () => { try { // one-off (2026-11-11): re-read chat …8905 with its photos (approved 15:18, nothing reached the board)
-    if (await pool.query("SELECT 1 FROM board_settings WHERE key='fix_8905b'").then(r => r.rows.length)) return;
-    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fix_8905b', '1') ON CONFLICT DO NOTHING");
-    const a = (await pool.query("SELECT id, wa_from, body, at FROM wa_messages WHERE right(regexp_replace(wa_from,'\\D','','g'),4)='8905' AND dir='out' AND body LIKE '%تاكيد الطلب%' AND at > $1 ORDER BY at DESC LIMIT 1", [Date.now() - 24 * 3600e3])).rows[0];
-    if (!a) return console.log("fix8905: approval not found");
-    const wa = await import("./wa.mjs");
-    const m = { id: a.id, from: a.wa_from, ts: Number(a.at), text: a.body, name: "", dir: "out" };
-    const r = await wa.approveFromConversation(m, wa.localPhone(a.wa_from), { pool, insertOrder, applyGift, log: s => console.log("fix8905: " + s) }, process.env.ANTHROPIC_API_KEY);
-    console.log("fix8905: " + r);
-    const o = (await pool.query("SELECT id, num, items, total, status FROM orders WHERE wa_from=$1 AND created > $2 ORDER BY created DESC LIMIT 1", [a.wa_from, Date.now() - 5 * 60e3])).rows[0];
-    if (o) { await pool.query("UPDATE orders SET status='done', note=TRIM(BOTH ' ·' FROM note || ' · أُدخل متأخرًا من صور الواتساب (تم تسليمه)'), updated=$2 WHERE id=$1", [o.id, Date.now()]);
-      console.log(`fix8905: #${o.num} total=${o.total} items=${String(o.items).replace(/\n/g, " / ")}`); }
-  } catch (e) { console.log("fix8905: " + e.message); } }, 25e3);
-  setTimeout(() => import("./purchases.mjs").then(m => m.reclaimRecent(pool, Date.parse("2026-11-11T09:00:00Z"))).catch(e => console.log("purchase: reclaim " + e.message)), 30e3); // one-off (2026-11-11)
-  setTimeout(async () => { try { // one-off (2026-11-10): the first test invoices came from Suleiman (…3547), not Hassan
-    const n = (await pool.query("UPDATE purchases SET sender='سليمان', file_name=replace(file_name, '_حسن_', '_سليمان_') WHERE right(regexp_replace(wa_from,'\\D','','g'),9)='530853547' AND sender<>'سليمان'")).rowCount;
-    const { api, read } = await import("./sheets.mjs");
-    const col = await read("فواتير_المشتريات", "B:B");
-    const rows = col.map((r, i) => [i, r[0]]).filter(([i, v]) => i > 0 && i <= 4 && v === "حسن");
-    for (const [i] of rows) await api("PUT", `/values/${encodeURIComponent("'فواتير_المشتريات'!B" + (i + 1))}?valueInputOption=RAW`, { values: [["سليمان"]] });
-    console.log(`fix: test invoices → سليمان (db ${n}, sheet ${rows.length})`);
-  } catch (e) { console.log("fix: test invoices " + e.message); } }, 50e3);
-  setTimeout(async () => { try { // one-off (2026-11-10 00:22): Hassan gave his own number for purchases
-    const h = (await pool.query("SELECT wa_from FROM purchases ORDER BY at LIMIT 1")).rows[0];
-    const testKey = h ? String(h.wa_from).replace(/\D/g, "").slice(-9) : "";
-    const list = [{ key: "530853547", name: "سليمان" }, { key: "561044464", name: "حسن" }];
-    await pool.query("INSERT INTO board_settings (key, value) VALUES ('purchase_senders', $1) ON CONFLICT (key) DO UPDATE SET value=$1", [JSON.stringify(list)]);
-    console.log(`fix: purchase senders = Suleiman + Hassan 561044464; first test sender ${testKey === "561044464" ? "IS" : "is NOT"} Hassan's number (…${testKey.slice(-4)})`);
-  } catch (e) { console.log("fix: purchase senders2 " + e.message); } }, 45e3);
-  setTimeout(async () => { try { // one-off (2026-11-10): purchase senders = Suleiman + Hassan (the number that sent the first test invoices)
-    if (await pool.query("SELECT 1 FROM board_settings WHERE key='purchase_senders'").then(r => r.rows.length)) return;
-    const h = (await pool.query("SELECT wa_from FROM purchases ORDER BY at LIMIT 1")).rows[0];
-    const list = [{ key: "530853547", name: "سليمان" }];
-    if (h) list.push({ key: String(h.wa_from).replace(/\D/g, "").slice(-9), name: "حسن" });
-    await pool.query("INSERT INTO board_settings (key, value) VALUES ('purchase_senders', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(list)]);
-    if (h) await pool.query("UPDATE purchases SET sender='حسن', file_name=replace(file_name, sender, 'حسن') WHERE wa_from=$1", [h.wa_from]);
-    const { api, read } = await import("./sheets.mjs");
-    const col = await read("فواتير_المشتريات", "B:B");
-    const rows = col.map((r, i) => [i, r[0]]).filter(([i, v]) => i > 0 && v === "البقاء لله");
-    for (const [i] of rows) await api("PUT", `/values/${encodeURIComponent("'فواتير_المشتريات'!B" + (i + 1))}?valueInputOption=RAW`, { values: [["حسن"]] });
-    console.log(`fix: purchase senders set (${list.length}), sheet rows renamed ${rows.length}`);
-  } catch (e) { console.log("fix: purchase senders " + e.message); } }, 40e3);
-  setTimeout(async () => { try { // one-off: which env variable holds the Dualhook key, and is it accepted? (names/status only)
-    const { dualhookKey } = await import("./purchases.mjs");
-    const dk = dualhookKey();
-    const dh = Object.keys(process.env).filter(k => /DUAL|DH_/i.test(k));
-    console.log(`dualhook-probe: env names with dualhook=${dh.join(",") || "-"} key_from=${dk.name || "none"} len=${dk.value.length}`);
-    if (!dk.value) return;
-    const r = await fetch("https://api.dualhook.com/v25.0/983224204880529?fields=id,status,quality_rating", { headers: { authorization: "Bearer " + dk.value } });
-    console.log(`dualhook-probe: status=${r.status} ${(await r.text()).replace(/\s+/g, " ").slice(0, 160)}`);
-  } catch (e) { console.log("dualhook-probe: " + e.message); } }, 15e3);
-  setTimeout(async () => { try { // one-off: why #21 of 2026-11-09 got 19:30 (Hassan: the customer said right after Isha)
-    const hm = ms => new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16);
-    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-09' AND num=21")).rows[0];
-    if (!o) return console.log("o21: not found");
-    console.log(`o21: created=${hm(o.created)} confirmed=${hm(o.confirmed_at)} due=${hm(o.due)} type=${o.type} status=${o.status} area=${o.area} note=${o.note} raw=${JSON.stringify(o.raw)}`);
-    const ms = (await pool.query("SELECT dir, body, at FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [o.wa_from, Number(o.created) - 3 * 3600e3])).rows;
-    for (const m of ms) console.log(`o21: ${hm(m.at)} ${m.dir} ${String(m.body || "").replace(/\s+/g, " ").slice(0, 300)}`);
-    const ev = (await pool.query("SELECT kind, from_status, to_status, due, at FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows;
-    for (const e of ev) console.log(`o21: ev ${hm(e.at)} ${e.kind} ${e.from_status || ""}→${e.to_status || ""} due=${hm(e.due)}`);
-  } catch (e) { console.log("o21: " + e.message); } }, 30e3);
   setTimeout(() => getMenu().then(m => { console.log(`menu: source=${m.source} products=${m.products.length}`); for (const p of m.products) console.log(`menu: ${p.id} | ${p.name} | ${p.description} | ${p.variants.map(v => v.tag + "=" + v.price).join(", ")}`); }).catch(e => console.log("menu: " + e.message)), 25e3); // one-off: compare with the printed menus (2026-11-09)
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
