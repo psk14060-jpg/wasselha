@@ -307,3 +307,17 @@ t("2026-11-17 طلبات المدير التنفيذي: محادثات واتس�
     assert.ok(!/["'](?:966|0)?5\d{8}["']/.test(src), "phone number in " + f + " (the repository is public)");
   }
 });
+t("2026-11-17 تعريف واحد للعملاء والتأخير بين التقرير والشيت، وعدّ الطلبات بدون رقم", async () => {
+  const { weekCustomers } = await import("../reports.mjs");
+  const pool = { query: async () => ({ rows: [
+    { wa_from: "966500000011", phone: "", d: "2026-11-01" }, { wa_from: "", phone: "0500000011", d: "2026-11-16" }, // same customer in two formats
+    { wa_from: "", phone: "٠٥٠٠٠٠٠٠٢٢", d: "2026-11-17" }, { wa_from: "966500000022", phone: "", d: "2026-11-18" },   // new this week, twice
+    { wa_from: "", phone: "", d: "2026-11-17" } ] }) };
+  assert.deepEqual(await weekCustomers(pool, "2026-11-15", "2026-11-22"), { newCustomers: 1, returning: 1 });
+  const { noPhone } = await import("../execsummary.mjs");
+  assert.equal(noPhone([{ status: "done", source: "shop", phone: "" }, { status: "done", source: "call", phone: "0500000011" },
+    { status: "done", source: "hunger", phone: "" }, { status: "cancelled", source: "shop", phone: "" }, { status: "done", source: "wa", wa_from: "966500000033" }]), 1);
+  const rep = fs.readFileSync(new URL("../reports.mjs", import.meta.url), "utf8");
+  assert.ok(rep.includes("(Number(o.travel_min) || 15) * 60e3") && rep.includes(">= 60e3) late++"), "report lateness = execRow lateness");
+  assert.ok(rep.includes("canonArea(o.area)"), "delivery areas in the report use the sheet's one spelling");
+});

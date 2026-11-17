@@ -8,7 +8,7 @@ import { subsidyFor, feeOfOrder, unifiedName, setSheetCosts } from "./subsidy.mj
 import { keyOf } from "./blacklist.mjs";
 import { getMenu } from "./menu.mjs";
 import { syncExec } from "./execsummary.mjs";
-import { syncWa } from "./wastats.mjs";
+import { syncWa, syncLost } from "./wastats.mjs";
 
 const SHEET_ID = process.env.SHARED_SHEET_ID || "1TTXbWtikFPDkTN_2GJPpMwdOCsNOZCowbRsJodXEm1U";
 const WRITER = "وكيل التشغيل";
@@ -318,7 +318,11 @@ export function startSheetJob(pool, log = console.log) {
       // 02:00 every night: the operating day that is ending (it started at 06:00 yesterday)
       if (r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "sheet_sales_done")) !== today) {
         await syncDay(pool, today, log); await syncExec(pool, today, log); await purchaseGap(pool, log).catch(e => log("purchase-gap: " + e.message));
-        await syncWa(pool, today, log).catch(e => log("wa-stats: " + e.message)); await setS(pool, "sheet_sales_done", today);
+        await syncWa(pool, today, log).catch(e => log("wa-stats: " + e.message));
+        // lost sales come from the taste analysis, which reads a day once it is over: the two previous days are rewritten
+        for (const n of [1, 2]) { const d = new Date(Date.parse(today + "T00:00:00Z") - n * 864e5).toISOString().slice(0, 10);
+          await syncWa(pool, d, log).catch(e => log("wa-stats: " + e.message)); await syncLost(pool, d, log).catch(e => log("lost-sales: " + e.message)); }
+        await setS(pool, "sheet_sales_done", today);
       } else if (first) { await syncDay(pool, today, log); await syncExec(pool, today, log).catch(e => log("exec: " + e.message)); } // on start: today so far (rewritten in full at 02:00)
       // «الملخص_التنفيذي» from the first board day, once (Hassan 2026-11-16: executive agent)
       if (!(await getS(pool, "sheet_resync_v2"))) { // 2026-11-17: new columns in «الإلغاء والتأخير» and «الملخص_التنفيذي» for past days
@@ -336,20 +340,23 @@ export function startSheetJob(pool, log = console.log) {
         await note(T.notes, "طلبات المدير التنفيذي (2026-11-17): «الإلغاء والتأخير» فيه الحين ساعة الطلب ونوعه (توصيل/استلام) والقناة (الأعمدة G–I)؛ «الملخص_التنفيذي» فيه «طلبات مسعّرة» (المباشرة اللي لها سعر) و«طلبات التطبيقات»، ومتوسط الطلب صار المبيعات ÷ الطلبات المسعّرة؛ «المبيعات اليومية» فيها أصلًا عمود «الساعة» (وقت دخول الطلب). كل الأيام من 31 أكتوبر أُعيدت كتابتها.").catch(() => {});
       }
       // المدير التنفيذي 2026-11-17: «محادثات_واتساب» from the first board day (resumable, 5 s apart), then one note per finished item
-      if (!(await getS(pool, "wa_stats_v1"))) {
-        const done = new Set((await getS(pool, "wa_stats_v1_days")) || []);
+      if (!(await getS(pool, "wa_stats_v2"))) { // v2 (2026-11-17): + «ضاعت مبيعة» column and the «ضاعت_مبيعة» tab
+        const done = new Set((await getS(pool, "wa_stats_v2_days")) || []);
         for (let d = "2026-10-31"; d < today; d = new Date(Date.parse(d + "T00:00:00Z") + 864e5).toISOString().slice(0, 10)) {
           if (done.has(d)) continue;
-          await syncWa(pool, d, log); done.add(d); await setS(pool, "wa_stats_v1_days", [...done]);
-          await new Promise(r => setTimeout(r, 5000));
+          await syncWa(pool, d, log); await syncLost(pool, d, log); done.add(d); await setS(pool, "wa_stats_v2_days", [...done]);
+          await new Promise(r => setTimeout(r, 6000));
         }
-        await setS(pool, "wa_stats_v1", Date.now());
+        await setS(pool, "wa_stats_v2", Date.now()); await setS(pool, "wa_stats_v1", Date.now());
       }
       for (const [k, text] of [
         ["note_exec_1117_courier", "طلب المدير التنفيذي (2026-11-17) تم: رقم مندوب التوصيل المجاني انتقل من الكود (courier.mjs) إلى متغير بيئة في Render اسمه COURIER_PHONES، وحُذفت من الكود أرقام سليمان وحسن اللي كانت في تصحيحات قديمة. الأرقام لا تزال في تاريخ المستودع القديم."],
         ["note_exec_1117_health", "طلب المدير التنفيذي (2026-11-17): مسار فحص الصحة /healthz موجود ويفحص قاعدة البيانات (يرجع 200). ضبطه في إعدادات Render (Health Check Path) يسويه حسن من لوحة Render لأن أداة Render عندنا ما تعدّل هذا الإعداد."],
         ["note_exec_1117_wa", "طلب المدير التنفيذي (2026-11-17) تم: تبويب «محادثات_واتساب» سطر لكل يوم تشغيل يُكتب الساعة 2 فجرًا: محادثات العملاء (رقم كتب لنا في اليوم، بدون المندوب ومرسلي الفواتير)، صارت طلب (له طلب انشأ نفس اليوم، بدون الملغي)، نسبة التحويل، متوسط ووسيط أول رد بالدقائق (من أول رسالة للعميل إلى أول رد من تطبيق واتساب للأعمال)، ومحادثات بلا رد خلال 12 ساعة. الأيام من 31 أكتوبر انكتبت."],
         ["note_exec_1117_delivery", "طلب المدير التنفيذي (2026-11-17) تم: «الإلغاء والتأخير» فيه عمودان جديدان في الآخر: J «وقت التوصيل الفعلي (دقيقة)» = من «خرج» إلى «تم» لتوصيلاتنا، و K «المندوب». اللوحة ما فيها أسماء مناديب، فاللي يقفل الطلب برسالة واتساب يُكتب «مندوب التوصيل المجاني» والباقي فاضي إلى أن يعطينا حسن أسماء المناديب. السطور تبدأ من الأيام الجاية."],
+        ["note_exec_1117_defs", "تعريفات موحّدة بين تقرير اللوحة الأسبوعي و«الملخص_التنفيذي» و/admin (طلب المدير التنفيذي 2026-11-17): العميل = رقم جوال واحد بأي صيغة (رقم الواتساب، وإلا الجوال المكتوب على الطلب)، والطلب الملغي ما يُحسب. «عميل جديد» = أول طلب له في تاريخ اللوحة كله وقع في الفترة. «عميل رجع» = طلب في الفترة وكان له طلب قبلها. في الأسبوع العميل يُحسب مرة وحدة. «متأخر» = الاستلام وطلبات التطبيقات صارت «جاهز» بعد وقت العميل بدقيقة أو أكثر، وتوصيلنا صار «خرج» بعد (وقت العميل − دقائق المشوار، و15 إذا ما انعرفت) بدقيقة أو أكثر؛ طلبات ذا شفز تدخل في التأخير لأن المطبخ يجهزها، وما تدخل في المبيعات. قبل التوحيد كان التقرير يعدّ 05… و9665… عميلين، ويحسب التأخير بـ15 دقيقة ثابتة."],
+        ["note_exec_1117_nophone", "طلب المدير التنفيذي (2026-11-17) تم: «الملخص_التنفيذي» فيه عمود جديد في الآخر «طلبات مباشرة بدون رقم جوال» = طلبات المحل والاتصال والواتساب والموقع (غير الملغية) اللي ما لها رقم صالح، فما تنحسب لعميل."],
+        ["note_exec_1117_lost", "طلب المدير التنفيذي (2026-11-17) تم: تبويب «ضاعت_مبيعة» = محادثات انتهت بدون طلب وسببها (من تحليل الأذواق الليلي اللي يقرأ اليوم بعد ما يخلص): التاريخ، الصنف، المكوّن، السبب، كلام العميل، آخر 4 أرقام. و«محادثات_واتساب» فيه عمود جديد في الآخر «ضاعت مبيعة (حالات)». اليومان الأخيران يُعاد كتابتهم كل ليلة لأن التحليل يتأخر يوم."],
       ]) if (!(await getS(pool, k))) { await note(T.notes, text).catch(() => {}); await setS(pool, k, Date.now()); }
       if (!(await getS(pool, "exec_backfill_v1"))) {
         const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);

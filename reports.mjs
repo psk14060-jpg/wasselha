@@ -4,6 +4,7 @@
 import { getMenu } from "./menu.mjs";
 import { tasteReport } from "./prefs.mjs";
 import { subsidyFor, feeOfOrder } from "./subsidy.mjs";
+import { canonArea } from "./sheets.mjs";
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-5-5";
 const DAY = 864e5;
@@ -67,19 +68,23 @@ async function weekFigures(pool, from, to, products) {
       byProduct[l.product] = byProduct[l.product] || { boxes: 0, sales: 0, orders: 0 };
       byProduct[l.product].boxes += l.qty; byProduct[l.product].orders++; byProduct[l.product].sales += l.value || 0;
     }
-    if (o.type === "del" && o.area) { const a = String(o.area).replace(/\s*\(.*\)\s*$/, "").trim(); byArea[a] = (byArea[a] || 0) + 1; }
+    // one name per neighbourhood, the same as «المبيعات اليومية» (المدير التنفيذي 2026-11-17: النايفية showed in several spellings)
+    if (o.type === "del" && o.area) { const a = canonArea(o.area) || String(o.area).replace(/\s*\(.*\)\s*$/, "").trim(); byArea[a] = (byArea[a] || 0) + 1; }
   }
-  // late: a pickup ready after its time, our delivery out less than 15 minutes before its time
+  // late — one definition with «الملخص_التنفيذي» and /admin (المدير التنفيذي 2026-11-17): pickups and app orders «جاهز»
+  // 1 minute or more after the customer's time; our deliveries «خرج» 1 minute or more after (customer's time − drive minutes, 15 if unknown)
   const ev = (await pool.query(
     `SELECT order_id, to_status, min(at) AS at FROM order_events WHERE op_day >= $1 AND op_day < $2 AND to_status IN ('ready','out') GROUP BY 1,2`, [from, to])).rows;
   const evAt = new Map(ev.map(e => [e.order_id + ":" + e.to_status, Number(e.at)]));
   let measured = 0, late = 0;
-  for (const o of rows) {
+  // the kitchen makes The Chefz orders too, so they count for lateness (as in «الملخص_التنفيذي») though not for sales
+  const kitchen = (await pool.query(`SELECT * FROM orders WHERE op_day >= $1 AND op_day < $2 AND status IN ('new','prep','ready','out','done')`, [from, to])).rows;
+  for (const o of kitchen) {
     const del = o.type === "del" && !APPS.includes(o.source);
     const at = evAt.get(o.id + ":" + (del ? "out" : "ready"));
     if (!at) continue;
     measured++;
-    if (at > Number(o.due) - (del ? 15 * 60e3 : 0)) late++;
+    if (at - (Number(o.due) - (del ? (Number(o.travel_min) || 15) * 60e3 : 0)) >= 60e3) late++;
   }
   const keys = rows.map(customerKey).filter(Boolean);
   // cancelled orders and why (reason picked when cancelling; older ones read from the note)
@@ -150,6 +155,18 @@ async function writeBrief(apiKey, data) {
   return (j.content || []).map(c => c.text || "").join("").trim();
 }
 
+export async function weekCustomers(pool, from, to) {
+  const { rows } = await pool.query(`SELECT wa_from, phone, op_day::text AS d FROM orders WHERE status IN ('new','prep','ready','out','done')`);
+  const first = new Map(), inWeek = new Set();
+  for (const o of rows) {
+    const k = customerKey(o); if (!k) continue;
+    if (!first.has(k) || o.d < first.get(k)) first.set(k, o.d);
+    if (o.d >= from && o.d < to) inWeek.add(k);
+  }
+  let newCustomers = 0; for (const k of inWeek) if (first.get(k) >= from) newCustomers++;
+  return { newCustomers, returning: inWeek.size - newCustomers };
+}
+
 // Report for the week starting on weekStart (a Sunday operating day).
 export async function buildWeek(pool, weekStart, { save = true } = {}) {
   const menu = await getMenu();
@@ -158,11 +175,10 @@ export async function buildWeek(pool, weekStart, { save = true } = {}) {
   const prev = await weekFigures(pool, addDays(weekStart, -7), weekStart, menu.products);
   const cust = await customers(pool);
   const taste = await tasteReport(pool, 7).catch(() => null);
-  const newCustomers = (await pool.query(
-    `SELECT count(*)::int AS n FROM (SELECT COALESCE(wa_from, phone) k, min(op_day) d FROM orders WHERE ${LIVE} AND COALESCE(wa_from, phone, '') <> '' GROUP BY 1) x WHERE d >= $1 AND d < $2`, [weekStart, end])).rows[0].n;
-  const returning = (await pool.query(
-    `SELECT count(*)::int AS n FROM (SELECT COALESCE(wa_from, phone) k FROM orders WHERE ${LIVE} AND op_day >= $1 AND op_day < $2 AND COALESCE(wa_from, phone, '') <> '' GROUP BY 1) w
-      WHERE EXISTS (SELECT 1 FROM orders o WHERE ${LIVE} AND o.op_day < $1 AND COALESCE(o.wa_from, o.phone) = w.k)`, [weekStart, end])).rows[0].n;
+  // new / returning — one definition with «الملخص_التنفيذي» and /admin (المدير التنفيذي 2026-11-17): a customer = one phone number
+  // in any format (WhatsApp number, else the phone typed on the order); new = first order ever (not cancelled) falls in the week;
+  // returning = ordered this week and had ordered before it. Counted once per week. (Before: raw numbers, so 05… and 9665… were two people.)
+  const { newCustomers, returning } = await weekCustomers(pool, weekStart, end);
   const data = {
     returning, shopSalesNote: "",
     week: { from: weekStart, to: addDays(weekStart, 6) }, current: cur, previous: prev, newCustomers,

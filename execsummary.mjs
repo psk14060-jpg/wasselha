@@ -15,7 +15,8 @@ export const HEADERS = ["التاريخ", "اليوم", "عدد الطلبات",
   ...CH.map(([, n]) => n), "رسوم التوصيل المحصلة", "طلبات ملغية", "قيمة الملغي", "المرتجع", "الهدر بالتكلفة شامل الضريبة",
   "متوسط التحضير (دقيقة)", "طلبات متأخرة", "عملاء جدد", "عملاء متكررون", "طلبات مسعّرة", "طلبات التطبيقات", "أُعدّ في",
   // after «أُعدّ في» (المدير التنفيذي 2026-11-17: new columns at the end): money collected per payment method, delivery fee included
-  "كاش (المحصّل)", "شبكة (المحصّل)", "تحويل (المحصّل)", "دفع غير محدد (المحصّل)"];
+  "كاش (المحصّل)", "شبكة (المحصّل)", "تحويل (المحصّل)", "دفع غير محدد (المحصّل)",
+  "طلبات مباشرة بدون رقم جوال"];
 const LIVE = ["new", "prep", "ready", "out", "done"];
 const r2 = x => Math.round(x * 100) / 100;
 
@@ -60,6 +61,8 @@ export function payCols(orders) {
   }
   return [r2(s.cash), r2(s.card), r2(s.transfer), r2(s.none)];
 }
+// direct orders (not cancelled) with no usable phone number: they cannot be counted as a customer (المدير التنفيذي 2026-11-17)
+export const noPhone = orders => orders.filter(o => LIVE.includes(o.status) && !APPS.includes(o.source) && !((keyOf(o.wa_from, o.phone) || "").length >= 11)).length;
 
 async function ensureTabs() {
   const tabs = ((await api("GET", "?fields=sheets.properties")).sheets || []).map(s => s.properties.title);
@@ -85,7 +88,7 @@ export async function syncExec(pool, day, log = console.log) {
   const before = await q("SELECT DISTINCT wa_from, phone FROM orders WHERE op_day < $1 AND status IN ('new','prep','ready','out','done')", [day]);
   const seenBefore = new Set(before.map(o => keyOf(o.wa_from, o.phone)).filter(Boolean));
   const row = execRow(day, { orders, returns, waste, events, seenBefore });
-  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC", ...payCols(orders));
+  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC", ...payCols(orders), noPhone(orders));
   await ensureTabs();
   await deleteDate(TAB, day);
   await append(TAB, [row]);
