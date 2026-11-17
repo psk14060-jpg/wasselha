@@ -13,7 +13,7 @@ const APPS = ["chefz", "hunger", "keeta", "ninja"];
 const CH = [["shop", "المحل"], ["call", "اتصال"], ["wa", "واتساب"], ["web", "الموقع"], ["hunger", "هنقرستيشن"], ["keeta", "كيتا"], ["ninja", "نينجا"], ["chefz", "ذا شيفز"]];
 export const HEADERS = ["التاريخ", "اليوم", "عدد الطلبات", "المبيعات (بدون التوصيل وذا شيفز، بعد المرتجع)", "متوسط الطلب",
   ...CH.map(([, n]) => n), "رسوم التوصيل المحصلة", "طلبات ملغية", "قيمة الملغي", "المرتجع", "الهدر بالتكلفة شامل الضريبة",
-  "متوسط التحضير (دقيقة)", "طلبات متأخرة", "عملاء جدد", "عملاء متكررون", "أُعدّ في"];
+  "متوسط التحضير (دقيقة)", "طلبات متأخرة", "عملاء جدد", "عملاء متكررون", "طلبات مسعّرة", "طلبات التطبيقات", "أُعدّ في"];
 const LIVE = ["new", "prep", "ready", "out", "done"];
 const r2 = x => Math.round(x * 100) / 100;
 
@@ -27,6 +27,9 @@ export function execRow(day, { orders, returns = [], waste = [], events = [], se
   const ret = returns.reduce((s, r) => s + (Number(r.amount) || 0), 0);
   const sales = Object.entries(by).filter(([k]) => k !== "chefz").reduce((s, [, v]) => s + v, 0) - ret;
   const counted = live.filter(o => o.source !== "chefz").length;
+  // «طلبات مسعّرة» (المدير التنفيذي 2026-11-17): direct orders with a price; app orders on the board carry none and pulled the average down
+  const priced = live.filter(o => !APPS.includes(o.source) && o.total != null).length;
+  const apps = live.filter(o => APPS.includes(o.source)).length;
   const cancelled = orders.filter(o => o.status === "cancelled");
   const wasteCost = waste.reduce((s, w) => s + (Number(w.cost) || 0), 0) * 1.15;
   // preparation: first «تحضير» → first «جاهز»; late: ready (pickup/apps) or out (our deliveries) after it was due
@@ -41,9 +44,9 @@ export function execRow(day, { orders, returns = [], waste = [], events = [], se
   }
   const keys = [...new Set(live.map(o => keyOf(o.wa_from, o.phone)).filter(k => k && k.length >= 11))];
   const fresh = keys.filter(k => !seenBefore.has(k)).length;
-  return [day, DAYS[new Date(Date.parse(day + "T00:00:00Z")).getUTCDay()], counted, r2(sales), counted ? r2(sales / counted) : 0,
+  return [day, DAYS[new Date(Date.parse(day + "T00:00:00Z")).getUTCDay()], counted, r2(sales), priced ? r2(sales / priced) : 0,
     ...CH.map(([k]) => r2(by[k] || 0)), r2(fees), cancelled.length, r2(cancelled.reduce((s, o) => s + net(o), 0)), r2(ret), r2(wasteCost),
-    preps.length ? Math.round(preps.reduce((a, b) => a + b, 0) / preps.length) : "", late, fresh, keys.length - fresh];
+    preps.length ? Math.round(preps.reduce((a, b) => a + b, 0) / preps.length) : "", late, fresh, keys.length - fresh, priced, apps];
 }
 
 async function ensureTabs() {
@@ -51,8 +54,8 @@ async function ensureTabs() {
   const add = [TAB, MGMT_TAB].filter(t => !tabs.includes(t));
   if (add.length) { await api("POST", ":batchUpdate", { requests: add.map(title => ({ addSheet: { properties: { title, rightToLeft: true } } })) }); resetSheetIds(); }
   const put = async (tab, rows) => api("PUT", `/values/${encodeURIComponent(`'${tab}'!A1`)}?valueInputOption=RAW`, { values: rows });
-  const h = await read(TAB, "A1:A1");
-  if (!(h[0] && h[0][0])) await put(TAB, [HEADERS]);
+  const h = await read(TAB, "A1:Z1");
+  if (JSON.stringify((h[0] || [])) !== JSON.stringify(HEADERS)) await put(TAB, [HEADERS]); // columns added later rewrite the header
   const m = await read(MGMT_TAB, "A1:A1");
   // filled by Hassan once a month; the board never writes below the header and the example row
   if (!(m[0] && m[0][0])) await put(MGMT_TAB, [["الشهر", "الرصيد البنكي", "إيجار المحل (شهري)", "الرواتب", "سكن العمال", "الغاز", "الكهرباء والماء", "الإقامات والتأمين", "اشتراكات وأنظمة", "تسويق", "صيانة", "أخرى", "ملاحظة"],

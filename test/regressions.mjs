@@ -256,5 +256,7 @@ t("2026-11-16 الملخص التنفيذي: سطر اليوم من كل الق�
   assert.equal(col("متوسط التحضير (دقيقة)"), 10);
   assert.equal(col("طلبات متأخرة"), 1); // the delivery left after its departure time
   assert.equal(col("عملاء جدد"), 1); assert.equal(col("عملاء متكررون"), 1);
+  assert.equal(col("طلبات مسعّرة"), 2); assert.equal(col("طلبات التطبيقات"), 1);
+  assert.equal(col("متوسط الطلب"), 30.5); // sales ÷ priced direct orders, apps without a price do not pull it down
   assert.equal(row.length, HEADERS.length - 1); // «أُعدّ في» is added when written
 });

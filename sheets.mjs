@@ -166,6 +166,7 @@ function lines(items) {
   }
   return out;
 }
+const cxMore = o => [hhmm(o.created), o.type === "del" ? "توصيل" : "استلام", SRC[o.source] || o.source];
 const rowO = o => ({ type: o.type, source: o.source, deliveryFee: o.delivery_fee == null ? null : Number(o.delivery_fee), area: o.area,
   total: o.total == null ? null : Number(o.total), due: Number(o.due), created: Number(o.created), items: o.items });
 
@@ -209,7 +210,7 @@ export async function syncDay(pool, day, log = console.log) {
     if (o.status === "cancelled") {
       const e = ev.filter(x => String(x.order_id) === String(o.id) && x.to_status === "cancelled").pop();
       const why = o.cancel_reason || (/مكرر|دُمج|تأكيد لحجز/.test(o.note || "") ? "مكرر" : black.includes(o.num) ? "ما جاء يستلم" : "غير محدد");
-      cx.push([day, o.num, "إلغاء", e && e.from_status ? STATUS[e.from_status] || e.from_status : "", "", why]);
+      cx.push([day, o.num, "إلغاء", e && e.from_status ? STATUS[e.from_status] || e.from_status : "", "", why, ...cxMore(o)]);
       continue;
     }
     const ourDel = o.type === "del" && !APPS.includes(o.source);
@@ -217,8 +218,10 @@ export async function syncDay(pool, day, log = console.log) {
     if (!e) continue;
     const must = Number(o.due) - (ourDel ? (Number(o.travel_min) || 15) * 60e3 : 0);
     const late = Math.round((Number(e.at) - must) / 60e3);
-    if (late >= 1) cx.push([day, o.num, "تأخير", ourDel ? "خروج للمندوب" : "التحضير", late, ""]);
+    if (late >= 1) cx.push([day, o.num, "تأخير", ourDel ? "خروج للمندوب" : "التحضير", late, "", ...cxMore(o)]);
   }
+  // G–I (المدير التنفيذي 2026-11-17): when the order came in, delivery or pickup, channel — to see if lateness is one courier at peak
+  for (const [c, t] of [["G1", "ساعة الطلب"], ["H1", "توصيل/استلام"], ["I1", "القناة"]]) await ensureHeader(T.cx, c, t);
   await deleteDate(T.cx, day);
   await append(T.cx, cx);
 
@@ -230,6 +233,21 @@ export async function syncDay(pool, day, log = console.log) {
     await setS(pool, "sheet_missing_names", [...told, ...fresh]);
   }
   log(`sheet: ${day} sales rows=${sales.length} orders=${orders.length} cancelled/late=${cx.length}${fresh.length ? " new-names=" + fresh.length : ""}`);
+}
+
+// ---------- no purchase invoice for 3 days (المدير التنفيذي 2026-11-17) ----------
+// The board does not read invoices, so it cannot tell a category; it can tell that nothing came in. One note per gap.
+export async function purchaseGap(pool, log = console.log, now = Date.now()) {
+  const r = (await pool.query("SELECT max(at) AS last FROM purchases").catch(() => ({ rows: [{}] }))).rows[0];
+  const last = r && r.last ? Number(r.last) : null;
+  if (!last) return null;
+  const days = Math.floor((now - last) / 864e5);
+  if (days < 3) return days;
+  if (String(await getS(pool, "purchase_gap_told")) === String(last)) return days;
+  await note("فواتير_المشتريات", `ما وصلت أي فاتورة مشتريات للوحة من ${days} أيام (آخر فاتورة ${dateOf(last)}). نسبة المشتريات من المبيعات بتطلع أقل من الحقيقة لين تنرسل الفواتير الناقصة.`);
+  await setS(pool, "purchase_gap_told", String(last));
+  log(`purchase-gap: ${days} days since ${dateOf(last)}`);
+  return days;
 }
 
 // ---------- write: customers (whole tab rewritten) ----------
@@ -286,9 +304,16 @@ export function startSheetJob(pool, log = console.log) {
       const today = opDayOf(Date.now());
       // 02:00 every night: the operating day that is ending (it started at 06:00 yesterday)
       if (r.getUTCHours() >= 2 && r.getUTCHours() < 6 && (await getS(pool, "sheet_sales_done")) !== today) {
-        await syncDay(pool, today, log); await syncExec(pool, today, log); await setS(pool, "sheet_sales_done", today);
+        await syncDay(pool, today, log); await syncExec(pool, today, log); await purchaseGap(pool, log).catch(e => log("purchase-gap: " + e.message)); await setS(pool, "sheet_sales_done", today);
       } else if (first) { await syncDay(pool, today, log); await syncExec(pool, today, log).catch(e => log("exec: " + e.message)); } // on start: today so far (rewritten in full at 02:00)
       // «الملخص_التنفيذي» from the first board day, once (Hassan 2026-11-16: executive agent)
+      if (!(await getS(pool, "sheet_resync_v2"))) { // 2026-11-17: new columns in «الإلغاء والتأخير» and «الملخص_التنفيذي» for past days
+        const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
+        for (const { d } of rows) { await syncDay(pool, d, log); await syncExec(pool, d, log); await new Promise(r => setTimeout(r, 5000)); } // stay under the Sheets per-minute quota
+        await setS(pool, "sheet_resync_v2", Date.now()); await setS(pool, "exec_backfill_v1", Date.now());
+        log("sheet: resync v2 " + rows.length + " days");
+        await note(T.notes, "طلبات المدير التنفيذي (2026-11-17): «الإلغاء والتأخير» فيه الحين ساعة الطلب ونوعه (توصيل/استلام) والقناة (الأعمدة G–I)؛ «الملخص_التنفيذي» فيه «طلبات مسعّرة» (المباشرة اللي لها سعر) و«طلبات التطبيقات»، ومتوسط الطلب صار المبيعات ÷ الطلبات المسعّرة؛ «المبيعات اليومية» فيها أصلًا عمود «الساعة» (وقت دخول الطلب). كل الأيام من 31 أكتوبر أُعيدت كتابتها.").catch(() => {});
+      }
       if (!(await getS(pool, "exec_backfill_v1"))) {
         const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
         for (const { d } of rows) await syncExec(pool, d, log);
