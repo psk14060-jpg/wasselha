@@ -322,3 +322,7 @@ t("2026-11-17 تعريف واحد للعملاء والتأخير بين الت�
   assert.ok(rep.includes("(Number(o.travel_min) || 15) * 60e3") && rep.includes(">= 60e3) late++"), "report lateness = execRow lateness");
   assert.ok(rep.includes("canonArea(o.area)"), "delivery areas in the report use the sheet's one spelling");
 });
+t("2026-11-17 #23: طلب واتساب أو اتصال لازم فيه رقم جوال", () => {
+  const b = fs.readFileSync(new URL("../src/board.template.html", import.meta.url), "utf8");
+  assert.ok(/\["wa","call"\]\.includes\(segVal\("srcSeg"\)\)&&\$\("phone"\)\.value/.test(b), "the form refuses a WhatsApp/phone order without a number");
+});

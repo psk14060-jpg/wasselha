@@ -437,7 +437,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     </div>
 
     <div class="grid">
-      <label class="f"><span>الجوال (اختياري)</span><input type="tel" id="phone" class="mono" autocomplete="off" inputmode="tel"></label>
+      <label class="f"><span id="phoneLbl">الجوال (اختياري)</span><input type="tel" id="phone" class="mono" autocomplete="off" inputmode="tel"></label>
       <label class="f"><span>الاسم (اختياري)</span><input type="text" id="name" autocomplete="off"></label>
       <label class="f full"><span>ملاحظة للمطبخ</span><input type="text" id="note" autocomplete="off" placeholder="مثل: بدون زيتون، بيتزا رانش"></label>
     </div>
@@ -1348,7 +1348,7 @@ async function sendGift(o,b){
 /* ---------- sheet ---------- */
 function segVal(id){const b=$(id).querySelector('[aria-pressed="true"]');return b&&b.dataset.v;}
 function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===String(v))));
-  if(id==="srcSeg"){const app=isApp(v);$("appRefWrap").hidden=!app;$("typeWrap").hidden=app;$("directWrap").hidden=app;if(app){setSeg("typeSeg","pick");if(!$("dueTime").value&&!S.editing)setAsap();}if(typeof renderCart==="function"&&MENU)renderCart();}
+  if(id==="srcSeg"){const app=isApp(v);$("phoneLbl").textContent=["wa","call"].includes(v)?"الجوال (لازم)":"الجوال (اختياري)";$("appRefWrap").hidden=!app;$("typeWrap").hidden=app;$("directWrap").hidden=app;if(app){setSeg("typeSeg","pick");if(!$("dueTime").value&&!S.editing)setAsap();}if(typeof renderCart==="function"&&MENU)renderCart();}
   if(id==="typeSeg"){$("areaWrap").hidden=v!=="del";renderSlots();renderSum();}
   if(id==="daySeg"){const x=String(v)==="x";$("dueDate").hidden=!x;$("dueDate").min=dayKey(2);$("dueDate").max=dayKey(60);if(x&&!$("dueDate").value)$("dueDate").value=dayKey(2);}
   if(id==="daySeg"){renderSlots();try{renderSum();}catch(e){}}}
@@ -1567,6 +1567,8 @@ $("sheet").addEventListener("submit",async e=>{
     deliveryFee=del&&!app?areaFee():null; total=cart.length&&!app?subtotal()+(deliveryFee||0):null;
   }
   if(!segVal("srcSeg")){err.textContent="اختر مصدر الطلب (المحل، اتصال، واتساب، أو التطبيق).";err.hidden=false;$("srcSeg").scrollIntoView({block:"center"});return;}
+  /* Hassan 2026-11-17 (#23 saved as «واتساب» with no number): WhatsApp and phone orders need the customer's number */
+  if(["wa","call"].includes(segVal("srcSeg"))&&$("phone").value.replace(/[^0-9٠-٩]/g,"").length<9){err.textContent="طلب الواتساب والاتصال لازم فيه رقم جوال العميل. إذا العميل جا للمحل اختر «المحل».";err.hidden=false;$("phone").focus();return;}
   if(!items){err.textContent=textMode()?"اكتب صنفًا واحدًا على الأقل.":"اضغط على صنف واحد على الأقل.";err.hidden=false;return;}
   if(!tm){err.textContent="اختر وقت التسليم.";err.hidden=false;$("slots").scrollIntoView({block:"nearest"});return;}
   if(del&&!areaName()){err.textContent="اختر حي التوصيل.";err.hidden=false;return;}

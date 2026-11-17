@@ -789,6 +789,21 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-17 (Hassan «صلحها»): #23 was typed as «واتساب» with no number. If exactly one customer wrote about kabaji
+  // on WhatsApp in the 40 minutes before it and has no other order today, the order gets that number; otherwise only logged.
+  setTimeout(async () => { try {
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-17' AND num=23")).rows[0];
+    if (!o || o.wa_from || o.phone) return console.log("o23-fix: nothing to do");
+    const c = Number(o.created);
+    const { rows } = await pool.query("SELECT wa_from, string_agg(left(text,60), ' ⏎ ' ORDER BY at) AS t FROM wa_messages WHERE dir='in' AND at BETWEEN $1 AND $2 GROUP BY wa_from", [c - 40 * 60e3, c + 3 * 60e3]);
+    const other = new Set((await pool.query("SELECT wa_from FROM orders WHERE op_day='2026-11-17' AND wa_from IS NOT NULL AND id<>$1", [o.id])).rows.map(r => r.wa_from));
+    const cand = rows.filter(r => /كباجي|كبا|ميني/.test(r.t || "") && !other.has(r.wa_from));
+    console.log(`o23-fix: chats in window=${rows.length} kabaji=${cand.length} ` + rows.map(r => `…${String(r.wa_from).slice(-4)}${other.has(r.wa_from) ? "(has order)" : ""}: ${String(r.t).replace(/\d{7,}/g, "…").slice(0, 160)}`).join(" || "));
+    if (cand.length === 1) {
+      await pool.query("UPDATE orders SET wa_from=$1, note=concat_ws(' · ', NULLIF(note,''), 'رُبط برقم محادثة الواتساب'), updated=$2 WHERE id=$3", [cand[0].wa_from, Date.now(), o.id]);
+      console.log(`o23-fix: linked to …${String(cand[0].wa_from).slice(-4)}`);
+    }
+  } catch (e) { console.log("o23-fix: " + e.message); } }, 20e3);
   setTimeout(() => getMenu().then(m => { console.log(`menu: source=${m.source} products=${m.products.length}`); for (const p of m.products) console.log(`menu: ${p.id} | ${p.name} | ${p.description} | ${p.variants.map(v => v.tag + "=" + v.price).join(", ")}`); }).catch(e => console.log("menu: " + e.message)), 25e3); // one-off: compare with the printed menus (2026-11-09)
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
