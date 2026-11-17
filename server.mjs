@@ -789,19 +789,6 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-17 (Hassan: «طلب ٢٣ هل هو من الواتساب»): where order #23 of today came from; phone as last 4 only
-  setTimeout(async () => { try {
-    const { rows } = await pool.query("SELECT * FROM orders WHERE op_day='2026-11-17' AND num=23");
-    for (const o of rows) {
-      const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16) : "-";
-      const ev = (await pool.query("SELECT * FROM order_events WHERE order_id=$1 ORDER BY at", [o.id]).catch(() => ({ rows: [] }))).rows;
-      const msgs = o.wa_from ? (await pool.query("SELECT dir, at, left(text, 80) AS text FROM wa_messages WHERE wa_from=$1 AND at > $2 - 6*3600e3 AND at < $2 + 3600e3 ORDER BY at", [o.wa_from, Number(o.created)]).catch(() => ({ rows: [] }))).rows : [];
-      console.log(`o23: source=${o.source} type=${o.type} status=${o.status} ref=${o.ref || "-"} wa_from=${o.wa_from ? "…" + String(o.wa_from).slice(-4) : "none"} phone=${o.phone ? "…" + String(o.phone).replace(/\D/g, "").slice(-4) : "none"} created=${t(o.created)} due=${t(o.due)} raw_text=${o.raw_text ? "yes" : "no"} entered_by=${o.entered_by || "-"} pay=${o.pay || "-"} total=${o.total} items=${String(o.items || "").replace(/\n/g, " / ")}`);
-      console.log("o23-events: " + ev.map(e => `${t(e.at)} ${e.kind}:${e.to_status || ""}${e.device ? "(" + e.device + ")" : ""}`).join(" | "));
-      console.log("o23-chat: " + msgs.map(m => `${t(m.at)} ${m.dir === "in" ? "العميل" : "المحل"}: ${String(m.text || "").replace(/\d{7,}/g, "…")}`).join(" ⏎ ").slice(0, 1500));
-    }
-    if (!rows.length) console.log("o23: no order #23 today");
-  } catch (e) { console.log("o23: " + e.message); } }, 20e3);
   setTimeout(() => getMenu().then(m => { console.log(`menu: source=${m.source} products=${m.products.length}`); for (const p of m.products) console.log(`menu: ${p.id} | ${p.name} | ${p.description} | ${p.variants.map(v => v.tag + "=" + v.price).join(", ")}`); }).catch(e => console.log("menu: " + e.message)), 25e3); // one-off: compare with the printed menus (2026-11-09)
   // 2026-11-08 16:13 Hassan: delivery subsidy cancelled
   pool.query("INSERT INTO board_settings (key, value) VALUES ('subsidy_off_hassan', $1) ON CONFLICT (key) DO NOTHING", [JSON.stringify(Date.parse("2026-11-08T16:13:00+03:00"))])
