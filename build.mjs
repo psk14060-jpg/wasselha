@@ -9,4 +9,6 @@ fs.mkdirSync("public", { recursive: true });
 fs.writeFileSync("public/board.html",
   fs.readFileSync("src/board.template.html", "utf8").replace("{{STYLE}}", () => style).replace("{{PARSER}}", () => parser).replace("{{SUBSIDY}}", () => subsidy).replace("{{CAPACITY}}", () => capacity).replace("{{ITEMLINES}}", () => itemlines));
 fs.copyFileSync("src/login.template.html", "public/login.html");
+fs.copyFileSync("src/tv.template.html", "public/tv.html");
+fs.copyFileSync("src/admin.template.html", "public/admin.html");
 console.log("built public/board.html, public/login.html");

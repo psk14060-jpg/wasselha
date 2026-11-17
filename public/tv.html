@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>مينيقيش · شاشة العرض</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&family=Lalezar&display=swap">
+<style>
+:root{
+  --bg:#101416; --surface:#1a2023; --surface-2:#151a1d; --ink:#eef1f2; --muted:#93a0a7; --line:#2b3438;
+  --accent:#e2a43c; --accent-soft:#3a2d16; --ok:#5fc48c; --late:#f06b5d; --late-soft:#3c1915;
+  --c-shop:#e2a43c; --c-wa:#55c895; --c-web:#8aa2ec; --c-chefz:#5a676e;
+  --f-body:"IBM Plex Sans Arabic",system-ui,sans-serif; --f-display:"Lalezar","IBM Plex Sans Arabic",sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);overflow:hidden;
+  font-size:clamp(14px,1.25vw,28px);padding:2.2vh 2.4vw;display:grid;grid-template-rows:auto auto auto 1fr;gap:2vh}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+header{display:flex;align-items:baseline;gap:1.2em}
+.brand{font-family:var(--f-display);font-size:2.6em;line-height:1;font-weight:400;margin:0;color:var(--accent)}
+.sub{color:var(--muted);font-size:1.05em}
+.clock{margin-inline-start:auto;font-family:var(--f-mono);font-size:2.2em;font-weight:600}
+.upd{color:var(--muted);font-size:.85em}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1.4vw}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:1vw;padding:2vh 1.4vw}
+.tile .k{color:var(--muted);font-size:1.15em;font-weight:500}
+.tile .v{font-family:var(--f-mono);font-weight:600;font-size:4.2em;line-height:1.1;direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
+.tile .v small{font-size:.35em;color:var(--muted);font-family:var(--f-body);font-weight:500;margin-inline-start:.3em}
+.tile .s{color:var(--muted);font-size:.95em}
+.tile.late .v{color:var(--ok)}
+.tile.late.on{background:var(--late-soft);border-color:var(--late)}
+.tile.late.on .v{color:var(--late)}
+.week{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1.4vw;align-items:stretch}
+.week .lbl{background:var(--surface-2);border:1px solid var(--line);border-radius:1vw;padding:1.6vh 1.2vw;display:flex;flex-direction:column;justify-content:center;min-width:12em}
+.week .lbl b{font-size:1.3em}
+.week .lbl span{color:var(--muted);font-size:.9em}
+.cmp{background:var(--surface);border:1px solid var(--line);border-radius:1vw;padding:1.6vh 1.4vw;display:grid;grid-template-columns:1fr auto;align-items:end;gap:.2em 1em}
+.cmp .k{grid-column:1/-1;color:var(--muted);font-size:1.05em}
+.cmp .v{font-family:var(--f-mono);font-weight:600;font-size:2.6em;line-height:1.1;direction:ltr;text-align:right}
+.cmp .p{color:var(--muted);font-size:.95em}
+.chg{font-family:var(--f-mono);font-weight:600;font-size:1.4em;direction:ltr;padding:.1em .45em;border-radius:.4em}
+.chg.up{color:var(--ok);background:#173226}
+.chg.down{color:var(--late);background:var(--late-soft)}
+.chg.flat{color:var(--muted)}
+.chart{background:var(--surface);border:1px solid var(--line);border-radius:1vw;padding:1.6vh 1.4vw;display:grid;grid-template-rows:auto 1fr;min-height:0}
+.chart h2{margin:0 0 1vh;font-size:1.25em;font-weight:500;color:var(--muted);display:flex;gap:1.4em;align-items:center;flex-wrap:wrap}
+.chart h2 b{color:var(--ink);font-weight:700;margin-inline-end:auto}
+.lg{display:inline-flex;align-items:center;gap:.4em;font-size:.85em}
+.lg i{width:.9em;height:.9em;border-radius:.2em;display:inline-block}
+#svg{width:100%;height:100%;min-height:0}
+#svg text{fill:var(--muted);font-family:var(--f-mono);direction:ltr}
+#svg .dn{fill:var(--ink);font-family:var(--f-body);direction:rtl}
+.gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:9}
+.gate form{display:grid;gap:14px;width:min(420px,90vw);font-size:18px}
+.gate input{font:inherit;font-family:var(--f-mono);font-size:28px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);text-align:center;letter-spacing:.3em}
+.gate button{font:inherit;padding:12px;border-radius:12px;border:0;background:var(--accent);color:#1a1205;font-weight:700}
+.gate .err{color:var(--late);min-height:1.4em}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="gate" id="gate" hidden>
+  <form id="gf">
+    <div class="brand" style="font-size:44px">مينيقيش</div>
+    <label for="code">رمز شاشة العرض</label>
+    <input id="code" inputmode="numeric" autocomplete="off">
+    <button>دخول</button>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+</div>
+
+<header>
+  <h1 class="brand">مينيقيش</h1>
+  <span class="sub" id="dayname"></span>
+  <span class="clock num" id="clock"></span>
+  <span class="upd" id="upd"></span>
+</header>
+
+<section class="tiles" aria-label="اليوم">
+  <div class="tile"><div class="k">طلبات اليوم</div><div class="v" id="tOrders">—</div><div class="s" id="tPriced"></div></div>
+  <div class="tile"><div class="k">المبيعات المباشرة</div><div class="v" id="tSales">—<small>ريال</small></div><div class="s" id="tAvg"></div></div>
+  <div class="tile"><div class="k">متوسط التحضير</div><div class="v" id="tPrep">—<small>دقيقة</small></div><div class="s">من «تحضير» إلى «جاهز»</div></div>
+  <div class="tile late" id="lateTile"><div class="k">متأخرة الحين</div><div class="v" id="tLate">—</div><div class="s" id="tLateS">طلبات عدّى وقت تجهيزها أو خروجها</div></div>
+</section>
+
+<section class="week" aria-label="الأسبوع">
+  <div class="lbl"><b>هذا الأسبوع</b><span id="wRange"></span><span id="pRange"></span></div>
+  <div class="cmp"><div class="k">المبيعات المباشرة</div><div class="v" id="wSales">—</div><div class="chg" id="cSales"></div><div class="p" id="pSales"></div></div>
+  <div class="cmp"><div class="k">الطلبات</div><div class="v" id="wOrders">—</div><div class="chg" id="cOrders"></div><div class="p" id="pOrders"></div></div>
+  <div class="cmp"><div class="k">متوسط الطلب</div><div class="v" id="wAvg">—</div><div class="chg" id="cAvg"></div><div class="p" id="pAvg"></div></div>
+</section>
+
+<section class="chart">
+  <h2><b>آخر 14 يوم حسب القناة</b>
+    <span class="lg"><i style="background:var(--c-shop)"></i>المحل والاتصال</span>
+    <span class="lg"><i style="background:var(--c-wa)"></i>واتساب</span>
+    <span class="lg"><i style="background:var(--c-web)"></i>الموقع</span>
+    <span class="lg"><i style="background:var(--c-chefz)"></i>ذا شفز (خارج المبيعات)</span>
+  </h2>
+  <svg id="svg" role="img" aria-label="رسم المبيعات اليومية لآخر 14 يوم"></svg>
+</section>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const KEY = "mg_tv_code";
+const fmt = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
+const fmt1 = n => n == null ? "—" : Number(n).toFixed(1);
+let code = ""; try { code = localStorage.getItem(KEY) || ""; } catch {}
+let last = null;
+
+function tick(){ const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}); }
+setInterval(tick, 1000); tick();
+
+function chg(el, now, before, partial){
+  if (partial || !before) { el.textContent = ""; el.className = "chg flat"; return; }
+  const p = (now - before) / before * 100;
+  el.textContent = (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p).toFixed(0) + "%";
+  el.className = "chg " + (p > 1 ? "up" : p < -1 ? "down" : "flat");
+}
+const dmy = d => d.slice(8,10) + "/" + d.slice(5,7);
+
+function draw(days){
+  const svg = $("svg"), W = svg.clientWidth || 1200, H = svg.clientHeight || 300;
+  const fs = Math.max(12, Math.round(H / 24)), top = fs * 1.8, bottom = fs * 3.2, left = 8, right = fs * 4, n = days.length;
+  const tot = d => d.shop + d.wa + d.web + d.chefz;
+  const max = Math.max(1, ...days.map(tot));
+  const step = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
+  const ymax = Math.ceil(max / step) * step;
+  const y = v => top + (H - top - bottom) * (1 - v / ymax);
+  const bw = (W - left - right) / n, gap = Math.max(4, bw * .22);
+  let s = "";
+  for (let v = 0; v <= ymax; v += step) s += `<line x1="${left}" x2="${W - right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${W - right + 8}" y="${y(v) + fs * .35}" font-size="${fs * .85}" text-anchor="start">${fmt(v)}</text>`;
+  days.forEach((d, i) => {
+    const x = W - right - (i + 1) * bw + gap / 2, w = bw - gap; // RTL: oldest on the right
+    let acc = 0;
+    for (const [k, c] of [["shop","--c-shop"],["wa","--c-wa"],["web","--c-web"],["chefz","--c-chefz"]]) {
+      const v = d[k] || 0; if (!v) continue;
+      s += `<rect x="${x}" y="${y(acc + v)}" width="${w}" height="${y(acc) - y(acc + v)}" fill="var(${c})" rx="2"><title>${d.day} ${d.d}: ${fmt(v)}</title></rect>`;
+      acc += v;
+    }
+    const direct = d.shop + d.wa + d.web;
+    if (direct) s += `<text x="${x + w / 2}" y="${y(acc) - fs * .4}" font-size="${fs}" font-weight="600" text-anchor="middle" style="fill:var(--ink)">${fmt(direct)}</text>`;
+    s += `<text class="dn" x="${x + w / 2}" y="${H - bottom + fs * 1.3}" font-size="${fs}" text-anchor="middle">${d.day.replace("ال","")}</text><text x="${x + w / 2}" y="${H - bottom + fs * 2.6}" font-size="${fs * .85}" text-anchor="middle">${dmy(d.d)}</text>`;
+  });
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.innerHTML = s;
+}
+
+function render(x){
+  last = x;
+  $("dayname").textContent = new Date(x.today + "T12:00:00Z").toLocaleDateString("ar-SA-u-nu-latn",{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"});
+  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleTimeString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"});
+  const t = x.todayCard;
+  $("tOrders").textContent = fmt(t.orders);
+  $("tPriced").textContent = t.priced + " مسعّر";
+  $("tSales").innerHTML = fmt(t.sales) + "<small>ريال</small>";
+  $("tAvg").textContent = "متوسط الطلب " + (t.avg ? fmt1(t.avg) : "—");
+  $("tPrep").innerHTML = (t.prep == null ? "—" : t.prep) + "<small>دقيقة</small>";
+  $("tLate").textContent = x.lateNow;
+  $("lateTile").classList.toggle("on", x.lateNow > 0);
+  const w = x.week, p = x.prev;
+  $("wRange").textContent = "من الأحد " + dmy(w.from) + " إلى اليوم";
+  $("pRange").textContent = p.partial ? "الأسبوع الماضي ناقص (قبل بداية اللوحة)" : "مقابل نفس الأيام من الأسبوع الماضي";
+  $("wSales").textContent = fmt(w.sales); $("pSales").textContent = p.partial ? "" : "قبل: " + fmt(p.sales);
+  $("wOrders").textContent = fmt(w.orders); $("pOrders").textContent = p.partial ? "" : "قبل: " + fmt(p.orders);
+  $("wAvg").textContent = fmt1(w.avg); $("pAvg").textContent = p.partial ? "" : "قبل: " + fmt1(p.avg);
+  chg($("cSales"), w.sales, p.sales, p.partial); chg($("cOrders"), w.orders, p.orders, p.partial); chg($("cAvg"), w.avg, p.avg, p.partial);
+  draw(x.days14);
+}
+
+async function load(){
+  if (!code) { $("gate").hidden = false; return; }
+  try {
+    const r = await fetch("/api/dash/tv", { headers: { "x-dash-code": code }, cache: "no-store" });
+    if (r.status === 403 || r.status === 503) { const j = await r.json().catch(() => ({})); try { localStorage.removeItem(KEY); } catch {} code = ""; $("err").textContent = j.error || ""; $("gate").hidden = false; return; }
+    if (!r.ok) throw new Error(r.status);
+    $("gate").hidden = true;
+    render(await r.json());
+  } catch { $("upd").textContent = "ما قدرت أحدّث، أعيد المحاولة"; }
+}
+$("gf").addEventListener("submit", e => { e.preventDefault(); code = $("code").value.trim(); try { localStorage.setItem(KEY, code); } catch {} $("err").textContent = ""; load(); });
+addEventListener("resize", () => { if (last) draw(last.days14); });
+load(); setInterval(load, 5 * 60e3);
+</script>
+</body>
+</html>

@@ -260,3 +260,19 @@ t("2026-11-16 الملخص التنفيذي: سطر اليوم من كل الق�
   assert.equal(col("متوسط الطلب"), 30.5); // sales ÷ priced direct orders, apps without a price do not pull it down
   assert.equal(row.length, HEADERS.length - 1); // «أُعدّ في» is added when written
 });
+t("2026-11-17 /tv و/admin: جمع الأسبوع، الأسبوع الناقص، والرموز منفصلة", async () => {
+  const { sumDays, codeOk, weekStart } = await import("../dash.mjs");
+  const day = (d, sales, priced, keys) => ({ d, orders: priced, sales, priced, apps: 0, ch: { shop: 0, call: sales, wa: 0, web: 0, chefz: 0 }, fees: 0, cancelled: 0, cancelledValue: 0, returns: 0, waste: 0, preps: [10, 14], lateOut: 1, latePrep: 0, keys });
+  const s = sumDays([day("2026-11-08", 100, 2, [["A", "2026-11-01"]]), day("2026-11-09", 200, 3, [["B", "2026-11-09"], ["A", "2026-11-01"]]), day("2026-11-20", 999, 1, [])], "2026-11-08", "2026-11-14");
+  assert.equal(s.sales, 300); assert.equal(s.avg, 60); assert.equal(s.prep, 12); assert.equal(s.late, 2);
+  assert.equal(s.newCust, 1); assert.equal(s.retCust, 1); // a customer counted once per week
+  assert.equal(weekStart("2026-11-17"), "2026-11-15");
+  const old = [process.env.TV_CODE, process.env.OWNER_CODE];
+  process.env.TV_CODE = "1111"; process.env.OWNER_CODE = "2222";
+  assert.ok(codeOk("tv", "1111") && !codeOk("admin", "1111") && codeOk("admin", "2222") && !codeOk("tv", "2222"));
+  delete process.env.OWNER_CODE; process.env.SUPERVISOR_CODE = "2222";
+  assert.ok(!codeOk("admin", "2222"), "admin never falls back to the supervisor code");
+  [process.env.TV_CODE, process.env.OWNER_CODE] = old; if (old[0] === undefined) delete process.env.TV_CODE; if (old[1] === undefined) delete process.env.OWNER_CODE; delete process.env.SUPERVISOR_CODE;
+  const tv = fs.readFileSync(new URL("../src/tv.template.html", import.meta.url), "utf8");
+  for (const bad of ["رصيد", "أرباح", "عمولة", "phone", "wa_from"]) assert.ok(!tv.includes(bad), "TV page must not show " + bad);
+});

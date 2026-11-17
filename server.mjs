@@ -5,6 +5,7 @@
 import { dayStats } from "./daystats.mjs";
 import { audit } from "./audit.mjs";
 import { weekSales, ownerOk } from "./weeksales.mjs";
+import { codeOk, codeSet, tvData, adminData } from "./dash.mjs";
 import { migratePurchases, googleCaller, pendingPurchases, markSaved } from "./purchases.mjs";
 import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
 import { fixTotal, fixOpenTotals } from "./totals.mjs";
@@ -466,6 +467,16 @@ const server = http.createServer(async (req, res) => {
       return send(res, 405, { error: "method" });
     }
     // login
+    // /tv and /admin (المدير التنفيذي 2026-11-17): read-only screens, each behind its own code (env TV_CODE / OWNER_CODE)
+    if ((p === "/tv" || p === "/admin") && req.method === "GET") { res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", p.slice(1) + ".html"))); }
+    if ((p === "/api/dash/tv" || p === "/api/dash/admin") && req.method === "GET") {
+      const kind = p.endsWith("admin") ? "admin" : "tv";
+      if (!codeSet(kind)) return send(res, 503, { error: kind === "admin" ? "رمز الإدارة ما انضبط بعد (OWNER_CODE في Render)" : "رمز شاشة العرض ما انضبط بعد (TV_CODE في Render)" });
+      const bk = `dash:${kind}:` + clientIp(req), fails = buckets.get(bk);
+      if (fails && Date.now() - fails.t < 15 * 60e3 && fails.n >= 10) return send(res, 429, { error: "محاولات كثيرة، جرّب بعد شوي" });
+      if (!codeOk(kind, req.headers["x-dash-code"])) { limited(bk, 10, 15 * 60e3); console.log(`dash: wrong ${kind} code`); return send(res, 403, { error: "الرمز غير صحيح" }); } // only wrong codes count
+      return send(res, 200, kind === "admin" ? await adminData(pool) : await tvData(pool));
+    }
     if (p === "/login" && req.method === "GET") { res.writeHead(200, pageHeaders); return res.end(loginHtml()); }
     if (p === "/api/login" && req.method === "POST") {
       const ip = clientIp(req);
