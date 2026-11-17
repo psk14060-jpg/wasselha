@@ -98,7 +98,7 @@ const fmt = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
 const fmt1 = n => n == null ? "—" : Number(n).toFixed(1);
 let last = null;
 
-function tick(){ const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}); }
+function tick(){ const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}); }
 setInterval(tick, 1000); tick();
 
 function chg(el, now, before, partial){
@@ -137,8 +137,8 @@ function draw(days){
 
 function render(x){
   last = x;
-  $("dayname").textContent = new Date(x.today + "T12:00:00Z").toLocaleDateString("ar-SA-u-nu-latn",{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"});
-  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleTimeString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"});
+  $("dayname").textContent = new Date(x.today + "T12:00:00Z").toLocaleDateString("ar-SA-u-nu-latn-ca-gregory",{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"});
+  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleTimeString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"});
   const t = x.todayCard;
   $("tOrders").textContent = fmt(t.orders);
   $("tPriced").textContent = t.priced + " مسعّر";

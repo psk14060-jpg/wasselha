@@ -124,7 +124,7 @@ function chg(now, before, dir){
 }
 
 function render(x){
-  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short",timeZone:"Asia/Riyadh"});
+  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short",timeZone:"Asia/Riyadh"});
   const a = x.last, b = x.before;
   $("cmpNote").innerHTML = a && b ? `آخر أسبوع كامل (من ${rng(a.from, a.to)}) مقابل اللي قبله (من ${rng(b.from, b.to)}). الأخضر تحسّن والأحمر تراجع.`
     : a ? `أسبوع كامل واحد بس (من ${rng(a.from, a.to)})؛ المقارنة تبدأ لما يكتمل الأسبوع الثاني.` : "ما فيه أسبوع كامل للحين.";
@@ -151,6 +151,9 @@ async function load(){
   render(await r.json());
 }
 $("gf").addEventListener("submit", e => { e.preventDefault(); code = $("code").value.trim(); try { sessionStorage.setItem(KEY, code); } catch {} $("err").textContent = ""; load(); });
+// big screens (Hassan's TV, 2026-11-17: «كأنه مخصص لهاتف… الخطوط صغيرة»): the same layout scaled to fill the width
+function fit(){ const w = innerWidth, z = w > 1300 ? Math.min(2.6, (w - 40) / 1140) : 1; document.documentElement.style.zoom = z; }
+addEventListener("resize", fit); fit();
 load();
 </script>
 </body>
