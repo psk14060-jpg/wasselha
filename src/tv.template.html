@@ -55,24 +55,10 @@ header{align-items:center}
 #svg{width:100%;height:100%;min-height:0}
 #svg text{fill:var(--muted);font-family:var(--f-mono);direction:ltr}
 #svg .dn{fill:var(--ink);font-family:var(--f-body);direction:rtl}
-.gate{position:fixed;inset:0;background:var(--bg);display:grid;place-items:center;z-index:9}
-.gate form{display:grid;gap:14px;width:min(420px,90vw);font-size:18px}
-.gate input{font:inherit;font-family:var(--f-mono);font-size:28px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);text-align:center;letter-spacing:.3em}
-.gate button{font:inherit;padding:12px;border-radius:12px;border:0;background:var(--accent);color:#1a1205;font-weight:700}
-.gate .err{color:var(--late);min-height:1.4em}
 [hidden]{display:none!important}
 </style>
 </head>
 <body>
-<div class="gate" id="gate" hidden>
-  <form id="gf">
-    <img src="{{LOGO}}" alt="مينيقيش" style="height:110px;width:auto;justify-self:center;background:#fff;border-radius:14px;padding:8px 12px">
-    <label for="code">رمز شاشة العرض</label>
-    <input id="code" inputmode="numeric" autocomplete="off">
-    <button>دخول</button>
-    <div class="err" id="err" role="alert"></div>
-  </form>
-</div>
 
 <header>
   <h1 class="brand"><img class="logo" src="{{LOGO}}" alt="مينيقيش"></h1>
@@ -108,10 +94,8 @@ header{align-items:center}
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-const KEY = "mg_tv_code";
 const fmt = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
 const fmt1 = n => n == null ? "—" : Number(n).toFixed(1);
-let code = ""; try { code = localStorage.getItem(KEY) || ""; } catch {}
 let last = null;
 
 function tick(){ const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ar-SA-u-nu-latn",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}); }
@@ -174,16 +158,13 @@ function render(x){
 }
 
 async function load(){
-  if (!code) { $("gate").hidden = false; return; }
   try {
-    const r = await fetch("/api/dash/tv", { headers: { "x-dash-code": code }, cache: "no-store" });
-    if (r.status === 403 || r.status === 503) { const j = await r.json().catch(() => ({})); try { localStorage.removeItem(KEY); } catch {} code = ""; $("err").textContent = j.error || ""; $("gate").hidden = false; return; }
+    const r = await fetch("/api/dash/tv", { cache: "no-store", credentials: "same-origin" });
+    if (r.status === 401) { location.href = "/login?next=/tv"; return; }
     if (!r.ok) throw new Error(r.status);
-    $("gate").hidden = true;
     render(await r.json());
   } catch { $("upd").textContent = "ما قدرت أحدّث، أعيد المحاولة"; }
 }
-$("gf").addEventListener("submit", e => { e.preventDefault(); code = $("code").value.trim(); try { localStorage.setItem(KEY, code); } catch {} $("err").textContent = ""; load(); });
 addEventListener("resize", () => { if (last) draw(last.days14); });
 load(); setInterval(load, 5 * 60e3);
 </script>

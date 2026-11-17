@@ -1,6 +1,7 @@
 // /tv and /admin (المدير التنفيذي 2026-11-17): two read-only screens on the board server, each behind its own code.
 //   /tv    — TV / restaurant manager: today, this week vs the same days last week, 14 days by channel. No balance,
-//            profit, commissions or customer data. Code: env TV_CODE (Hassan sets it in Render).
+//            profit, commissions or customer data. No code of its own (Hassan 2026-11-17: he uses the TV himself):
+//            a device logged in to the board opens it, otherwise the board login once.
 //   /admin — Hassan only: full weekly card, all weeks, channels, apps, cancellations, waste, prep, lateness by stage,
 //            new/returning customers. Code: env OWNER_CODE only (never the supervisor code).
 // Definitions (fixed by the executive agent, do not change): sales = direct channels after returns, without delivery fees

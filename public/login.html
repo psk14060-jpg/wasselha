@@ -38,7 +38,7 @@ document.getElementById("f").addEventListener("submit",async e=>{
   const pin=document.getElementById("pin").value.replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).trim();
   try{
     const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pin})});
-    if(r.ok){location.href="/";return;}
+    if(r.ok){location.href=new URLSearchParams(location.search).get("next")==="/tv"?"/tv":"/";return;}
     err.textContent=r.status===429?"محاولات كثيرة. انتظر ربع ساعة ثم حاول.":"الرمز غير صحيح.";
   }catch(x){err.textContent="ما في اتصال بالإنترنت. حاول مرة ثانية.";}
 });

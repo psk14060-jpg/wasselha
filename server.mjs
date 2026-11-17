@@ -468,9 +468,15 @@ const server = http.createServer(async (req, res) => {
     }
     // login
     // /tv and /admin (المدير التنفيذي 2026-11-17): read-only screens, each behind its own code (env TV_CODE / OWNER_CODE)
-    if ((p === "/tv" || p === "/admin") && req.method === "GET") { res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", p.slice(1) + ".html"))); }
+    if ((p === "/tv" || p === "/admin") && req.method === "GET") {
+      // /tv needs no code of its own (Hassan 2026-11-17: «التلفزيون انا الي استخدمه»): a device logged in to the board opens it;
+      // otherwise the board login once (stays six months), then back to /tv. Never open to anyone with the link: it shows sales.
+      if (p === "/tv" && !isAuthed(req)) { res.writeHead(302, { Location: "/login?next=/tv" }); return res.end(); }
+      res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", p.slice(1) + ".html")));
+    }
     if ((p === "/api/dash/tv" || p === "/api/dash/admin") && req.method === "GET") {
       const kind = p.endsWith("admin") ? "admin" : "tv";
+      if (kind === "tv") { if (!isAuthed(req)) return send(res, 401, { error: "auth" }); return send(res, 200, await tvData(pool)); }
       if (!codeSet(kind)) return send(res, 503, { error: kind === "admin" ? "رمز الإدارة ما انضبط بعد (OWNER_CODE في Render)" : "رمز شاشة العرض ما انضبط بعد (TV_CODE في Render)" });
       const bk = `dash:${kind}:` + clientIp(req), fails = buckets.get(bk);
       if (fails && Date.now() - fails.t < 15 * 60e3 && fails.n >= 10) return send(res, 429, { error: "محاولات كثيرة، جرّب بعد شوي" });

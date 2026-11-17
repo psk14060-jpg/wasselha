@@ -275,4 +275,6 @@ t("2026-11-17 /tv و/admin: جمع الأسبوع، الأسبوع الناقص�
   [process.env.TV_CODE, process.env.OWNER_CODE] = old; if (old[0] === undefined) delete process.env.TV_CODE; if (old[1] === undefined) delete process.env.OWNER_CODE; delete process.env.SUPERVISOR_CODE;
   const tv = fs.readFileSync(new URL("../src/tv.template.html", import.meta.url), "utf8");
   for (const bad of ["رصيد", "أرباح", "عمولة", "phone", "wa_from"]) assert.ok(!tv.includes(bad), "TV page must not show " + bad);
+  const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(/p === "\/tv" && !isAuthed\(req\)/.test(srv) && /kind === "tv"\) \{ if \(!isAuthed\(req\)\)/.test(srv), "/tv is never open without the board login");
 });
