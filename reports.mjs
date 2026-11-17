@@ -96,7 +96,8 @@ async function weekFigures(pool, from, to, products) {
     cxReasons[why] = cxReasons[why] || { orders: 0, value: 0 }; cxReasons[why].orders++; cxReasons[why].value += food(o);
   }
   return {
-    orders: rows.length, sales: Math.round(sales), avgTicket: rows.length ? Math.round(sales / rows.length) : 0,
+    // average order = sales ÷ priced direct orders, as in «الملخص_التنفيذي» (app orders on the board carry no price)
+    orders: rows.length, sales: Math.round(sales), avgTicket: (n => n ? Math.round(sales / n) : 0)(rows.filter(o => !APPS.includes(o.source) && o.total != null).length),
     fees: Math.round(fees),
     returns: { count: rw.filter(x => x.kind === "return").length, total: Math.round(returnsTotal) },
     waste: { count: wasteRows.length, cost: Math.round(wasteRows.reduce((a, x) => a + Number(x.cost || 0), 0)),
