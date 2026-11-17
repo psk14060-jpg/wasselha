@@ -309,7 +309,14 @@ export function startSheetJob(pool, log = console.log) {
       // «الملخص_التنفيذي» from the first board day, once (Hassan 2026-11-16: executive agent)
       if (!(await getS(pool, "sheet_resync_v2"))) { // 2026-11-17: new columns in «الإلغاء والتأخير» and «الملخص_التنفيذي» for past days
         const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
-        for (const { d } of rows) { await syncDay(pool, d, log); await syncExec(pool, d, log); await new Promise(r => setTimeout(r, 5000)); } // stay under the Sheets per-minute quota
+        // resumable: a Sheets 429 (read quota per minute) on day 6 restarted from day 1 every run; done days are kept and skipped
+        const done = new Set((await getS(pool, "sheet_resync_v2_days")) || []);
+        for (const { d } of rows) {
+          if (done.has(d)) continue;
+          await syncDay(pool, d, log); await syncExec(pool, d, log);
+          done.add(d); await setS(pool, "sheet_resync_v2_days", [...done]);
+          await new Promise(r => setTimeout(r, 20000)); // stay under the Sheets per-minute read quota
+        }
         await setS(pool, "sheet_resync_v2", Date.now()); await setS(pool, "exec_backfill_v1", Date.now());
         log("sheet: resync v2 " + rows.length + " days");
         await note(T.notes, "طلبات المدير التنفيذي (2026-11-17): «الإلغاء والتأخير» فيه الحين ساعة الطلب ونوعه (توصيل/استلام) والقناة (الأعمدة G–I)؛ «الملخص_التنفيذي» فيه «طلبات مسعّرة» (المباشرة اللي لها سعر) و«طلبات التطبيقات»، ومتوسط الطلب صار المبيعات ÷ الطلبات المسعّرة؛ «المبيعات اليومية» فيها أصلًا عمود «الساعة» (وقت دخول الطلب). كل الأيام من 31 أكتوبر أُعيدت كتابتها.").catch(() => {});
