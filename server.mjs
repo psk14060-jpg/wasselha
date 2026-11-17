@@ -747,6 +747,12 @@ migrate().then(() => {
     }
     console.log("sets: " + JSON.stringify(tot));
   } catch (e) { console.log("sets: " + e.message); } }, 20e3); // one-off check (2026-11-09)
+  setTimeout(async () => { try { // one-off (2026-11-17): the direct order of 11-16 without a price (executive agent asked)
+    const { rows } = await pool.query(`SELECT num, source, type, status, total, delivery_fee, items, note, created FROM orders
+      WHERE op_day='2026-11-16' AND status IN ('new','prep','ready','out','done') AND total IS NULL`);
+    for (const o of rows) console.log(`o1116: #${o.num} ${o.source}/${o.type} ${o.status} fee=${o.delivery_fee} items=${String(o.items || "").replace(/\n/g, " | ").slice(0, 160)} note=${String(o.note || "").replace(/\n/g, " ").slice(0, 160)}`);
+    console.log("o1116: done " + rows.length);
+  } catch (e) { console.log("o1116: " + e.message); } }, 25e3);
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
