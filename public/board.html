@@ -391,12 +391,12 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <div class="grid">
       <div class="f full"><span>مصدر الطلب</span>
         <div class="seg" id="srcSeg" role="group" aria-label="مصدر الطلب">
-          <button type="button" data-v="call" aria-pressed="true">اتصال</button>
+          <button type="button" data-v="call" aria-pressed="false">اتصال</button>
           <button type="button" data-v="chefz" aria-pressed="false">ذا شيفز</button>
           <button type="button" data-v="shop" aria-pressed="false">المحل</button>
           <button type="button" data-v="hunger" aria-pressed="false">هنقر</button>
-          <button type="button" data-v="keeta" aria-pressed="false">كيتا</button>
-          <button type="button" data-v="ninja" aria-pressed="false">نينجا</button>
+          <button type="button" data-v="keeta" aria-pressed="false" hidden>كيتا</button>
+          <button type="button" data-v="ninja" aria-pressed="false" hidden>نينجا</button>
           <button type="button" data-v="wa" aria-pressed="false">واتساب</button>
         </div></div>
       <div class="f" id="typeWrap"><span>النوع</span>
@@ -1273,7 +1273,7 @@ function weekHtml(r){
   const cx=c.cancelled||{orders:0,value:0,reasons:{}},sb=c.subsidy||{orders:0,total:0};
   const tiles=[["المبيعات",fmtN(c.sales)+" ر",delta(c.sales,p.sales)],["الطلبات",fmtN(c.orders),delta(c.orders,p.orders)],["متوسط الطلب",fmtN(c.avgTicket)+" ر",delta(c.avgTicket,p.avgTicket)],
     ["عملاء جدد",fmtN(d.newCustomers),""],["عملاء رجعوا",fmtN(d.returning||0),""],["الملغى",fmtN(cx.orders),`<small>${fmtN(cx.value)} ر</small>`],
-    ["دعم التوصيل",fmtN(sb.total)+" ر",`<small>${sb.orders} طلب</small>`],["المرتجع",fmtN((c.returns||{}).total||0)+" ر",`<small>${(c.returns||{}).count||0}</small>`],["الهدر (تكلفة)",fmtN((c.waste||{}).cost||0)+" ر",`<small>${(c.waste||{}).count||0}</small>`],["حصة التطبيقات",c.appShare+"٪",""],["التأخير",c.late.pct==null?"—":c.late.pct+"٪",`<small>${c.late.late} من ${c.late.measured}</small>`]];
+["المرتجع",fmtN((c.returns||{}).total||0)+" ر",`<small>${(c.returns||{}).count||0}</small>`],["الهدر (تكلفة)",fmtN((c.waste||{}).cost||0)+" ر",`<small>${(c.waste||{}).count||0}</small>`],["حصة التطبيقات","غير متوفرة",`<small>مبيعات التطبيقات مو كلها في اللوحة</small>`],["التأخير",c.late.pct==null?"—":c.late.pct+"٪",`<small>${c.late.late} من ${c.late.measured}</small>`]];
   const wd=["الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"];
   const hl=h=>{const hh=+h;return ((hh%12)||12)+(hh<12?" ص":" م");},hs=Object.keys(c.byHour).sort((a,b)=>((+a+18)%24)-((+b+18)%24));
   const hours={},hSales={};hs.forEach(h=>{hours[hl(h)]=c.byHour[h];hSales[hl(h)]=(c.salesByHour||{})[h]||0;});
@@ -1477,7 +1477,10 @@ function openSheet(o){
   $("cancelOrderBtn").hidden=!o||o.status==="cancelled";
   $("delConfirm").hidden=true; $("formErr").hidden=true;
   setTextMode(!!o);
-  setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"call"); setSeg("typeSeg",o?o.type:"pick");
+  /* المدير التنفيذي 2026-11-17: no source picked in advance (shop orders were saved as «اتصال»); Keeta and Ninja are paused,
+     their buttons only show when editing one of their old orders */
+  setSeg("srcSeg",o?(o.source==="web"?"wa":o.source):"");
+  $("srcSeg").querySelectorAll('[data-v="keeta"],[data-v="ninja"]').forEach(b=>b.hidden=!(o&&o.source===b.dataset.v)); setSeg("typeSeg",o?o.type:"pick");
   {const k=o?opDayOf(o.due):dayKey(Math.min(S.dayOff,2));const n=daysFromToday(k);
    if(n===0||n===1)setSeg("daySeg",n);else{$("dueDate").value=k;setSeg("daySeg","x");}}
   if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
@@ -1552,6 +1555,7 @@ $("sheet").addEventListener("submit",async e=>{
     items=cart.map(l=>`${l.qty} × ${l.name} ${l.tag}${l.flavor?" ("+l.flavor+")":""}${app?"":` — ${l.price*l.qty} ريال`}`).join("\n");
     deliveryFee=del&&!app?areaFee():null; total=cart.length&&!app?subtotal()+(deliveryFee||0):null;
   }
+  if(!segVal("srcSeg")){err.textContent="اختر مصدر الطلب (المحل، اتصال، واتساب، أو التطبيق).";err.hidden=false;$("srcSeg").scrollIntoView({block:"center"});return;}
   if(!items){err.textContent=textMode()?"اكتب صنفًا واحدًا على الأقل.":"اضغط على صنف واحد على الأقل.";err.hidden=false;return;}
   if(!tm){err.textContent="اختر وقت التسليم.";err.hidden=false;$("slots").scrollIntoView({block:"nearest"});return;}
   if(del&&!areaName()){err.textContent="اختر حي التوصيل.";err.hidden=false;return;}
