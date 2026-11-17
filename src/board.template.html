@@ -48,6 +48,10 @@ body{margin:0;padding-top:env(safe-area-inset-top,0px)}
 .tile .minus{position:absolute;bottom:6px;inset-inline-end:6px;width:32px;height:32px;border-radius:8px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:18px;line-height:1}
 .cart{display:grid;gap:6px;background:var(--surface-2);border-radius:12px;padding:10px}
 .cline{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}
+.addons{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;padding:8px 10px;border-radius:12px;background:#FFF3E6;border:1px dashed #F07C21;font-size:14px;font-weight:600;color:#8a4a12}
+.addons button{border:1px solid #F07C21;background:#fff;color:#8a4a12;border-radius:999px;padding:5px 12px;font-weight:600;min-height:34px}
+#heardSeg,#paySeg{flex-wrap:wrap}
+.byf input{max-width:260px}
 .cline .q{font:600 14px var(--f-mono);min-width:28px}
 .cline .nm{font-weight:600}
 .cline .pr{margin-inline-start:auto;font:600 13px var(--f-mono);color:var(--muted)}
@@ -166,6 +170,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
       <div class="qhead"><h4>الأصناف</h4><span class="qhint" id="menuSrc"></span></div>
       <div class="tiles" id="tiles"><div class="empty">جارٍ تحميل المنيو…</div></div>
       <div class="cart" id="cart" hidden></div>
+      <div class="addons" id="addons" hidden><span>🥤 ذكّر العميل بالإضافات:</span><span id="addonBtns"></span></div>
     </section>
 
     <label class="f full" id="appRefWrap" hidden><span>رقم طلب التطبيق</span><input type="text" id="appRef" class="mono" inputmode="numeric" autocomplete="off" placeholder="مثل 300358933"></label>
@@ -195,6 +200,28 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
       <label class="f"><span>الاسم (اختياري)</span><input type="text" id="name" autocomplete="off"></label>
       <label class="f full"><span>ملاحظة للمطبخ</span><input type="text" id="note" autocomplete="off" placeholder="مثل: بدون زيتون، بيتزا رانش"></label>
     </div>
+
+    <div class="grid" id="directWrap">
+      <div class="f full"><span>طريقة الدفع</span>
+        <div class="seg" id="paySeg" role="group" aria-label="طريقة الدفع">
+          <button type="button" data-v="cash" aria-pressed="false">كاش</button>
+          <button type="button" data-v="card" aria-pressed="false">شبكة</button>
+          <button type="button" data-v="transfer" aria-pressed="false">تحويل</button>
+          <button type="button" data-v="" aria-pressed="true">بعدين</button>
+        </div></div>
+      <div class="f full"><span>من وين عرفتنا؟ <small>(اسأل العميل الجديد)</small></span>
+        <div class="seg wrap" id="heardSeg" role="group" aria-label="من وين عرفتنا">
+          <button type="button" data-v="تيك توك" aria-pressed="false">تيك توك</button>
+          <button type="button" data-v="سناب" aria-pressed="false">سناب</button>
+          <button type="button" data-v="إنستقرام" aria-pressed="false">إنستقرام</button>
+          <button type="button" data-v="قوقل ماب" aria-pressed="false">قوقل ماب</button>
+          <button type="button" data-v="صديق أو قريب" aria-pressed="false">صديق أو قريب</button>
+          <button type="button" data-v="شاف المحل" aria-pressed="false">شاف المحل</button>
+          <button type="button" data-v="عميل سابق" aria-pressed="false">عميل سابق</button>
+          <button type="button" data-v="" aria-pressed="true">ما سألت</button>
+        </div></div>
+    </div>
+    <label class="f full byf"><span>اسم مدخل الطلب</span><input type="text" id="enteredBy" autocomplete="off" placeholder="اسمك (ينحفظ على هذا الجهاز)"></label>
 
     <div class="textmode" id="textMode" hidden>
       <label class="f full"><span>الأصناف (سطر لكل صنف)</span><textarea id="items" rows="4" placeholder="2 × فطائر مثلثة 20 قطعة"></textarea></label>
@@ -762,11 +789,11 @@ async function sendGift(o,b){
 /* ---------- sheet ---------- */
 function segVal(id){const b=$(id).querySelector('[aria-pressed="true"]');return b&&b.dataset.v;}
 function setSeg(id,v){$(id).querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.v===String(v))));
-  if(id==="srcSeg"){const app=isApp(v);$("appRefWrap").hidden=!app;$("typeWrap").hidden=app;if(app){setSeg("typeSeg","pick");if(!$("dueTime").value&&!S.editing)setAsap();}if(typeof renderCart==="function"&&MENU)renderCart();}
+  if(id==="srcSeg"){const app=isApp(v);$("appRefWrap").hidden=!app;$("typeWrap").hidden=app;$("directWrap").hidden=app;if(app){setSeg("typeSeg","pick");if(!$("dueTime").value&&!S.editing)setAsap();}if(typeof renderCart==="function"&&MENU)renderCart();}
   if(id==="typeSeg"){$("areaWrap").hidden=v!=="del";renderSlots();renderSum();}
   if(id==="daySeg"){const x=String(v)==="x";$("dueDate").hidden=!x;$("dueDate").min=dayKey(2);$("dueDate").max=dayKey(60);if(x&&!$("dueDate").value)$("dueDate").value=dayKey(2);}
   if(id==="daySeg"){renderSlots();try{renderSum();}catch(e){}}}
-["srcSeg","typeSeg","daySeg"].forEach(id=>$(id).addEventListener("click",e=>{const b=e.target.closest("button");if(b)setSeg(id,b.dataset.v);}));
+["srcSeg","typeSeg","daySeg","paySeg","heardSeg"].forEach(id=>$(id).addEventListener("click",e=>{const b=e.target.closest("button");if(b)setSeg(id,b.dataset.v);}));
 
 /* menu from the website (prices and areas live there) */
 let MENU=null;
@@ -838,8 +865,15 @@ function renderCart(){
   box.innerHTML=cart.map((l,i)=>{const p=MENU&&MENU.products.find(x=>x.id===l.pid);const fl=(p&&p.flavors)||[];
     return `<div class="cline"><span class="q">${l.qty} ×</span><span class="nm">${esc(l.name)} ${esc(l.tag)}${l.flavor?" ("+esc(l.flavor)+")":""}</span>${isApp(segVal("srcSeg"))?"":`<span class="pr">${l.price*l.qty} ر</span>`}
       ${fl.length?`<div class="flv">${fl.map(f=>`<button type="button" data-fi="${i}" data-flv="${esc(f)}" aria-pressed="${l.flavor===f}">${esc(f)}</button>`).join("")}${l.qty>1&&!l.flavor?`<small>اضغط الحشوة لكل بوكس</small>`:""}</div>`:""}</div>`;}).join("");
-  renderSum();
+  renderSum(); renderAddons();
 }
+/* المدير التنفيذي 2026-11-17: a reminder line when the order has no add-on (drink or water); one tap adds it */
+const ADDON=/مشروب|ماء|مياه|عصير|صوص/;
+function renderAddons(){const box=$("addons");const app=isApp(segVal("srcSeg"));
+  const list=MENU?MENU.products.filter(p=>ADDON.test(p.name)):[];
+  box.hidden=app||textMode()||!cart.length||!list.length||cart.some(l=>ADDON.test(l.name));
+  $("addonBtns").innerHTML=list.map(p=>`<button type="button" data-addon="${esc(p.id)}">+ ${esc(p.name)} <small>${p.variants[0].price} ر</small></button>`).join("");}
+$("addons").addEventListener("click",e=>{const b=e.target.closest("[data-addon]");if(!b)return;const p=MENU.products.find(x=>x.id===b.dataset.addon);if(p)addItem(p,p.variants[0]);});
 $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(b){e.stopPropagation();setFlavor(+b.dataset.fi,b.dataset.flv);}});
 
 /* time slots every 30 minutes, like the website */
@@ -900,6 +934,8 @@ function openSheet(o){
    if(n===0||n===1)setSeg("daySeg",n);else{$("dueDate").value=k;setSeg("daySeg","x");}}
   if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
   $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":""; $("appRef").value=o?o.appRef||"":"";
+  setSeg("paySeg",o&&o.pay&&o.pay!=="app"?o.pay:""); setSeg("heardSeg",o&&o.heard?o.heard:"");
+  {let n="";try{n=localStorage.getItem("mg-by")||"";}catch(x){}$("enteredBy").value=o?o.enteredBy||n:n;}
   $("areaSel").value=""; $("area").hidden=true; $("area").value="";
   if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=a;}}
   {const m=String(o&&o.area||"").match(/توصيل\s*([\d.]+)\s*ر/);feeShown=o?(o.deliveryFee!=null?+o.deliveryFee:m?+m[1]:0):0;$("feeIn").value=feeShown?String(feeShown):"";}
@@ -977,6 +1013,8 @@ $("sheet").addEventListener("submit",async e=>{
   const area=del?areaName()+(deliveryFee?` (توصيل ${deliveryFee} ر)`:""):"";
   const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),area,items,total,note:$("note").value.trim(),due};
   if(deliveryFee!=null)data.deliveryFee=deliveryFee;
+  if(!isApp(segVal("srcSeg"))){data.pay=segVal("paySeg")||null;data.heard=segVal("heardSeg")||null;}
+  {const by=$("enteredBy").value.trim();if(by){try{localStorage.setItem("mg-by",by);}catch(x){}if(!S.editing||!S.editing.enteredBy)data.enteredBy=by;}}
   if(isApp(segVal("srcSeg"))){data.appRef=normDigits($("appRef").value).trim();data.type="pick";data.area="";}
   const btn=$("saveBtn"); btn.disabled=true;
   try{
