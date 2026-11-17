@@ -6,144 +6,163 @@
 <meta name="robots" content="noindex">
 <title>مينيقيش · شاشة العرض</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&family=Lalezar&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&family=Lalezar&display=swap">
 <style>
+/* Mini Geesh identity, same family as /admin. Designed at 1280×720 and scaled to the screen (no scroll, no buttons). */
 :root{
-  --bg:#101416; --surface:#1a2023; --surface-2:#151a1d; --ink:#eef1f2; --muted:#93a0a7; --line:#2b3438;
-  --accent:#e2a43c; --accent-soft:#3a2d16; --ok:#5fc48c; --late:#f06b5d; --late-soft:#3c1915;
-  --c-shop:#e2a43c; --c-wa:#55c895; --c-web:#8aa2ec; --c-chefz:#5a676e;
+  --bg:#f3f1ea; --surface:#ffffff; --surface-2:#f8f7f2; --ink:#1f2414; --muted:#6b7160; --line:#e3e0d5;
+  --olive:#5c6e30; --olive-ink:#4a5926; --olive-soft:#e7ecda; --orange:#f07c21; --orange-soft:#fde8d6;
+  --good:#2f7d4a; --good-soft:#dff0e4; --bad:#c2402f; --bad-soft:#fbe1dc; --flat:#7b8070;
+  --c-shop:#5c6e30; --c-wa:#f07c21; --c-web:#a9b97a; --c-chefz:#cfcabb;
+  --shadow:0 1px 0 rgba(31,36,20,.04),0 10px 30px -18px rgba(31,36,20,.35);
   --f-body:"IBM Plex Sans Arabic",system-ui,sans-serif; --f-display:"Lalezar","IBM Plex Sans Arabic",sans-serif; --f-mono:"IBM Plex Mono",ui-monospace,monospace;
 }
 *{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);overflow:hidden;
-  font-size:clamp(14px,1.25vw,28px);padding:2.2vh 2.4vw;display:grid;grid-template-rows:auto auto auto 1fr;gap:2vh}
+html,body{margin:0;height:100%;background:var(--bg);overflow:hidden}
+body{color:var(--ink);font-family:var(--f-body)}
+#stage{width:1280px;height:720px;padding:18px 22px;display:grid;grid-template-rows:auto auto auto 1fr;gap:12px;transform-origin:top right;position:absolute;top:0;right:0}
 .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
-header{display:flex;align-items:baseline;gap:1.2em}
-.brand{font-family:var(--f-display);font-size:2.6em;line-height:1;font-weight:400;margin:0;color:var(--accent)}
-header .brand .logo{height:2.1em;width:auto;display:block;background:#fff;border-radius:.3em;padding:.12em .3em}
-header{align-items:center}
-.sub{color:var(--muted);font-size:1.05em}
-.clock{margin-inline-start:auto;font-family:var(--f-mono);font-size:2.2em;font-weight:600}
-.upd{color:var(--muted);font-size:.85em}
-.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1.4vw}
-.tile{background:var(--surface);border:1px solid var(--line);border-radius:1vw;padding:2vh 1.4vw}
-.tile .k{color:var(--muted);font-size:1.15em;font-weight:500}
-.tile .v{font-family:var(--f-mono);font-weight:600;font-size:4.2em;line-height:1.1;direction:ltr;text-align:right;font-variant-numeric:tabular-nums}
-.tile .v small{font-size:.35em;color:var(--muted);font-family:var(--f-body);font-weight:500;margin-inline-start:.3em}
-.tile .s{color:var(--muted);font-size:.95em}
-.tile.late .v{color:var(--ok)}
-.tile.late.on{background:var(--late-soft);border-color:var(--late)}
-.tile.late.on .v{color:var(--late)}
-.week{display:grid;grid-template-columns:auto repeat(3,1fr);gap:1.4vw;align-items:stretch}
-.week .lbl{background:var(--surface-2);border:1px solid var(--line);border-radius:1vw;padding:1.6vh 1.2vw;display:flex;flex-direction:column;justify-content:center;min-width:12em}
-.week .lbl b{font-size:1.3em}
-.week .lbl span{color:var(--muted);font-size:.9em}
-.cmp{background:var(--surface);border:1px solid var(--line);border-radius:1vw;padding:1.6vh 1.4vw;display:grid;grid-template-columns:1fr auto;align-items:end;gap:.2em 1em}
-.cmp .k{grid-column:1/-1;color:var(--muted);font-size:1.05em}
-.cmp .v{font-family:var(--f-mono);font-weight:600;font-size:2.6em;line-height:1.1;direction:ltr;text-align:right}
-.cmp .p{color:var(--muted);font-size:.95em}
-.chg{font-family:var(--f-mono);font-weight:600;font-size:1.4em;direction:ltr;padding:.1em .45em;border-radius:.4em}
-.chg.up{color:var(--ok);background:#173226}
-.chg.down{color:var(--late);background:var(--late-soft)}
-.chg.flat{color:var(--muted)}
-.chart{background:var(--surface);border:1px solid var(--line);border-radius:1vw;padding:1.6vh 1.4vw;display:grid;grid-template-rows:auto 1fr;min-height:0}
-.chart h2{margin:0 0 1vh;font-size:1.25em;font-weight:500;color:var(--muted);display:flex;gap:1.4em;align-items:center;flex-wrap:wrap}
-.chart h2 b{color:var(--ink);font-weight:700;margin-inline-end:auto}
-.lg{display:inline-flex;align-items:center;gap:.4em;font-size:.85em}
-.lg i{width:.9em;height:.9em;border-radius:.2em;display:inline-block}
-#svg{width:100%;height:100%;min-height:0}
-#svg text{fill:var(--muted);font-family:var(--f-mono);direction:ltr}
-#svg .dn{fill:var(--ink);font-family:var(--f-body);direction:rtl}
-[hidden]{display:none!important}
+
+.top{background:var(--olive);color:#fff;border-radius:16px;padding:10px 16px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow)}
+.top .logo{height:44px;width:auto;background:#fff;border-radius:10px;padding:3px 7px;display:block}
+.top h1{margin:0;font-family:var(--f-display);font-weight:400;font-size:26px;line-height:1}
+.top .day{font-size:15px;color:rgba(255,255,255,.85)}
+.top .clock{margin-inline-start:auto;font-family:var(--f-mono);font-weight:700;font-size:34px;line-height:1;direction:ltr}
+.top .upd{font-size:12px;color:rgba(255,255,255,.75);background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:999px;padding:4px 10px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:12px 16px;box-shadow:var(--shadow);min-width:0}
+.k{color:var(--muted);font-size:14px;font-weight:500}
+.today{display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:12px}
+.kpi{display:grid;gap:2px;align-content:start}
+.kpi .v{font-family:var(--f-mono);font-weight:700;font-size:58px;line-height:1.05;direction:ltr;text-align:right;letter-spacing:-1px}
+.kpi .v small{font-family:var(--f-body);font-size:16px;color:var(--muted);font-weight:500;margin-inline-start:6px;letter-spacing:0}
+.kpi .s{font-size:13px;color:var(--muted)}
+.kpi.hero{background:linear-gradient(160deg,var(--olive) 0%,var(--olive-ink) 100%);border-color:transparent;color:#fff}
+.kpi.hero .k,.kpi.hero .s,.kpi.hero .v small{color:rgba(255,255,255,.8)}
+.kpi.late.on{background:var(--bad-soft);border-color:var(--bad)}
+.kpi.late.on .v{color:var(--bad)}
+.kpi.late .v{color:var(--good)}
+
+.week{display:grid;grid-template-columns:200px repeat(3,1fr);gap:12px}
+.week .lbl{background:var(--olive-soft);border-radius:16px;padding:12px 16px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.week .lbl b{font-size:18px;color:var(--olive-ink)}
+.week .lbl span{font-size:12.5px;color:var(--muted)}
+.cmp{display:grid;grid-template-columns:1fr auto;align-items:end;gap:0 10px}
+.cmp .k{grid-column:1/-1}
+.cmp .v{font-family:var(--f-mono);font-weight:700;font-size:36px;line-height:1.1;direction:ltr;text-align:right}
+.cmp .p{font-size:13px;color:var(--muted)}
+.chg{font-family:var(--f-mono);font-weight:700;font-size:15px;direction:ltr;padding:3px 10px;border-radius:9px;white-space:nowrap;align-self:center}
+.chg.good{color:var(--good);background:var(--good-soft)} .chg.bad{color:var(--bad);background:var(--bad-soft)} .chg.flat{color:var(--flat);background:var(--surface-2)}
+
+.chart{display:grid;grid-template-rows:auto 1fr;min-height:0}
+.chart .hd{display:flex;align-items:center;gap:16px;margin-bottom:4px}
+.chart .hd b{font-size:16px;display:flex;align-items:center;gap:8px;margin-inline-end:auto}
+.chart .hd b::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--orange)}
+.lg{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.lg i{width:11px;height:11px;border-radius:3px;display:inline-block}
+#svg{width:100%;height:100%;display:block}
+#svg{direction:ltr}
+#svg .ax{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
+#svg .tot{fill:var(--ink);font-family:var(--f-mono);font-size:13px;font-weight:700}
+#svg .dn{fill:var(--ink);font-family:var(--f-body);font-size:12.5px;font-weight:600}
+#svg .dd{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
 </style>
 </head>
 <body>
+<div id="stage">
+  <header class="top">
+    <img class="logo" src="{{LOGO}}" alt="مينيقيش">
+    <h1>شاشة العرض</h1>
+    <span class="day" id="dayname"></span>
+    <span class="clock" id="clock"></span>
+    <span class="upd" id="upd"></span>
+  </header>
 
-<header>
-  <h1 class="brand"><img class="logo" src="{{LOGO}}" alt="مينيقيش"></h1>
-  <span class="sub" id="dayname"></span>
-  <span class="clock num" id="clock"></span>
-  <span class="upd" id="upd"></span>
-</header>
+  <section class="today" aria-label="اليوم">
+    <div class="card kpi hero"><div class="k">المبيعات المباشرة اليوم</div><div class="v" id="tSales">—<small>ريال</small></div><div class="s" id="tAvg"></div></div>
+    <div class="card kpi"><div class="k">طلبات اليوم</div><div class="v" id="tOrders">—</div><div class="s" id="tPriced"></div></div>
+    <div class="card kpi"><div class="k">متوسط التحضير</div><div class="v" id="tPrep">—<small>دقيقة</small></div><div class="s">من «تحضير» إلى «جاهز»</div></div>
+    <div class="card kpi late" id="lateTile"><div class="k">متأخرة الحين</div><div class="v" id="tLate">—</div><div class="s">عدّى وقت تجهيزها أو خروجها</div></div>
+  </section>
 
-<section class="tiles" aria-label="اليوم">
-  <div class="tile"><div class="k">طلبات اليوم</div><div class="v" id="tOrders">—</div><div class="s" id="tPriced"></div></div>
-  <div class="tile"><div class="k">المبيعات المباشرة</div><div class="v" id="tSales">—<small>ريال</small></div><div class="s" id="tAvg"></div></div>
-  <div class="tile"><div class="k">متوسط التحضير</div><div class="v" id="tPrep">—<small>دقيقة</small></div><div class="s">من «تحضير» إلى «جاهز»</div></div>
-  <div class="tile late" id="lateTile"><div class="k">متأخرة الحين</div><div class="v" id="tLate">—</div><div class="s" id="tLateS">طلبات عدّى وقت تجهيزها أو خروجها</div></div>
-</section>
+  <section class="week" aria-label="الأسبوع">
+    <div class="lbl"><b>هذا الأسبوع</b><span id="wRange"></span><span id="pRange"></span></div>
+    <div class="card cmp"><div class="k">المبيعات المباشرة</div><div class="v" id="wSales">—</div><span class="chg" id="cSales"></span><div class="p" id="pSales"></div></div>
+    <div class="card cmp"><div class="k">الطلبات</div><div class="v" id="wOrders">—</div><span class="chg" id="cOrders"></span><div class="p" id="pOrders"></div></div>
+    <div class="card cmp"><div class="k">متوسط الطلب</div><div class="v" id="wAvg">—</div><span class="chg" id="cAvg"></span><div class="p" id="pAvg"></div></div>
+  </section>
 
-<section class="week" aria-label="الأسبوع">
-  <div class="lbl"><b>هذا الأسبوع</b><span id="wRange"></span><span id="pRange"></span></div>
-  <div class="cmp"><div class="k">المبيعات المباشرة</div><div class="v" id="wSales">—</div><div class="chg" id="cSales"></div><div class="p" id="pSales"></div></div>
-  <div class="cmp"><div class="k">الطلبات</div><div class="v" id="wOrders">—</div><div class="chg" id="cOrders"></div><div class="p" id="pOrders"></div></div>
-  <div class="cmp"><div class="k">متوسط الطلب</div><div class="v" id="wAvg">—</div><div class="chg" id="cAvg"></div><div class="p" id="pAvg"></div></div>
-</section>
-
-<section class="chart">
-  <h2><b>آخر 14 يوم حسب القناة</b>
-    <span class="lg"><i style="background:var(--c-shop)"></i>المحل والاتصال</span>
-    <span class="lg"><i style="background:var(--c-wa)"></i>واتساب</span>
-    <span class="lg"><i style="background:var(--c-web)"></i>الموقع</span>
-    <span class="lg"><i style="background:var(--c-chefz)"></i>ذا شفز (خارج المبيعات)</span>
-  </h2>
-  <svg id="svg" role="img" aria-label="رسم المبيعات اليومية لآخر 14 يوم"></svg>
-</section>
+  <section class="card chart">
+    <div class="hd"><b>آخر 14 يوم حسب القناة</b>
+      <span class="lg"><i style="background:var(--c-shop)"></i>المحل والاتصال</span>
+      <span class="lg"><i style="background:var(--c-wa)"></i>واتساب</span>
+      <span class="lg"><i style="background:var(--c-web)"></i>الموقع</span>
+      <span class="lg"><i style="background:var(--c-chefz)"></i>ذا شفز (خارج المبيعات)</span>
+    </div>
+    <svg id="svg" role="img" aria-label="رسم المبيعات اليومية لآخر 14 يوم حسب القناة"></svg>
+  </section>
+</div>
 
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
 const fmt = n => n == null ? "—" : Math.round(n).toLocaleString("en-US");
 const fmt1 = n => n == null ? "—" : Number(n).toFixed(1);
+const dmy = d => d.slice(8,10) + "/" + d.slice(5,7);
+const LOC = "ar-SA-u-nu-latn-ca-gregory";
 let last = null;
 
-function tick(){ const d = new Date(); $("clock").textContent = d.toLocaleTimeString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}); }
+function fit(){ const s = $("stage"), z = Math.min(innerWidth / 1280, innerHeight / 720); s.style.transform = `scale(${z})`; s.style.right = ((innerWidth - 1280 * z) / 2) + "px"; s.style.top = ((innerHeight - 720 * z) / 2) + "px"; }
+addEventListener("resize", () => { fit(); if (last) draw(last.days14); }); fit();
+
+function tick(){ $("clock").textContent = new Date().toLocaleTimeString(LOC, { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Riyadh" }); }
 setInterval(tick, 1000); tick();
 
 function chg(el, now, before, partial){
-  if (partial || !before) { el.textContent = ""; el.className = "chg flat"; return; }
+  if (partial || !before) { el.textContent = ""; el.className = "chg"; el.style.visibility = "hidden"; return; }
+  el.style.visibility = "";
   const p = (now - before) / before * 100;
   el.textContent = (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p).toFixed(0) + "%";
-  el.className = "chg " + (p > 1 ? "up" : p < -1 ? "down" : "flat");
+  el.className = "chg " + (p > 1 ? "good" : p < -1 ? "bad" : "flat");
 }
-const dmy = d => d.slice(8,10) + "/" + d.slice(5,7);
 
 function draw(days){
-  const svg = $("svg"), W = svg.clientWidth || 1200, H = svg.clientHeight || 300;
-  const fs = Math.max(12, Math.round(H / 24)), top = fs * 1.8, bottom = fs * 3.2, left = 8, right = fs * 4, n = days.length;
+  const svg = $("svg"), W = svg.clientWidth || 1200, H = svg.clientHeight || 260;
+  const top = 22, bottom = 38, left = 6, right = 56, n = days.length;
   const tot = d => d.shop + d.wa + d.web + d.chefz;
   const max = Math.max(1, ...days.map(tot));
-  const step = Math.pow(10, Math.floor(Math.log10(max))) * (max / Math.pow(10, Math.floor(Math.log10(max))) > 5 ? 2 : 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(max))), step = mag * (max / mag > 5 ? 2 : max / mag > 2 ? 1 : .5);
   const ymax = Math.ceil(max / step) * step;
   const y = v => top + (H - top - bottom) * (1 - v / ymax);
-  const bw = (W - left - right) / n, gap = Math.max(4, bw * .22);
+  const bw = (W - left - right) / n, gap = Math.max(6, bw * .26);
   let s = "";
-  for (let v = 0; v <= ymax; v += step) s += `<line x1="${left}" x2="${W - right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${W - right + 8}" y="${y(v) + fs * .35}" font-size="${fs * .85}" text-anchor="start">${fmt(v)}</text>`;
+  for (let v = 0; v <= ymax + 1e-9; v += step) s += `<line x1="${left}" x2="${W - right}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text class="ax" x="${W - right + 8}" y="${y(v) + 4}" text-anchor="start">${fmt(v)}</text>`;
   days.forEach((d, i) => {
     const x = W - right - (i + 1) * bw + gap / 2, w = bw - gap; // RTL: oldest on the right
+    const isToday = i === n - 1;
     let acc = 0;
     for (const [k, c] of [["shop","--c-shop"],["wa","--c-wa"],["web","--c-web"],["chefz","--c-chefz"]]) {
       const v = d[k] || 0; if (!v) continue;
-      s += `<rect x="${x}" y="${y(acc + v)}" width="${w}" height="${y(acc) - y(acc + v)}" fill="var(${c})" rx="2"><title>${d.day} ${d.d}: ${fmt(v)}</title></rect>`;
+      s += `<rect x="${x}" y="${y(acc + v)}" width="${w}" height="${Math.max(0, y(acc) - y(acc + v))}" fill="var(${c})" opacity="${isToday ? .55 : 1}"/>`;
       acc += v;
     }
+    if (acc) s += `<rect x="${x}" y="${y(acc)}" width="${w}" height="${y(0) - y(acc)}" fill="none" rx="4"/>`;
     const direct = d.shop + d.wa + d.web;
-    if (direct) s += `<text x="${x + w / 2}" y="${y(acc) - fs * .4}" font-size="${fs}" font-weight="600" text-anchor="middle" style="fill:var(--ink)">${fmt(direct)}</text>`;
-    s += `<text class="dn" x="${x + w / 2}" y="${H - bottom + fs * 1.3}" font-size="${fs}" text-anchor="middle">${d.day.replace("ال","")}</text><text x="${x + w / 2}" y="${H - bottom + fs * 2.6}" font-size="${fs * .85}" text-anchor="middle">${dmy(d.d)}</text>`;
+    if (direct) s += `<text class="tot" x="${x + w / 2}" y="${y(acc) - 6}" text-anchor="middle">${fmt(direct)}</text>`;
+    s += `<text class="dn" x="${x + w / 2}" y="${H - bottom + 16}" text-anchor="middle">${isToday ? "اليوم" : d.day.replace("ال", "")}</text><text class="dd" x="${x + w / 2}" y="${H - bottom + 31}" text-anchor="middle">${dmy(d.d)}</text>`;
   });
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.innerHTML = s;
 }
 
 function render(x){
   last = x;
-  $("dayname").textContent = new Date(x.today + "T12:00:00Z").toLocaleDateString("ar-SA-u-nu-latn-ca-gregory",{weekday:"long",day:"numeric",month:"long",timeZone:"UTC"});
-  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleTimeString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"});
+  $("dayname").textContent = new Date(x.today + "T12:00:00Z").toLocaleDateString(LOC, { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+  $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleTimeString(LOC, { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Riyadh" });
   const t = x.todayCard;
-  $("tOrders").textContent = fmt(t.orders);
-  $("tPriced").textContent = t.priced + " مسعّر";
   $("tSales").innerHTML = fmt(t.sales) + "<small>ريال</small>";
   $("tAvg").textContent = "متوسط الطلب " + (t.avg ? fmt1(t.avg) : "—");
+  $("tOrders").textContent = fmt(t.orders);
+  $("tPriced").textContent = t.priced + " طلب مسعّر";
   $("tPrep").innerHTML = (t.prep == null ? "—" : t.prep) + "<small>دقيقة</small>";
   $("tLate").textContent = x.lateNow;
   $("lateTile").classList.toggle("on", x.lateNow > 0);
@@ -165,7 +184,6 @@ async function load(){
     render(await r.json());
   } catch { $("upd").textContent = "ما قدرت أحدّث، أعيد المحاولة"; }
 }
-addEventListener("resize", () => { if (last) draw(last.days14); });
 load(); setInterval(load, 5 * 60e3);
 </script>
 </body>
