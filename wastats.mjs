@@ -8,7 +8,11 @@ import { api, append, read, resetSheetIds, deleteDate } from "./sheets.mjs";
 import { courierKeys } from "./courier.mjs";
 
 export const TAB = "محادثات_واتساب";
-export const HEADERS = ["التاريخ", "اليوم", "محادثات العملاء", "صارت طلب", "نسبة التحويل", "متوسط أول رد (دقيقة)", "وسيط أول رد (دقيقة)", "محادثات بلا رد", "أُعدّ في"];
+export const HEADERS = ["التاريخ", "اليوم", "محادثات العملاء", "صارت طلب", "نسبة التحويل", "متوسط أول رد (دقيقة)", "وسيط أول رد (دقيقة)", "محادثات بلا رد", "أُعدّ في", "ضاعت مبيعة (حالات)"];
+// «ضاعت_مبيعة» (المدير التنفيذي 2026-11-17): chats that ended without an order and why, as the nightly taste analysis
+// (prefs.mjs, the day after) recorded them. Customer as last 4 digits only.
+export const LOST_TAB = "ضاعت_مبيعة";
+export const LOST_HEADERS = ["التاريخ", "الصنف", "المكوّن", "السبب", "كلام العميل", "العميل (آخر 4)", "أُعدّ في"];
 const DAYS = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const LIVE = ["new", "prep", "ready", "out", "done"];
 const k9 = s => String(s || "").replace(/\D/g, "").slice(-9);
@@ -50,13 +54,31 @@ export async function syncWa(pool, day, log = console.log) {
   const msgs = (await pool.query("SELECT wa_from, dir, at FROM wa_messages WHERE at >= $1 AND at < $2", [from, to + 12 * 3600e3])).rows.map(m => ({ ...m, at: Number(m.at) }));
   const orders = (await pool.query("SELECT wa_from, phone, status, created FROM orders WHERE created >= $1 AND created < $2", [from, to])).rows;
   const row = waRow(day, { msgs, orders, exclude: await exclusions(pool) });
-  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC");
-  const tabs = ((await api("GET", "?fields=sheets.properties")).sheets || []).map(s => s.properties.title);
-  if (!tabs.includes(TAB)) { await api("POST", ":batchUpdate", { requests: [{ addSheet: { properties: { title: TAB, rightToLeft: true } } }] }); resetSheetIds(); }
-  const h = await read(TAB, "A1:Z1");
-  if (JSON.stringify(h[0] || []) !== JSON.stringify(HEADERS)) await api("PUT", `/values/${encodeURIComponent(`'${TAB}'!A1`)}?valueInputOption=RAW`, { values: [HEADERS] });
+  // lost sales are analysed the day after (taste job); until then the cell stays empty, and the next night rewrites it
+  const ran = (await pool.query("SELECT 1 FROM taste_runs WHERE op_day=$1", [day]).catch(() => ({ rows: [] }))).rows.length;
+  const lost = ran ? Number((await pool.query("SELECT count(*)::int AS n FROM taste_signals WHERE op_day=$1 AND kind='lost'", [day])).rows[0].n) : "";
+  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC", lost);
+  await ensureTab(TAB, HEADERS);
   await deleteDate(TAB, day);
   await append(TAB, [row]);
-  log(`wa-stats: ${day} conversations=${row[2]} ordered=${row[3]} avgReply=${row[5]}`);
+  log(`wa-stats: ${day} conversations=${row[2]} ordered=${row[3]} avgReply=${row[5]} lost=${lost}`);
   return row;
+}
+
+async function ensureTab(tab, headers) {
+  const tabs = ((await api("GET", "?fields=sheets.properties")).sheets || []).map(s => s.properties.title);
+  if (!tabs.includes(tab)) { await api("POST", ":batchUpdate", { requests: [{ addSheet: { properties: { title: tab, rightToLeft: true } } }] }); resetSheetIds(); }
+  const h = await read(tab, "A1:Z1");
+  if (JSON.stringify(h[0] || []) !== JSON.stringify(headers)) await api("PUT", `/values/${encodeURIComponent(`'${tab}'!A1`)}?valueInputOption=RAW`, { values: [headers] });
+}
+
+export async function syncLost(pool, day, log = console.log) {
+  const { rows } = await pool.query("SELECT product, ingredient, change, quote, customer FROM taste_signals WHERE op_day=$1 AND kind='lost' ORDER BY id", [day]);
+  const at = new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  const out = rows.map(r => [day, r.product || "(عام)", r.ingredient || "", r.change || "", String(r.quote || "").replace(/\d{6,}/g, "…").slice(0, 200), k9(r.customer).slice(-4), at]);
+  await ensureTab(LOST_TAB, LOST_HEADERS);
+  await deleteDate(LOST_TAB, day);
+  if (out.length) await append(LOST_TAB, out);
+  log(`lost-sales: ${day} rows=${out.length}`);
+  return out.length;
 }
