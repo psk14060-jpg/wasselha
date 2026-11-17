@@ -279,7 +279,8 @@ t("2026-11-17 /tv و/admin: جمع الأسبوع، الأسبوع الناقص�
   const tv = fs.readFileSync(new URL("../src/tv.template.html", import.meta.url), "utf8");
   for (const bad of ["رصيد", "أرباح", "عمولة", "phone", "wa_from"]) assert.ok(!tv.includes(bad), "TV page must not show " + bad);
   const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
-  assert.ok(/p === "\/tv" && !isAuthed\(req\)/.test(srv) && /kind === "tv"\) \{ if \(!isAuthed\(req\)\)/.test(srv), "/tv is never open without the board login");
+  assert.ok(/kind === "tv"\) \{ if \(!tvAuthed\(req\)\)/.test(srv), "/tv data needs Hassan's code (TV session), not the cashier's board login");
+  assert.ok(/\["\/api\/board\/reports", "\/api\/board\/customers", "\/api\/board\/taste"\]\.includes\(p\)[\s\S]{0,400}ownerOk\(req\.headers\["x-owner-code"\]\)/.test(srv), "reports need the owner's code (the board is open at the cashier)");
 });
 
 t("2026-11-17 طلبات المدير التنفيذي: محادثات واتساب، الدفع، وقت التوصيل، ولا أرقام جوال في الكود", async () => {

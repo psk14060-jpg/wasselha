@@ -293,6 +293,16 @@ function makeSession() {
   const v = `board.${exp}`;
   return `${v}.${sign(v)}`;
 }
+// /tv (Hassan 2026-11-17 15:32): the cashier is logged in to the board, so the board login is not enough for the TV;
+// the TV opens with Hassan's own code (the one that opens «مبيعات الأسبوع»), once per device, kept six months.
+function makeTvSession() { const v = `tv.${Date.now() + 180 * 864e5}`; return `${v}.${sign(v)}`; }
+function tvAuthed(req) {
+  const m = String(req.headers.cookie || "").match(/(?:^|;\s*)mg_tv=([^;]+)/);
+  if (!m) return false;
+  const parts = m[1].split("."); if (parts.length !== 3 || parts[0] !== "tv") return false;
+  const good = sign(`${parts[0]}.${parts[1]}`);
+  return good.length === parts[2].length && crypto.timingSafeEqual(Buffer.from(good), Buffer.from(parts[2])) && Number(parts[1]) > Date.now();
+}
 function isAuthed(req) {
   const m = String(req.headers.cookie || "").match(/(?:^|;\s*)mg_s=([^;]+)/);
   if (!m) return false;
@@ -479,19 +489,23 @@ const server = http.createServer(async (req, res) => {
     // login
     // /tv and /admin (المدير التنفيذي 2026-11-17): read-only screens, each behind its own code (env TV_CODE / OWNER_CODE)
     if ((p === "/tv" || p === "/admin") && req.method === "GET") {
-      // /tv needs no code of its own (Hassan 2026-11-17: «التلفزيون انا الي استخدمه»): a device logged in to the board opens it;
-      // otherwise the board login once (stays six months), then back to /tv. Never open to anyone with the link: it shows sales.
-      if (p === "/tv" && !isAuthed(req)) { res.writeHead(302, { Location: "/login?next=/tv" }); return res.end(); }
+      // /tv: the page itself holds no numbers; it asks for Hassan's code when the device has no TV session (tvAuthed)
       res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", p.slice(1) + ".html")));
     }
     if ((p === "/api/dash/tv" || p === "/api/dash/admin") && req.method === "GET") {
       const kind = p.endsWith("admin") ? "admin" : "tv";
-      if (kind === "tv") { if (!isAuthed(req)) return send(res, 401, { error: "auth" }); return send(res, 200, await tvData(pool)); }
+      if (kind === "tv") { if (!tvAuthed(req)) return send(res, 401, { error: "auth" }); return send(res, 200, await tvData(pool)); }
       if (!codeSet(kind)) return send(res, 503, { error: kind === "admin" ? "رمز الإدارة ما انضبط بعد (OWNER_CODE في Render)" : "رمز شاشة العرض ما انضبط بعد (TV_CODE في Render)" });
       const bk = `dash:${kind}:` + clientIp(req), fails = buckets.get(bk);
       if (fails && Date.now() - fails.t < 15 * 60e3 && fails.n >= 10) return send(res, 429, { error: "محاولات كثيرة، جرّب بعد شوي" });
       if (!codeOk(kind, req.headers["x-dash-code"])) { limited(bk, 10, 15 * 60e3); console.log(`dash: wrong ${kind} code`); return send(res, 403, { error: "الرمز غير صحيح" }); } // only wrong codes count
       return send(res, 200, kind === "admin" ? await adminData(pool) : await tvData(pool));
+    }
+    if (p === "/api/tv/login" && req.method === "POST") {
+      if (limited("tvlogin:" + clientIp(req), 10, 15 * 60e3)) return send(res, 429, { error: "محاولات كثيرة، جرّب بعد شوي" });
+      const b = await readBody(req, 1024);
+      if (!ownerOk(b.code)) { console.log("tv: wrong code"); return send(res, 403, { error: "الرمز غير صحيح" }); }
+      return send(res, 200, { ok: true }, { "Set-Cookie": `mg_tv=${makeTvSession()}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${180 * 86400}` });
     }
     if (p === "/login" && req.method === "GET") { res.writeHead(200, pageHeaders); return res.end(loginHtml()); }
     if (p === "/api/login" && req.method === "POST") {
@@ -563,6 +577,13 @@ const server = http.createServer(async (req, res) => {
           alerts: (await pool.query("SELECT * FROM kitchen_alerts WHERE at > $1 ORDER BY at DESC LIMIT 15", [Date.now() - 24 * 3600e3])).rows.map(a => ({
             id: String(a.id), text: a.text, at: Number(a.at), fromDev: a.from_dev, fromName: a.from_name, heard: a.heard || [], ackAt: a.ack_at == null ? null : Number(a.ack_at), ackBy: a.ack_by })),
           settings: { sound: st.rows.length ? st.rows[0].value === true : true } });
+      }
+      // reports and customers (Hassan 2026-11-17 15:32): the board is open at the cashier, so these need Hassan's code
+      // (the one of «مبيعات الأسبوع»), sent with every request in x-owner-code and kept only in the open page's memory
+      if (["/api/board/reports", "/api/board/customers", "/api/board/taste"].includes(p)) {
+        const bk = "rep:" + clientIp(req), fails = buckets.get(bk);
+        if (fails && Date.now() - fails.t < 15 * 60e3 && fails.n >= 10) return send(res, 429, { error: "محاولات كثيرة، جرّب بعد شوي" });
+        if (!ownerOk(req.headers["x-owner-code"])) { limited(bk, 10, 15 * 60e3); console.log("reports: no or wrong code"); return send(res, 403, { error: "owner_code" }); }
       }
       if (p === "/api/board/reports" && req.method === "GET") {
         const weeks = (await pool.query("SELECT week_start::text AS w, created FROM weekly_reports ORDER BY week_start DESC LIMIT 26")).rows;

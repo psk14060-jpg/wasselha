@@ -329,8 +329,8 @@ const PREV={prep:"new",ready:"prep",out:"ready"};
 const S={master:true,unlocked:false,dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
 
 /* ---------- API ---------- */
-async function api(method,url,body){
-  const r=await fetch(url,{method,headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined,credentials:"same-origin"});
+async function api(method,url,body,extra){
+  const r=await fetch(url,{method,headers:Object.assign(body?{"Content-Type":"application/json"}:{},extra||{}),body:body?JSON.stringify(body):undefined,credentials:"same-origin"});
   if(r.status===401){location.href="/login";throw new Error("auth");}
   const j=await r.json().catch(()=>({}));
   if(!r.ok) throw Object.assign(new Error(j.error||("HTTP "+r.status)),{code:j.error});
@@ -729,21 +729,32 @@ function custHtml(c){
   <div class="card"><h3>المنقطعون (الأعلى صرفًا أولًا)</h3>${table(c.lapsed,"ما فيه عميل منقطع إلى الآن — البيانات بدأت قريب.")}</div>
   <div class="card"><h3>أفضل ٢٠ عميل</h3>${table(c.top,"لا يوجد")}</div>`;
 }
-const R={tab:"week",week:null};
+/* Hassan 2026-11-17 15:32: the board is open at the cashier, so reports and customers open with Hassan's own code
+   (the one of «مبيعات الأسبوع»). Kept only in this page's memory; forgotten on close or after 3 minutes. */
+const R={tab:"week",week:null,code:"",codeT:null};
+const repH=()=>({"x-owner-code":R.code});
+function repLock(msg){$("repWeek").hidden=true;$("repBody").innerHTML=`<form id="repLock" class="wk-lock"><label for="repCode">التقارير للمالك فقط: اكتب الرقم السري</label>
+  <input type="password" id="repCode" inputmode="numeric" autocomplete="off"><button class="btn" type="submit">افتح</button>${msg?`<p class="err">${esc(msg)}</p>`:""}</form>`;
+  setTimeout(()=>$("repCode")&&$("repCode").focus(),50);}
+$("repBody").addEventListener("submit",e=>{if(e.target.id!=="repLock")return;e.preventDefault();R.code=$("repCode").value.trim();
+  clearTimeout(R.codeT);R.codeT=setTimeout(()=>{R.code="";if(!$("rep").hidden)repLock();},3*60e3);loadRep();});
 async function loadRep(){
-  const body=$("repBody"); body.innerHTML=`<div class="empty">جارٍ التحميل…</div>`;
+  const body=$("repBody");
+  if(!R.code){repLock();return;}
+  body.innerHTML=`<div class="empty">جارٍ التحميل…</div>`;
   try{
-    if(R.tab==="cust"){$("repWeek").hidden=true;body.innerHTML=custHtml(await api("GET","/api/board/customers"));return;}
+    if(R.tab==="cust"){$("repWeek").hidden=true;body.innerHTML=custHtml(await api("GET","/api/board/customers",null,repH()));return;}
     $("repWeek").hidden=false;
-    const j=await api("GET","/api/board/reports"+(R.week?"?week="+encodeURIComponent(R.week):""));
+    const j=await api("GET","/api/board/reports"+(R.week?"?week="+encodeURIComponent(R.week):""),null,repH());
     $("repWeek").innerHTML=`<option value="current">الأسبوع الحالي إلى الآن</option>`+j.weeks.map(w=>`<option value="${esc(w.w)}">أسبوع ${esc(w.w)}</option>`).join("");
     $("repWeek").value=R.week||(j.weeks[0]?j.weeks[0].w:"current");
     if(!R.week&&!j.weeks.length){R.week="current";return loadRep();}
     body.innerHTML=weekHtml(j.report);
-  }catch(e){body.innerHTML=`<div class="empty">ما قدرت أحمّل التقرير (${esc(e.code||e.message)}).</div>`;}
+  }catch(e){if(e.code==="owner_code"){R.code="";repLock("الرقم السري غير صحيح");return;}
+    body.innerHTML=`<div class="empty">ما قدرت أحمّل التقرير (${esc(e.code||e.message)}).</div>`;}
 }
 $("repBtn").onclick=()=>{$("moreMenu").hidden=true;$("rep").hidden=false;loadRep();};
-$("repClose").onclick=()=>{$("rep").hidden=true;};
+$("repClose").onclick=()=>{$("rep").hidden=true;R.code="";clearTimeout(R.codeT);};
 $("repSeg").addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;R.tab=b.dataset.v;$("repSeg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));loadRep();});
 $("repWeek").addEventListener("change",()=>{R.week=$("repWeek").value;loadRep();});
 async function muteLate(ids){

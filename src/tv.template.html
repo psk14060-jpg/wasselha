@@ -66,9 +66,24 @@ body{color:var(--ink);font-family:var(--f-body)}
 #svg .tot{fill:var(--ink);font-family:var(--f-mono);font-size:13px;font-weight:700}
 #svg .dn{fill:var(--ink);font-family:var(--f-body);font-size:12.5px;font-weight:600}
 #svg .dd{fill:var(--muted);font-family:var(--f-mono);font-size:11px}
+#lock{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;background:#5C6E30}
+#lock[hidden]{display:none}
+#lock form{background:#fff;border-radius:22px;padding:34px 38px;width:min(420px,90vw);text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+#lock img{height:56px;margin-bottom:10px}
+#lock h2{margin:4px 0 6px;font-size:24px;color:#2b3315}
+#lock p{margin:0 0 18px;color:#6b705c;font-size:15px}
+#lock input{width:100%;font-size:28px;letter-spacing:8px;text-align:center;padding:12px;border:2px solid #d9dccb;border-radius:14px;box-sizing:border-box;direction:ltr}
+#lock button{margin-top:14px;width:100%;font-size:20px;font-weight:700;padding:12px;border:0;border-radius:14px;background:#F07C21;color:#fff;cursor:pointer}
+#lock .err{color:#b3261e;min-height:22px;margin-top:10px;font-size:15px}
 </style>
 </head>
 <body>
+<div id="lock" hidden><form id="lockForm" autocomplete="off">
+  <img src="{{LOGO}}" alt="mini">
+  <h2>شاشة العرض</h2><p>اكتب رمزك مرة وحدة على هذا الجهاز</p>
+  <input type="password" id="lockCode" inputmode="numeric" aria-label="الرمز">
+  <button type="submit">افتح</button><div class="err" id="lockErr"></div>
+</form></div>
 <div id="stage">
   <header class="top">
     <img class="logo" src="{{LOGO}}" alt="مينيقيش">
@@ -179,11 +194,21 @@ function render(x){
 async function load(){
   try {
     const r = await fetch("/api/dash/tv", { cache: "no-store", credentials: "same-origin" });
-    if (r.status === 401) { location.href = "/login?next=/tv"; return; }
+    if (r.status === 401) { $("lock").hidden = false; setTimeout(() => $("lockCode").focus(), 50); return; }
+    $("lock").hidden = true;
     if (!r.ok) throw new Error(r.status);
     render(await r.json());
   } catch { $("upd").textContent = "ما قدرت أحدّث، أعيد المحاولة"; }
 }
+$("lockForm").addEventListener("submit", async e => {
+  e.preventDefault(); $("lockErr").textContent = "";
+  try {
+    const r = await fetch("/api/tv/login", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ code: $("lockCode").value }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { $("lockErr").textContent = j.error || "ما انفتح، حاول مرة ثانية"; return; }
+    $("lockCode").value = ""; load();
+  } catch { $("lockErr").textContent = "ما فيه اتصال، حاول مرة ثانية"; }
+});
 load(); setInterval(load, 5 * 60e3);
 </script>
 </body>
