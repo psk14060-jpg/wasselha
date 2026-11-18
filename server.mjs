@@ -792,6 +792,15 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-18 21:14 (Hassan: new vs returning customers today), same definitions as «الملخص_التنفيذي»; no phone numbers
+  setTimeout(async () => { try {
+    const { collectDays, sumDays, opDayOf } = await import("./dash.mjs");
+    const d = opDayOf(Date.now()), [x] = await collectDays(pool, d, d), s = sumDays([x], d, d);
+    const { rows } = await pool.query("SELECT source, status, wa_from, phone FROM orders WHERE op_day=$1 AND status NOT IN ('pending','dismissed')", [d]);
+    const live = rows.filter(o => ["new","prep","ready","out","done"].includes(o.status));
+    const by = {}; for (const o of live) by[o.source] = (by[o.source] || 0) + 1;
+    console.log(`today-cust: day=${d} orders=${live.length} cancelled=${rows.length - live.length} customers=${x.keys.length} new=${s.newCust} returning=${s.retCust} nophone=${live.filter(o => !["chefz","hunger","keeta","ninja"].includes(o.source) && !o.wa_from && String(o.phone || "").replace(/\D/g, "").length < 9).length} apps=${live.filter(o => ["chefz","hunger","keeta","ninja"].includes(o.source)).length} by=${JSON.stringify(by)} sales=${s.sales}`);
+  } catch (e) { console.log("today-cust: " + e.message); } }, 20e3);
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».
