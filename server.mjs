@@ -808,9 +808,9 @@ migrate().then(() => {
       const fee = siteFee(m.areas, o.area), old = Number(o.delivery_fee);
       if (fee == null) { console.log(`refee: ${o.d} #${o.num} ${o.area} — not in the website list, kept ${old}`); continue; }
       if (fee >= old) { console.log(`refee: ${o.d} #${o.num} ${o.area} — fee ${old}, website ${fee}: kept`); continue; }
-      await pool.query(`UPDATE orders SET delivery_fee=$2, total = CASE WHEN total IS NULL THEN NULL ELSE total - $3 END,
-        area = regexp_replace(area, '\\(توصيل [0-9.]+ ر\\)', '(توصيل ' || $2 || ' ر)'),
-        note = concat_ws(' · ', NULLIF(note,''), 'رسوم التوصيل نزلت من ' || $4 || ' إلى ' || $2 || ' (أسعار الموقع الجديدة)'), updated=$5 WHERE id=$1`,
+      await pool.query(`UPDATE orders SET delivery_fee=$2::numeric, total = CASE WHEN total IS NULL THEN NULL ELSE total - $3::numeric END,
+        area = regexp_replace(area, '\\(توصيل [0-9.]+ ر\\)', '(توصيل ' || $2::text || ' ر)'),
+        note = concat_ws(' · ', NULLIF(note,''), 'رسوم التوصيل نزلت من ' || $4::text || ' إلى ' || $2::text || ' (أسعار الموقع الجديدة)'), updated=$5 WHERE id=$1`,
         [o.id, fee, old - fee, old, Date.now()]);
       changed++; console.log(`refee: ${o.d} #${o.num} ${o.area} — fee ${old} → ${fee}, total ${o.total} → ${o.total == null ? "-" : Number(o.total) - (old - fee)}`);
     }
