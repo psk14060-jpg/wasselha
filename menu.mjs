@@ -147,7 +147,7 @@ export async function getMenu() {
 
 // Free delivery neighbourhoods (Hassan 2026-11-05): the fee is 0 on the board, the WhatsApp pricing and map locations,
 // whatever the website list says.
-const normArea = s => String(s || "").trim().replace(/^حي\s+/, "").replace(/^ال/, "").replace(/ة$/, "ه").replace(/\s+/g, " ").trim();
+export const normArea = s => String(s || "").trim().replace(/^حي\s+/, "").replace(/^ال/, "").replace(/ة$/, "ه").replace(/\s+/g, " ").trim();
 export const FREE_AREAS = ["النايفية", "العزيزية"];
 export const isFreeArea = name => FREE_AREAS.map(normArea).includes(normArea(String(name || "").replace(/📍/g, "").replace(/\s*\(.*\)\s*$/, "").split("·")[0]));
 
@@ -156,4 +156,14 @@ export async function menuText() {
   const m = await getMenu();
   return m.products.map(p => `${p.name}${flavorsOf(p).length ? " (حشوات: " + flavorsOf(p).join("، ") + ")" : ""}: ` +
     p.variants.map(v => `${v.tag} ${v.price} ريال`).join("، ")).join("\n");
+}
+
+// the neighbourhood written on an order: «حي X (توصيل 10 ر)», «📍 X · 2 كم (…)» → «X»
+export const hoodOf = area => String(area || "").replace(/📍/g, "").replace(/\s*\(.*\)\s*$/, "").split("·")[0].trim();
+// fee the website asks today for an order's neighbourhood (null when the neighbourhood is not in the website list)
+export function siteFee(areas, area) {
+  const h = normArea(hoodOf(area)); if (!h) return null;
+  if (isFreeArea(h)) return 0;
+  const a = areas.find(x => normArea(x.name) === h);
+  return a ? Number(a.fee) : null;
 }

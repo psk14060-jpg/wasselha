@@ -340,3 +340,24 @@ t("2026-11-18 فواتير المشتريات تنحفظ PDF (صورة الجو�
   const plain = await sharp({ create: { width: 400, height: 400, channels: 3, background: "#ffffff" } }).jpeg().toBuffer();
   assert.deepEqual(await paperBox(sharp, plain), { left: 0, top: 0, width: 400, height: 400 }); // no table: whole photo
 });
+t("2026-11-18 رسوم الموقع الجديدة تنطبق على الطلبات المفتوحة (siteFee)", async () => {
+  const { siteFee, hoodOf } = await import("../menu.mjs");
+  const areas = [{ name: "الجوهرة", fee: 5 }, { name: "حي المحمدية", fee: 10 }];
+  assert.equal(hoodOf("📍 الجوهرة · 4 كم (توصيل 10 ر)"), "الجوهرة");
+  assert.equal(siteFee(areas, "الجوهرة (توصيل 10 ر)"), 5);
+  assert.equal(siteFee(areas, "المحمدية (توصيل 15 ر)"), 10);
+  assert.equal(siteFee(areas, "النايفية (توصيل 10 ر)"), 0);
+  assert.equal(siteFee(areas, "حي غير موجود (توصيل 20 ر)"), null);
+  const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(/if \(fee >= old\)[^\n]*kept/.test(srv), "a confirmed fee is never raised");
+});
+t("2026-11-18 «شفت إعلانكم» يسجّل المصدر", async () => {
+  const { adSource } = await import("../admention.mjs");
+  assert.equal(adSource("مرحبا، شفت إعلانكم في إنستقرام وأبي أطلب"), "إنستقرام");
+  assert.equal(adSource("شفت اعلانكم بالانستا"), "إنستقرام");
+  assert.equal(adSource("هلا شفت اعلانكم في التيك توك"), "تيك توك");
+  assert.equal(adSource("شفت إعلانكم"), "إعلان غير محدد");
+  assert.equal(adSource("ابي اطلب 20 فطاير"), null);
+  const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(srv.includes("if (!o.heard && o.waFrom) o.heard = await heardFromAd(pool, o.waFrom)"), "a new WhatsApp order takes the ad source");
+});

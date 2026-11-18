@@ -17,7 +17,8 @@ import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { migrateWa, handleWebhook, recentReviews, readTranscript, lastKnownPoint } from "./wa.mjs";
 import { migrateReader, recordCorrection, evalReader, readerVersion } from "./reader.mjs";
-import { isFreeArea, getMenu } from "./menu.mjs";
+import { isFreeArea, getMenu, siteFee } from "./menu.mjs";
+import { migrateAdMentions, heardFromAd } from "./admention.mjs";
 import { migrateTts, speech } from "./tts.mjs";
 import { migrateLocation, neighbourhoodOf, findPoint, applyLocation } from "./location.mjs";
 import { migrateBlacklist, listBlacklist, markNoShow, recentPings, keyOf } from "./blacklist.mjs";
@@ -177,6 +178,7 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pay TEXT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS entered_by TEXT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS heard TEXT");
+  await migrateAdMentions(pool);
   // 2026-11-05 18:40: النايفية and العزيزية deliver free — open orders already booked there drop their fee (once)
   if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_free_areas_1105'")).rows.length) {
     const { rows } = await pool.query("SELECT id, num, op_day, area, total, delivery_fee FROM orders WHERE type='del' AND status IN ('new','prep','ready') AND op_day >= '2026-11-05' AND COALESCE(delivery_fee,0) > 0");
@@ -334,6 +336,7 @@ function rowToOrder(r) {
 
 async function insertOrder(o) {
   const day = opDayOf(o.due);
+  if (!o.heard && o.waFrom) o.heard = await heardFromAd(pool, o.waFrom); // «شفت إعلانكم» said in the chat (admention.mjs)
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -789,6 +792,35 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
+  // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
+  // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».
+  setTimeout(async () => { try {
+    if ((await pool.query("SELECT 1 FROM board_settings WHERE key='refee_1118'")).rows.length) return;
+    const m = await getMenu();
+    if (m.source !== "site" || !m.areas.length) return console.log("refee: website menu not read, retry next start");
+    const today = new Date(Date.now() + 3 * 3600e3 - 6 * 3600e3).toISOString().slice(0, 10);
+    const { rows } = await pool.query(`SELECT id, num, op_day::text AS d, source, area, total, delivery_fee FROM orders
+      WHERE type='del' AND status IN ('pending','new','prep','ready') AND op_day >= $1 AND COALESCE(delivery_fee,0) > 0`, [today]);
+    let changed = 0;
+    for (const o of rows) {
+      if (["chefz", "hunger", "keeta", "ninja"].includes(o.source)) continue;
+      const fee = siteFee(m.areas, o.area), old = Number(o.delivery_fee);
+      if (fee == null) { console.log(`refee: ${o.d} #${o.num} ${o.area} — not in the website list, kept ${old}`); continue; }
+      if (fee >= old) { console.log(`refee: ${o.d} #${o.num} ${o.area} — fee ${old}, website ${fee}: kept`); continue; }
+      await pool.query(`UPDATE orders SET delivery_fee=$2, total = CASE WHEN total IS NULL THEN NULL ELSE total - $3 END,
+        area = regexp_replace(area, '\\(توصيل [0-9.]+ ر\\)', '(توصيل ' || $2 || ' ر)'),
+        note = concat_ws(' · ', NULLIF(note,''), 'رسوم التوصيل نزلت من ' || $4 || ' إلى ' || $2 || ' (أسعار الموقع الجديدة)'), updated=$5 WHERE id=$1`,
+        [o.id, fee, old - fee, old, Date.now()]);
+      changed++; console.log(`refee: ${o.d} #${o.num} ${o.area} — fee ${old} → ${fee}, total ${o.total} → ${o.total == null ? "-" : Number(o.total) - (old - fee)}`);
+    }
+    console.log(`refee: done open=${rows.length} changed=${changed}`);
+    // one-off for the marketing agent (2026-11-18): customers with a WhatsApp number whose last order is 14+ days old
+    const { rows: cs } = await pool.query("SELECT wa_from, max(due) AS last, count(*)::int AS n FROM orders WHERE wa_from IS NOT NULL AND status IN ('new','prep','ready','out','done') GROUP BY wa_from");
+    const lapsed = cs.filter(c => Date.now() - Number(c.last) >= 14 * 864e5);
+    console.log(`reengage: whatsapp customers=${cs.length} lapsed14=${lapsed.length} lapsed14_repeat=${lapsed.filter(c => c.n > 1).length}`);
+    await pool.query("INSERT INTO board_settings (key, value) VALUES ('refee_1118', 'true') ON CONFLICT (key) DO NOTHING");
+  } catch (e) { console.log("refee: " + e.message); } }, 30e3);
   // invoices → PDF needs sharp's native library on Render: check once at start (purchases fall back to the photo if it fails)
   import("sharp").then(m => console.log("pdf-check: sharp " + m.default.versions.sharp + " ok")).catch(e => console.log("pdf-check: sharp FAILED " + e.message));
   setTimeout(() => getMenu().then(m => { console.log(`menu: source=${m.source} products=${m.products.length}`); for (const p of m.products) console.log(`menu: ${p.id} | ${p.name} | ${p.description} | ${p.variants.map(v => v.tag + "=" + v.price).join(", ")}`); }).catch(e => console.log("menu: " + e.message)), 25e3); // one-off: compare with the printed menus (2026-11-09)

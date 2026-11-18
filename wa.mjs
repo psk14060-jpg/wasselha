@@ -3,6 +3,7 @@
 // - Other customer text is read by Claude; if it is an order, it becomes a "review and confirm" card.
 // - Several messages from the same customer within 20 minutes update one card instead of creating many.
 
+import { recordAdMention } from "./admention.mjs";
 import { getMenu } from "./menu.mjs";
 import { customerLines } from "./gifts.mjs";
 import { findPoint, applyLocation } from "./location.mjs";
@@ -549,6 +550,7 @@ export async function handleWebhook(body, ctx) {
       }
       // purchase invoices sent to the board number («مشتريات …», Hassan 2026-11-09): kept as they are, never an order
       { const pr = await onPurchaseMessage(pool, m); if (pr) { result = pr; log("wa: " + pr); continue; } }
+      await recordAdMention(pool, m, log).catch(e => log("ad-mention: " + e.message));
       // the free-delivery courier: «تم توصيل الطلب» closes his order; he is never a customer (Hassan 2026-11-09)
       if (isCourier(m.from)) { result = await courierDelivered(pool, m.text); log("wa: " + result); continue; }
       // a customer message carrying a website order number links that order to this chat.

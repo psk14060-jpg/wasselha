@@ -8,7 +8,9 @@ import { api, append, read, resetSheetIds, deleteDate } from "./sheets.mjs";
 import { courierKeys } from "./courier.mjs";
 
 export const TAB = "محادثات_واتساب";
-export const HEADERS = ["التاريخ", "اليوم", "محادثات العملاء", "صارت طلب", "نسبة التحويل", "متوسط أول رد (دقيقة)", "وسيط أول رد (دقيقة)", "محادثات بلا رد", "أُعدّ في", "ضاعت مبيعة (حالات)"];
+export const HEADERS = ["التاريخ", "اليوم", "محادثات العملاء", "صارت طلب", "نسبة التحويل", "متوسط أول رد (دقيقة)", "وسيط أول رد (دقيقة)", "محادثات بلا رد", "أُعدّ في", "ضاعت مبيعة (حالات)",
+  // «شفت إعلانكم» (وكيل التسويق 2026-11-18): customers who said it that day, by source, and how many of them ordered the same day
+  "شفت إعلانكم: إنستقرام", "شفت إعلانكم: تيك توك", "شفت إعلانكم: غير محدد", "شفت إعلانكم: صار طلب"];
 // «ضاعت_مبيعة» (المدير التنفيذي 2026-11-17): chats that ended without an order and why, as the nightly taste analysis
 // (prefs.mjs, the day after) recorded them. Customer as last 4 digits only.
 export const LOST_TAB = "ضاعت_مبيعة";
@@ -57,7 +59,10 @@ export async function syncWa(pool, day, log = console.log) {
   // lost sales are analysed the day after (taste job); until then the cell stays empty, and the next night rewrites it
   const ran = (await pool.query("SELECT 1 FROM taste_runs WHERE op_day=$1", [day]).catch(() => ({ rows: [] }))).rows.length;
   const lost = ran ? Number((await pool.query("SELECT count(*)::int AS n FROM taste_signals WHERE op_day=$1 AND kind='lost'", [day])).rows[0].n) : "";
-  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC", lost);
+  const ads = (await pool.query("SELECT DISTINCT ON (wa_from) wa_from, source FROM ad_mentions WHERE at >= $1 AND at < $2 ORDER BY wa_from, at", [from, to]).catch(() => ({ rows: [] }))).rows;
+  const orderedK = new Set(orders.filter(o => ["new", "prep", "ready", "out", "done"].includes(o.status)).flatMap(o => [k9(o.wa_from), k9(o.phone)]));
+  const adCols = ["إنستقرام", "تيك توك", "إعلان غير محدد"].map(src => ads.filter(a => a.source === src).length).concat(ads.filter(a => orderedK.has(k9(a.wa_from))).length);
+  row.push(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC", lost, ...adCols);
   await ensureTab(TAB, HEADERS);
   await deleteDate(TAB, day);
   await append(TAB, [row]);
