@@ -269,10 +269,11 @@ export async function syncCustomers(pool, log = console.log) {
   const by = new Map();
   for (const o of rows) {
     const k = keyOf(o.wa_from, o.phone); if (!k || k.length < 11) continue;
-    const c = by.get(k) || { k, n: 0, spend: 0, priced: 0, first: o.op_day, last: o.op_day, lastAt: 0, area: "", heard: "" };
+    const c = by.get(k) || { k, n: 0, spend: 0, priced: 0, first: o.op_day, last: o.op_day, lastAt: 0, area: "", heard: "", lastBill: "", maxBill: 0, n30: 0 };
     if (!c.heard && o.heard) c.heard = o.heard; // column I «المصدر» (وكيل التسويق 2026-11-17/18): the first «من وين عرفتنا» given
     c.n++;
-    if (o.total != null) { c.spend += Math.max(0, Number(o.total) - feeOfOrder(rowO(o))); c.priced++; }
+    if (o.total != null) { const b = Math.max(0, Number(o.total) - feeOfOrder(rowO(o))); c.spend += b; c.priced++; c.lastBill = Math.round(b); c.maxBill = Math.max(c.maxBill, Math.round(b)); }
+    if (Date.now() - Number(o.due) < 30 * DAY) c.n30++;
     c.last = o.op_day; c.lastAt = Number(o.due);
     if (o.type === "del" && areaName(o.area)) c.area = areaName(o.area);
     by.set(k, c);
@@ -282,10 +283,12 @@ export async function syncCustomers(pool, log = console.log) {
     const lapsed = (now - c.lastAt) / DAY >= LAPSE_DAYS;
     const kind = [c.n > 1 ? "متكرر" : "مرة واحدة", lapsed ? "منقطع" : ""].filter(Boolean).join(" · ");
     return ["C" + crypto.createHash("sha256").update(c.k).digest("hex").slice(0, 8), c.k.slice(-4), c.n, dayStr(c.first), dayStr(c.last),
-      c.priced ? Math.round(c.spend / c.priced) : "", kind, c.area, c.heard];
+      c.priced ? Math.round(c.spend / c.priced) : "", kind, c.area, c.heard,
+      // J–M (حسن 2026-11-18: سجل العملاء مثل نقاط الولاء): all bills without delivery, last bill, biggest bill, orders in the last 30 days
+      Math.round(c.spend), c.lastBill, c.maxBill || "", c.n30];
   });
-  await ensureHeader(T.customers, "I1", "المصدر");
-  await api("POST", `/values/${rng(T.customers, "A2:I")}:clear`, {});
+  for (const [cell, t] of [["I1", "المصدر"], ["J1", "إجمالي المشتريات (بدون التوصيل)"], ["K1", "آخر فاتورة"], ["L1", "أعلى فاتورة"], ["M1", "طلبات آخر 30 يوم"]]) await ensureHeader(T.customers, cell, t);
+  await api("POST", `/values/${rng(T.customers, "A2:M")}:clear`, {});
   if (out.length) await api("PUT", `/values/${rng(T.customers, "A2")}?valueInputOption=RAW`, { values: out });
   log(`sheet: customers rows=${out.length}`);
 }
@@ -356,6 +359,7 @@ export function startSheetJob(pool, log = console.log) {
         ["note_exec_1117_health", "طلب المدير التنفيذي (2026-11-17): مسار فحص الصحة /healthz موجود ويفحص قاعدة البيانات (يرجع 200). ضبطه في إعدادات Render (Health Check Path) يسويه حسن من لوحة Render لأن أداة Render عندنا ما تعدّل هذا الإعداد."],
         ["note_exec_1117_wa", "طلب المدير التنفيذي (2026-11-17) تم: تبويب «محادثات_واتساب» سطر لكل يوم تشغيل يُكتب الساعة 2 فجرًا: محادثات العملاء (رقم كتب لنا في اليوم، بدون المندوب ومرسلي الفواتير)، صارت طلب (له طلب انشأ نفس اليوم، بدون الملغي)، نسبة التحويل، متوسط ووسيط أول رد بالدقائق (من أول رسالة للعميل إلى أول رد من تطبيق واتساب للأعمال)، ومحادثات بلا رد خلال 12 ساعة. الأيام من 31 أكتوبر انكتبت."],
         ["note_exec_1117_delivery", "طلب المدير التنفيذي (2026-11-17) تم: «الإلغاء والتأخير» فيه عمودان جديدان في الآخر: J «وقت التوصيل الفعلي (دقيقة)» = من «خرج» إلى «تم» لتوصيلاتنا، و K «المندوب». اللوحة ما فيها أسماء مناديب، فاللي يقفل الطلب برسالة واتساب يُكتب «مندوب التوصيل المجاني» والباقي فاضي إلى أن يعطينا حسن أسماء المناديب. السطور تبدأ من الأيام الجاية."],
+        ["note_1118_ledger", "طلب حسن (2026-11-18): «العملاء» صار سجل عملاء يتحدث كل ليلة (كان كل أحد). أعمدة جديدة في الآخر: J إجمالي المشتريات (بدون التوصيل، من بداية اللوحة 31 أكتوبر)، K آخر فاتورة، L أعلى فاتورة، M طلبات آخر 30 يوم. العميل = رقم جوال واحد بأي صيغة، والرقم يبان آخر 4 فقط. قواعد النقاط والمكافآت (كم نقطة لكل ريال ومتى تُصرف) لوكيل التسويق، والسجل جاهز لها."],
         ["note_mkt_1118_ad", "طلب وكيل التسويق (2026-11-18) تم: كل رسالة عميل فيها «شفت إعلانكم/اعلانكم» تنسجل حتى لو ما صار طلب، ومصدرها: إنستقرام إذا فيها إنستقرام/انستا، تيك توك إذا فيها تيك توك، وإلا «إعلان غير محدد». المصدر ينكتب في «من وين عرفتنا» للطلب (عمود N في «المبيعات اليومية») إذا الموظف ما اختار شي، للطلبات المفتوحة ولأي طلب من نفس الرقم خلال 14 يوم. «العملاء» فيه عمود جديد I «المصدر» (أول مصدر للعميل). «محادثات_واتساب» فيه 4 أعمدة جديدة في الآخر: شفت إعلانكم إنستقرام / تيك توك / غير محدد / صار طلب (نفس اليوم). يبدأ من 2026-11-18."],
         ["note_mkt_1118_heard", "رد على طلب وكيل التسويق (2026-11-17) «من وين عرفتنا» إلزامي للعميل الجديد: الحقل موجود في نموذج الطلب من 2026-11-17 15:38 (تيك توك، سناب، إنستقرام، قوقل ماب، صديق أو قريب، شاف المحل، عميل سابق، ما سألت) وينكتب في «المبيعات اليومية» عمود N و«العملاء» عمود I. الحين اختياري (فيه «ما سألت»). جعله إلزامي يغيّر شاشة الموظف، فينتظر موافقة حسن. «تطبيق توصيل» ما له خيار لأن طلبات التطبيقات ما يظهر فيها الحقل. utm_source من الموقع: الموقع ما يرسله للوحة حاليًا."],
         ["note_exec_1117_form", "اعتمدها حسن ونُشرت (2026-11-17 15:38): نموذج الطلب فيه طريقة الدفع (كاش/شبكة/تحويل/بعدين)، ومن وين عرفتنا، واسم مدخل الطلب، وتذكير بالإضافات إذا الطلب ما فيه مشروب أو ماء، والمصدر بدون اختيار جاهز، وزرّا كيتا ونينجا مخفيان. الأعمدة: «المبيعات اليومية» L طريقة الدفع، M مدخل الطلب، N من وين عرفتنا؛ «الملخص_التنفيذي» بعد «أُعدّ في»: كاش/شبكة/تحويل/غير محدد (المحصّل شامل التوصيل). الطلبات قبل هذا الوقت طريقة دفعها «غير محدد». وفي تقرير اللوحة: حصة التطبيقات «غير متوفرة» وانشال مربع دعم التوصيل."],
@@ -369,7 +373,9 @@ export function startSheetJob(pool, log = console.log) {
         await setS(pool, "exec_backfill_v1", Date.now()); log("exec: backfill " + rows.length + " days");
       }
       const weekKey = dateOf(Date.now());
-      if ((r.getUTCDay() === 0 && r.getUTCHours() >= 3 && (await getS(pool, "sheet_customers_done")) !== weekKey) || !(await getS(pool, "sheet_customers_done"))) {
+      // nightly since 2026-11-18 (was Sundays): the customers tab is now the customer ledger Hassan reads (orders, bills)
+      if ((r.getUTCHours() >= 3 && (await getS(pool, "sheet_customers_done")) !== weekKey) || !(await getS(pool, "sheet_customers_done")) || !(await getS(pool, "customers_v2"))) {
+        await setS(pool, "customers_v2", Date.now());
         await syncCustomers(pool, log); await setS(pool, "sheet_customers_done", weekKey);
       }
     } catch (e) { log("sheet: " + e.message); }
