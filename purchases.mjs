@@ -117,13 +117,58 @@ export function dualhookKey() {
   for (const n of names) { const v = clean(process.env[n]); if (v.startsWith("dh_live_")) return { name: n, value: v }; }
   return { name: null, value: "" };
 }
+// Hassan 2026-11-18: invoices are saved as PDF, not photos (for the accountant). The photo is turned upright (phone EXIF),
+// made grey with stretched contrast and a light sharpen (a scanned look that keeps faint thermal print readable),
+// kept large (longest side 2400 px) so nothing is lost, and put on one page the size of the photo. A PDF sent as is stays as is.
+// the paper inside the photo (receipts are shot on a table): Otsu threshold on a small grey copy, then the rows and columns
+// that are mostly paper; a few % margin. Falls back to the whole photo when no clear paper is found.
+export async function paperBox(sharp, buf) {
+  const meta = await sharp(buf).metadata();
+  const W = 300, small = await sharp(buf).resize({ width: W }).grayscale().raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = small, w = info.width, h = info.height;
+  const hist = new Array(256).fill(0); for (const v of data) hist[v]++;
+  let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
+  let sB = 0, wB = 0, best = 0, th = 128;
+  for (let t = 0; t < 256; t++) { wB += hist[t]; if (!wB) continue; const wF = data.length - wB; if (!wF) break; sB += t * hist[t];
+    const mB = sB / wB, mF = (sum - sB) / wF, v = wB * wF * (mB - mF) ** 2; if (v > best) { best = v; th = t; } }
+  const rowOk = y => { let n = 0; for (let x = 0; x < w; x++) if (data[y * w + x] > th) n++; return n / w > 0.35; };
+  const colOk = x => { let n = 0; for (let y = 0; y < h; y++) if (data[y * w + x] > th) n++; return n / h > 0.35; };
+  let top = 0, bot = h - 1, left = 0, right = w - 1;
+  while (top < h && !rowOk(top)) top++; while (bot > top && !rowOk(bot)) bot--;
+  while (left < w && !colOk(left)) left++; while (right > left && !colOk(right)) right--;
+  const bw = right - left + 1, bh = bot - top + 1;
+  if (bw < w * 0.3 || bh < h * 0.3) return { left: 0, top: 0, width: meta.width, height: meta.height };
+  const k = meta.width / w, m = 0.02;
+  const L = Math.max(0, Math.floor((left - bw * m) * k)), T = Math.max(0, Math.floor((top - bh * m) * k));
+  const R = Math.min(meta.width, Math.ceil((right + 1 + bw * m) * k)), B = Math.min(meta.height, Math.ceil((bot + 1 + bh * m) * k));
+  return { left: L, top: T, width: R - L, height: B - T };
+}
+export async function toPdf(bytes, type) {
+  if (/pdf/.test(type || "")) return { bytes, type: "application/pdf" };
+  const { default: sharp } = await import("sharp");
+  const { PDFDocument } = await import("pdf-lib");
+  const upright = await sharp(bytes).rotate().toBuffer();
+  const box = await paperBox(sharp, upright);
+  const grey = await sharp(upright).extract(box).resize({ width: 2400, height: 2400, fit: "inside", withoutEnlargement: true })
+    .grayscale().normalise({ lower: 1, upper: 99 }).sharpen({ sigma: 0.8 }).raw().toBuffer({ resolveWithObject: true });
+  // (no whitening of the table around a tilted page: tried, it wiped shadowed text — an invoice must never lose a figure)
+  const img = await sharp(grey.data, { raw: { width: grey.info.width, height: grey.info.height, channels: 1 } }).jpeg({ quality: 85, mozjpeg: true }).toBuffer({ resolveWithObject: true });
+  const doc = await PDFDocument.create();
+  doc.setTitle("فاتورة مشتريات"); doc.setProducer("Minigeesh board");
+  const jpg = await doc.embedJpg(img.data);
+  const scale = 72 / 200; // 200 dpi: an A4-ish page for a phone photo of a receipt
+  const page = doc.addPage([img.info.width * scale, img.info.height * scale]);
+  page.drawImage(jpg, { x: 0, y: 0, width: page.getWidth(), height: page.getHeight() });
+  return { bytes: Buffer.from(await doc.save()), type: "application/pdf" };
+}
 const extOf = t => /png/.test(t) ? "png" : /pdf/.test(t) ? "pdf" : /webp/.test(t) ? "webp" : "jpg";
 export async function pendingPurchases(pool, log = console.log, max = 15) {
   const rows = (await pool.query("SELECT * FROM purchases WHERE status<>'saved' ORDER BY at LIMIT $1", [max])).rows;
   const out = [];
   for (const p of rows) {
     try {
-      const { bytes, type } = await download(p.media_id);
+      const raw = await download(p.media_id);
+      const { bytes, type } = await toPdf(raw.bytes, raw.type || p.mime).catch(e => { log(`purchases: pdf failed, saving the photo (${e.message})`); return raw; });
       const day = dayOf(p.at);
       const n = Number((await pool.query("SELECT count(*) AS c FROM purchases WHERE sender=$1 AND (at < $2 OR (at = $2 AND msg_id < $4)) AND at >= $3", [p.sender, p.at, Date.parse(day + "T00:00:00+03:00"), p.msg_id])).rows[0].c) + 1;
       out.push({ id: p.msg_id, folder: day.slice(0, 7), name: `${day}_${p.sender}_${n}.${extOf(type || p.mime)}`, mime: type, b64: bytes.toString("base64") });

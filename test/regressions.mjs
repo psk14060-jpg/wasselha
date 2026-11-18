@@ -326,3 +326,17 @@ t("2026-11-17 #23: طلب واتساب أو اتصال لازم فيه رقم ج
   const b = fs.readFileSync(new URL("../src/board.template.html", import.meta.url), "utf8");
   assert.ok(/\["wa","call"\]\.includes\(segVal\("srcSeg"\)\)&&\$\("phone"\)\.value/.test(b), "the form refuses a WhatsApp/phone order without a number");
 });
+t("2026-11-18 فواتير المشتريات تنحفظ PDF (صورة الجوال تصير صفحة)", async () => {
+  const { toPdf, paperBox } = await import("../purchases.mjs");
+  const { default: sharp } = await import("sharp");
+  // a white «paper» on a dark «table», like a receipt photo
+  const paper = await sharp({ create: { width: 300, height: 500, channels: 3, background: "#f2f2f2" } }).png().toBuffer();
+  const photo = await sharp({ create: { width: 600, height: 900, channels: 3, background: "#1a1a1a" } }).composite([{ input: paper, left: 150, top: 200 }]).jpeg().toBuffer();
+  const box = await paperBox(sharp, photo);
+  assert.ok(box.left > 100 && box.left < 150 && box.width < 400 && box.top > 150 && box.height < 600, "crops to the paper: " + JSON.stringify(box));
+  const r = await toPdf(photo, "image/jpeg");
+  assert.equal(r.type, "application/pdf"); assert.equal(r.bytes.subarray(0, 5).toString(), "%PDF-");
+  const pdf = Buffer.from("%PDF-1.4 test"); assert.equal((await toPdf(pdf, "application/pdf")).bytes, pdf); // a PDF stays as sent
+  const plain = await sharp({ create: { width: 400, height: 400, channels: 3, background: "#ffffff" } }).jpeg().toBuffer();
+  assert.deepEqual(await paperBox(sharp, plain), { left: 0, top: 0, width: 400, height: 400 }); // no table: whole photo
+});
