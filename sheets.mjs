@@ -170,7 +170,9 @@ function lines(items) {
 const cxMore = o => [hhmm(o.created), o.type === "del" ? "توصيل" : "استلام", SRC[o.source] || o.source];
 // L–N of «المبيعات اليومية» (المدير التنفيذي 2026-11-17): payment, who entered the order, how the customer heard of us
 export const PAY = { cash: "كاش", card: "شبكة", transfer: "تحويل", app: "تطبيق" };
-const salesMore = o => [PAY[o.pay] || (APPS.includes(o.source) ? "تطبيق" : "غير محدد"), o.entered_by || "", o.heard || ""];
+// O (منسق التنفيذ 2026-11-19, hospitality test): hours between the order coming in and the time the customer wants it — a booking made ahead
+const aheadH = o => o.created && o.due ? Math.max(0, Math.round((Number(o.due) - Number(o.created)) / 3600e3 * 10) / 10) : "";
+const salesMore = o => [PAY[o.pay] || (APPS.includes(o.source) ? "تطبيق" : "غير محدد"), o.entered_by || "", o.heard || "", aheadH(o)];
 // J–K of «الإلغاء والتأخير»: real delivery minutes (left the shop → delivered) and the courier, for our own deliveries
 export function deliveryMore(o, ev) {
   if (o.type !== "del" || APPS.includes(o.source)) return ["", ""];
@@ -209,7 +211,7 @@ export async function syncDay(pool, day, log = console.log) {
     sales.push([day, hhmm(r.at), o.num, SRC[o.source] || o.source, "مرتجع: " + r.reason, 1, -Number(r.amount), "", "مرتجع", o.type === "del" ? areaName(o.area) : "", hhmm(o.due), ...salesMore(o)]);
   }
   await ensureHeader(T.sales, "K1", "وقت الاستلام المطلوب");
-  for (const [c, t] of [["L1", "طريقة الدفع"], ["M1", "مدخل الطلب"], ["N1", "من وين عرفتنا"]]) await ensureHeader(T.sales, c, t);
+  for (const [c, t] of [["L1", "طريقة الدفع"], ["M1", "مدخل الطلب"], ["N1", "من وين عرفتنا"], ["O1", "ساعات بين دخول الطلب وموعده"]]) await ensureHeader(T.sales, c, t);
   await deleteDate(T.sales, day);
   await append(T.sales, sales);
 
@@ -330,6 +332,16 @@ export function startSheetJob(pool, log = console.log) {
         await setS(pool, "sheet_sales_done", today);
       } else if (first) { await syncDay(pool, today, log); await syncExec(pool, today, log).catch(e => log("exec: " + e.message)); } // on start: today so far (rewritten in full at 02:00)
       // «الملخص_التنفيذي» from the first board day, once (Hassan 2026-11-16: executive agent)
+      if (!(await getS(pool, "sheet_resync_v3"))) { // 2026-11-19: «المبيعات اليومية» L–O and «الإلغاء والتأخير» J–K for past days
+        const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
+        const done = new Set((await getS(pool, "sheet_resync_v3_days")) || []);
+        for (const { d } of rows) {
+          if (done.has(d)) continue;
+          await syncDay(pool, d, log); done.add(d); await setS(pool, "sheet_resync_v3_days", [...done]);
+          await new Promise(r => setTimeout(r, 15000));
+        }
+        await setS(pool, "sheet_resync_v3", Date.now()); log("sheet: resync v3 " + rows.length + " days");
+      }
       if (!(await getS(pool, "sheet_resync_v2"))) { // 2026-11-17: new columns in «الإلغاء والتأخير» and «الملخص_التنفيذي» for past days
         const { rows } = await pool.query("SELECT DISTINCT op_day::text AS d FROM orders WHERE op_day < $1 ORDER BY d", [today]);
         // resumable: a Sheets 429 (read quota per minute) on day 6 restarted from day 1 every run; done days are kept and skipped
@@ -359,6 +371,7 @@ export function startSheetJob(pool, log = console.log) {
         ["note_exec_1117_health", "طلب المدير التنفيذي (2026-11-17): مسار فحص الصحة /healthz موجود ويفحص قاعدة البيانات (يرجع 200). ضبطه في إعدادات Render (Health Check Path) يسويه حسن من لوحة Render لأن أداة Render عندنا ما تعدّل هذا الإعداد."],
         ["note_exec_1117_wa", "طلب المدير التنفيذي (2026-11-17) تم: تبويب «محادثات_واتساب» سطر لكل يوم تشغيل يُكتب الساعة 2 فجرًا: محادثات العملاء (رقم كتب لنا في اليوم، بدون المندوب ومرسلي الفواتير)، صارت طلب (له طلب انشأ نفس اليوم، بدون الملغي)، نسبة التحويل، متوسط ووسيط أول رد بالدقائق (من أول رسالة للعميل إلى أول رد من تطبيق واتساب للأعمال)، ومحادثات بلا رد خلال 12 ساعة. الأيام من 31 أكتوبر انكتبت."],
         ["note_exec_1117_delivery", "طلب المدير التنفيذي (2026-11-17) تم: «الإلغاء والتأخير» فيه عمودان جديدان في الآخر: J «وقت التوصيل الفعلي (دقيقة)» = من «خرج» إلى «تم» لتوصيلاتنا، و K «المندوب». اللوحة ما فيها أسماء مناديب، فاللي يقفل الطلب برسالة واتساب يُكتب «مندوب التوصيل المجاني» والباقي فاضي إلى أن يعطينا حسن أسماء المناديب. السطور تبدأ من الأيام الجاية."],
+        ["note_1119_ahead", "إلى منسق التنفيذ (اختبار الضيافة): «المبيعات اليومية» فيه عمود جديد في الآخر O «ساعات بين دخول الطلب وموعده» لكل الأيام من 31 أكتوبر. الحجز المسبق = طلب موعده بعد دخوله بساعات (مثلًا 3 ساعات أو أكثر، أو يوم ثاني). طريقة الدفع (L) تقول كاش/شبكة/تحويل بس، وما تقول إذا انقبض المبلغ قبل الموعد، فـ«الحجز المدفوع» ما يتميّز منها. و«العرض المقدّم» ما له حقل. إضافة خيار «مدفوع مقدمًا» في النموذج يغيّر شاشة الموظف وينتظر موافقة حسن. ملاحظة: تغطية طريقة الدفع 51% لأن الاختيار الجاهز «بعدين»."],
         ["note_1118_ledger", "طلب حسن (2026-11-18): «العملاء» صار سجل عملاء يتحدث كل ليلة (كان كل أحد). أعمدة جديدة في الآخر: J إجمالي المشتريات (بدون التوصيل، من بداية اللوحة 31 أكتوبر)، K آخر فاتورة، L أعلى فاتورة، M طلبات آخر 30 يوم. العميل = رقم جوال واحد بأي صيغة، والرقم يبان آخر 4 فقط. قواعد النقاط والمكافآت (كم نقطة لكل ريال ومتى تُصرف) لوكيل التسويق، والسجل جاهز لها."],
         ["note_mkt_1118_ad", "طلب وكيل التسويق (2026-11-18) تم: كل رسالة عميل فيها «شفت إعلانكم/اعلانكم» تنسجل حتى لو ما صار طلب، ومصدرها: إنستقرام إذا فيها إنستقرام/انستا، تيك توك إذا فيها تيك توك، وإلا «إعلان غير محدد». المصدر ينكتب في «من وين عرفتنا» للطلب (عمود N في «المبيعات اليومية») إذا الموظف ما اختار شي، للطلبات المفتوحة ولأي طلب من نفس الرقم خلال 14 يوم. «العملاء» فيه عمود جديد I «المصدر» (أول مصدر للعميل). «محادثات_واتساب» فيه 4 أعمدة جديدة في الآخر: شفت إعلانكم إنستقرام / تيك توك / غير محدد / صار طلب (نفس اليوم). يبدأ من 2026-11-18."],
         ["note_mkt_1118_heard", "رد على طلب وكيل التسويق (2026-11-17) «من وين عرفتنا» إلزامي للعميل الجديد: الحقل موجود في نموذج الطلب من 2026-11-17 15:38 (تيك توك، سناب، إنستقرام، قوقل ماب، صديق أو قريب، شاف المحل، عميل سابق، ما سألت) وينكتب في «المبيعات اليومية» عمود N و«العملاء» عمود I. الحين اختياري (فيه «ما سألت»). جعله إلزامي يغيّر شاشة الموظف، فينتظر موافقة حسن. «تطبيق توصيل» ما له خيار لأن طلبات التطبيقات ما يظهر فيها الحقل. utm_source من الموقع: الموقع ما يرسله للوحة حاليًا."],
