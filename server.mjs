@@ -792,6 +792,17 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-19 (Hassan: Friday's booking no longer shows on the board): every order on 2026-11-20 and its history
+  setTimeout(async () => { try {
+    const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(5, 16).replace("T", " ") : "-";
+    const { rows } = await pool.query("SELECT * FROM orders WHERE op_day='2026-11-20' OR (area LIKE '%الجوهرة%' AND updated > $1) ORDER BY id", [Date.now() - 3 * 864e5]);
+    for (const o of rows) {
+      const ev = (await pool.query("SELECT * FROM order_events WHERE order_id=$1 ORDER BY at", [o.id]).catch(() => ({ rows: [] }))).rows;
+      console.log(`fri: id=${o.id} day=${o.op_day && new Date(o.op_day).toISOString().slice(0,10)} #${o.num} ${o.source}/${o.type}/${o.status} due=${t(o.due)} created=${t(o.created)} updated=${t(o.updated)} total=${o.total} fee=${o.delivery_fee} area=${o.area} items=${String(o.items || "").replace(/\n/g, " / ").slice(0, 160)} note=${String(o.note || "").slice(0, 200)}`);
+      console.log(`fri-ev: id=${o.id} ` + ev.map(e => `${t(e.at)} ${e.kind}:${e.from_status || ""}>${e.to_status || ""}`).join(" | "));
+    }
+    if (!rows.length) console.log("fri: no orders on 2026-11-20");
+  } catch (e) { console.log("fri: " + e.message); } }, 20e3);
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».
