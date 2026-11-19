@@ -792,24 +792,6 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-19 (CEO task for 21 Nov): Mon–Wed 16–18 Nov by channel — priced orders, average bill, coverage of
-  // source / payment / entered-by, cancellations and lateness; and the Salmaniya fees the board reads from the website
-  setTimeout(async () => { try {
-    const m = await getMenu();
-    console.log("ceo-fees: " + m.areas.filter(a => /السلمانية|الجوهرة|المحمدية|غرناطة/.test(a.name)).map(a => `${a.name}=${a.fee}`).join(" | ") + ` source=${m.source}`);
-    const { collectDays } = await import("./dash.mjs");
-    const APPS = ["chefz", "hunger", "keeta", "ninja"];
-    const { rows } = await pool.query("SELECT id, op_day::text AS d, source, status, total, delivery_fee, area, type, heard, pay, entered_by, created FROM orders WHERE op_day BETWEEN '2026-11-16' AND '2026-11-18' AND status NOT IN ('pending','dismissed')");
-    const live = rows.filter(o => ["new","prep","ready","out","done"].includes(o.status));
-    const { feeOf } = await import("./weeksales.mjs");
-    const by = {};
-    for (const o of live) { if (APPS.includes(o.source) || o.total == null) continue; const b = by[o.source] = by[o.source] || { n: 0, s: 0 }; b.n++; b.s += Math.max(0, Number(o.total) - feeOf(o)); }
-    console.log("ceo-ch: " + Object.entries(by).map(([k, v]) => `${k}: orders=${v.n} sales=${Math.round(v.s)} avg=${(v.s / v.n).toFixed(2)}`).join(" | "));
-    const since = Date.parse("2026-11-17T15:38:00+03:00"), after = live.filter(o => Number(o.created) >= since && !APPS.includes(o.source));
-    console.log(`ceo-cov: direct_after_form=${after.length} heard=${after.filter(o => o.heard).length} pay=${after.filter(o => o.pay && o.pay !== "app").length} entered_by=${after.filter(o => o.entered_by).length} cancelled=${rows.length - live.length} apps=${live.filter(o => APPS.includes(o.source)).length}`);
-    const days = await collectDays(pool, "2026-11-16", "2026-11-18");
-    console.log("ceo-late: " + days.map(x => `${x.d} late_prep=${x.latePrep} late_out=${x.lateOut} cancelled=${x.cancelled}`).join(" | "));
-  } catch (e) { console.log("ceo: " + e.message); } }, 25e3);
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».
