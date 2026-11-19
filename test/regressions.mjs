@@ -369,3 +369,9 @@ t("2026-11-19 أسماء مكتوبة باليد تتوحد (20-قطعة، 30ق�
   assert.equal(unifiedName("كباجي جبن سائل برشة سكر 10 حبه", names), "كباجي جبن سائل برشة سكر 10 قطع");
   assert.equal(unifiedName("كباجي جبن سائل برشة سكر30 قطعة", names), "كباجي جبن سائل برشة سكر 30 قطعة");
 });
+t("2026-11-19 الدفع ومن وين عرفتنا إلزامية، وإقفال الطلب يسأل كيف دفع", () => {
+  const b = fs.readFileSync(new URL("../src/board.template.html", import.meta.url), "utf8");
+  assert.ok(!/data-v="" aria-pressed="true">(بعدين|ما سألت)/.test(b), "no ready-made «بعدين» / «ما سألت»");
+  assert.ok(b.includes('!isApp(segVal("srcSeg"))&&!segVal("paySeg")') && b.includes('!isApp(segVal("srcSeg"))&&!S.editing&&!segVal("heardSeg")'), "form requires payment and source");
+  assert.ok(b.includes('a==="go"&&b.dataset.to==="done"&&!isApp(o.source)&&!o.pay'), "done asks for the payment");
+});

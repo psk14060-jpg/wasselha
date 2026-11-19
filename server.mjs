@@ -178,6 +178,7 @@ async function migrate() {
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS pay TEXT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS entered_by TEXT");
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS heard TEXT");
+  await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS prepaid BOOLEAN"); // Hassan 2026-11-19: paid before the order's time
   await migrateAdMentions(pool);
   // 2026-11-05 18:40: النايفية and العزيزية deliver free — open orders already booked there drop their fee (once)
   if (!(await pool.query("SELECT 1 FROM board_settings WHERE key='fix_free_areas_1105'")).rows.length) {
@@ -329,7 +330,7 @@ function rowToOrder(r) {
     giftOut: r.gift_out || null, giftIn: r.gift_in || null, alertMuted: !!r.alert_muted,
     travelMin: r.travel_min == null ? null : Number(r.travel_min), dest: r.dest || null,
     prepAt: r.prep_at == null ? null : Number(r.prep_at),
-    pay: r.pay || null, enteredBy: r.entered_by || null, heard: r.heard || null,
+    pay: r.pay || null, enteredBy: r.entered_by || null, heard: r.heard || null, prepaid: !!r.prepaid,
     batchId: r.batch_id || null, batchSeq: r.batch_seq == null ? null : Number(r.batch_seq), batchOut: r.batch_out == null ? null : Number(r.batch_out),
   };
 }
@@ -344,12 +345,12 @@ async function insertOrder(o) {
     const { rows: [{ n }] } = await client.query("SELECT COALESCE(MAX(num),0)+1 AS n FROM orders WHERE op_day=$1", [day]);
     const now = Date.now();
     const { rows } = await client.query(
-      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review,app_ref,pay,entered_by,heard)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
+      `INSERT INTO orders (op_day,num,ref,source,type,status,name,phone,area,items,total,delivery_fee,note,due,created,updated,confirmed_at,raw,wa_from,raw_text,needs_review,app_ref,pay,entered_by,heard,prepaid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25) RETURNING *`,
       [day, n, o.ref || null, o.source, o.type, o.status, o.name, o.phone, o.area, o.items, o.total, o.deliveryFee,
         o.note, o.due, now, o.status === "pending" ? null : now, o.raw ? JSON.stringify(o.raw) : null,
         o.waFrom || null, o.rawText || null, !!o.needsReview, o.appRef || null,
-        o.pay || (APPS.includes(o.source) ? "app" : null), o.enteredBy || null, o.heard || null]);
+        o.pay || (APPS.includes(o.source) ? "app" : null), o.enteredBy || null, o.heard || null, o.prepaid === true]);
     await client.query("COMMIT");
     return rowToOrder(rows[0]);
   } catch (e) {
@@ -402,7 +403,7 @@ function fromBoardPayload(b) {
       appRef: APPS.includes(b.source) ? clip(b.appRef, 30) : null,
       name: clip(b.name, 60), phone: clip(b.phone, 20), area: b.type === "del" ? clip(b.area, 80) : "",
       items, total: num(b.total), deliveryFee: num(b.deliveryFee), note: clip(b.note, 300), due,
-      pay: cleanPay(b.pay), enteredBy: clip(b.enteredBy, 30) || null, heard: cleanHeard(b.heard),
+      pay: cleanPay(b.pay), enteredBy: clip(b.enteredBy, 30) || null, heard: cleanHeard(b.heard), prepaid: b.prepaid === true,
     },
   };
 }
@@ -726,6 +727,7 @@ const server = http.createServer(async (req, res) => {
         if (b.note !== undefined) put("note", clip(b.note, 300));
         if (b.appRef !== undefined) put("app_ref", clip(b.appRef, 30) || null);
         if (b.pay !== undefined) put("pay", cleanPay(b.pay));
+        if (b.prepaid !== undefined) put("prepaid", b.prepaid === true);
         if (b.heard !== undefined) put("heard", cleanHeard(b.heard));
         if (b.enteredBy !== undefined) put("entered_by", clip(b.enteredBy, 30) || null);
         if (b.total !== undefined) put("total", num(b.total));

@@ -292,6 +292,9 @@ body{margin:0;padding-top:env(safe-area-inset-top,0px)}
 .addons{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;padding:8px 10px;border-radius:12px;background:#FFF3E6;border:1px dashed #F07C21;font-size:14px;font-weight:600;color:#8a4a12}
 .addons button{border:1px solid #F07C21;background:#fff;color:#8a4a12;border-radius:999px;padding:5px 12px;font-weight:600;min-height:34px}
 #heardSeg,#paySeg{flex-wrap:wrap}
+.chk{display:flex;gap:8px;align-items:center;margin-top:8px;font-size:14px;font-weight:600}
+.chk input{width:20px;height:20px}
+.paydone{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;border-radius:12px;background:#E8F5E9;border:1px solid #2E7D32;font-weight:700}
 .byf input{max-width:260px}
 .cline .q{font:600 14px var(--f-mono);min-width:28px}
 .cline .nm{font-weight:600}
@@ -448,9 +451,10 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
           <button type="button" data-v="cash" aria-pressed="false">كاش</button>
           <button type="button" data-v="card" aria-pressed="false">شبكة</button>
           <button type="button" data-v="transfer" aria-pressed="false">تحويل</button>
-          <button type="button" data-v="" aria-pressed="true">بعدين</button>
-        </div></div>
-      <div class="f full"><span>من وين عرفتنا؟ <small>(اسأل العميل الجديد)</small></span>
+          <button type="button" data-v="later" aria-pressed="false">عند الاستلام</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="prepaid"> مدفوع مقدمًا (دفع قبل الموعد)</label></div>
+      <div class="f full"><span>من وين عرفتنا؟ <small>(لازم: اسأل العميل)</small></span>
         <div class="seg wrap" id="heardSeg" role="group" aria-label="من وين عرفتنا">
           <button type="button" data-v="تيك توك" aria-pressed="false">تيك توك</button>
           <button type="button" data-v="سناب" aria-pressed="false">سناب</button>
@@ -459,7 +463,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
           <button type="button" data-v="صديق أو قريب" aria-pressed="false">صديق أو قريب</button>
           <button type="button" data-v="شاف المحل" aria-pressed="false">شاف المحل</button>
           <button type="button" data-v="عميل سابق" aria-pressed="false">عميل سابق</button>
-          <button type="button" data-v="" aria-pressed="true">ما سألت</button>
+          <button type="button" data-v="أخرى" aria-pressed="false">أخرى</button>
         </div></div>
     </div>
     <label class="f full byf"><span>اسم مدخل الطلب</span><input type="text" id="enteredBy" autocomplete="off" placeholder="اسمك (ينحفظ على هذا الجهاز)"></label>
@@ -899,6 +903,7 @@ const COLS=[
   {k:"prep",t:"يُحضَّر"},
   {k:"ready",t:"جاهز"},
   {k:"out",t:"مع المندوب"}];
+const payAskHtml=`<div class="paydone"><span>كيف دفع؟</span><button type="button" class="sm" data-act="paydone" data-pay="cash">كاش</button><button type="button" class="sm" data-act="paydone" data-pay="card">شبكة</button><button type="button" class="sm" data-act="paydone" data-pay="transfer">تحويل</button></div>`;
 const NEXT={new:["prep","ابدأ التحضير"],prep:["ready","جاهز"],ready:null,out:["done","وصل للعميل"]};
 const PREV={prep:"new",ready:"prep",out:"ready"};
 const S={master:true,unlocked:false,dayOff:0,filter:"all",tab:"new",orders:[],sound:false,known:null,alerted:new Set(),ready:false,editing:null};
@@ -1021,7 +1026,7 @@ function ticket(o,t){
       <div class="acts">
         <button type="button" class="sm" data-act="edit">تعديل</button>
         ${PREV[o.status]?`<button type="button" class="sm" data-act="back">رجوع</button>`:""}
-        ${next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
+        ${next&&next[0]==="done"&&S.payAsk===String(o.id)?payAskHtml:next?`<button type="button" class="go ${next[0]==="done"?"done":""}" data-act="go" data-to="${next[0]}">${next[1]}</button>`:""}
       </div>
     </div>
   </article>`;
@@ -1158,7 +1163,10 @@ document.addEventListener("click",e=>{
   if(b){
     const host=b.closest("[data-id]"); const o=host&&findOrder(host.dataset.id); if(!o)return;
     const a=b.dataset.act;
-    if(a==="go"){patch(o,{status:b.dataset.to});batchCheck(b.dataset.to);}
+    /* Hassan 2026-11-19: closing a direct order with no payment asks how it was paid (kept in S.payAsk so a refresh keeps it) */
+    if(a==="go"&&b.dataset.to==="done"&&!isApp(o.source)&&!o.pay){S.payAsk=String(o.id);render();return;}
+    if(a==="paydone"){S.payAsk=null;patch(o,{status:"done",pay:b.dataset.pay});batchCheck("done");}
+    else if(a==="go"){patch(o,{status:b.dataset.to});batchCheck(b.dataset.to);}
     else if(a==="back"){const p=o.status==="done"?(o.type==="del"?"out":"ready"):PREV[o.status];if(p)patch(o,{status:p});}
     else if(a==="restore") patch(o,{status:o.status==="dismissed"?"pending":"new"});
     else if(a==="confirm") patch(o,{status:"new",confirm:true},"أُكّد الطلب #"+o.num+" وانتقل للمطبخ");
@@ -1496,7 +1504,9 @@ function openSheet(o){
    if(n===0||n===1)setSeg("daySeg",n);else{$("dueDate").value=k;setSeg("daySeg","x");}}
   if(o){const p=rParts(o.due);$("dueTime").value=pad(p.h)+":"+pad(p.mi);}else $("dueTime").value="";
   $("name").value=o?o.name||"":""; $("phone").value=o?o.phone||"":""; $("appRef").value=o?o.appRef||"":"";
-  setSeg("paySeg",o&&o.pay&&o.pay!=="app"?o.pay:""); setSeg("heardSeg",o&&o.heard?o.heard:"");
+  /* Hassan 2026-11-19: payment and «من وين عرفتنا» are required (nothing picked in advance); an old order being edited
+     without a payment shows «عند الاستلام» so its edit is not blocked */
+  setSeg("paySeg",o&&o.pay&&o.pay!=="app"?o.pay:(o?"later":"")); setSeg("heardSeg",o&&o.heard?o.heard:""); $("prepaid").checked=!!(o&&o.prepaid);
   {let n="";try{n=localStorage.getItem("mg-by")||"";}catch(x){}$("enteredBy").value=o?o.enteredBy||n:n;}
   $("areaSel").value=""; $("area").hidden=true; $("area").value="";
   if(o&&o.area){const a=o.area.replace(/\s*\(.*\)\s*$/,"");if([...$("areaSel").options].some(x=>x.value===a))$("areaSel").value=a;else{$("areaSel").value="__other";$("area").hidden=false;$("area").value=a;}}
@@ -1568,6 +1578,8 @@ $("sheet").addEventListener("submit",async e=>{
   }
   if(!segVal("srcSeg")){err.textContent="اختر مصدر الطلب (المحل، اتصال، واتساب، أو التطبيق).";err.hidden=false;$("srcSeg").scrollIntoView({block:"center"});return;}
   /* Hassan 2026-11-17 (#23 saved as «واتساب» with no number): WhatsApp and phone orders need the customer's number */
+  if(!isApp(segVal("srcSeg"))&&!segVal("paySeg")){err.textContent="اختر طريقة الدفع (كاش، شبكة، تحويل، أو عند الاستلام).";err.hidden=false;$("paySeg").scrollIntoView({block:"center"});return;}
+  if(!isApp(segVal("srcSeg"))&&!S.editing&&!segVal("heardSeg")){err.textContent="اختر «من وين عرفتنا؟». إذا طلب قبل اختر «عميل سابق».";err.hidden=false;$("heardSeg").scrollIntoView({block:"center"});return;}
   if(["wa","call"].includes(segVal("srcSeg"))&&$("phone").value.replace(/[^0-9٠-٩]/g,"").length<9){err.textContent="طلب الواتساب والاتصال لازم فيه رقم جوال العميل. إذا العميل جا للمحل اختر «المحل».";err.hidden=false;$("phone").focus();return;}
   if(!items){err.textContent=textMode()?"اكتب صنفًا واحدًا على الأقل.":"اضغط على صنف واحد على الأقل.";err.hidden=false;return;}
   if(!tm){err.textContent="اختر وقت التسليم.";err.hidden=false;$("slots").scrollIntoView({block:"nearest"});return;}
@@ -1578,7 +1590,7 @@ $("sheet").addEventListener("submit",async e=>{
   const area=del?areaName()+(deliveryFee?` (توصيل ${deliveryFee} ر)`:""):"";
   const data={type:segVal("typeSeg"),name:$("name").value.trim(),phone:normDigits($("phone").value).trim(),area,items,total,note:$("note").value.trim(),due};
   if(deliveryFee!=null)data.deliveryFee=deliveryFee;
-  if(!isApp(segVal("srcSeg"))){data.pay=segVal("paySeg")||null;data.heard=segVal("heardSeg")||null;}
+  if(!isApp(segVal("srcSeg"))){const pv=segVal("paySeg");data.pay=pv&&pv!=="later"?pv:null;data.prepaid=$("prepaid").checked;if(segVal("heardSeg"))data.heard=segVal("heardSeg");}
   {const by=$("enteredBy").value.trim();if(by){try{localStorage.setItem("mg-by",by);}catch(x){}if(!S.editing||!S.editing.enteredBy)data.enteredBy=by;}}
   if(isApp(segVal("srcSeg"))){data.appRef=normDigits($("appRef").value).trim();data.type="pick";data.area="";}
   const btn=$("saveBtn"); btn.disabled=true;
