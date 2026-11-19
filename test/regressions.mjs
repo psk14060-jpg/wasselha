@@ -361,3 +361,11 @@ t("2026-11-18 «شفت إعلانكم» يسجّل المصدر", async () => {
   const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.ok(srv.includes("if (!o.heard && o.waFrom) o.heard = await heardFromAd(pool, o.waFrom)"), "a new WhatsApp order takes the ad source");
 });
+t("2026-11-19 أسماء مكتوبة باليد تتوحد (20-قطعة، 30قطعة، 10 حبه، مثلث)", async () => {
+  const { unifiedName } = await import("../subsidy.mjs");
+  const names = ["فطاير مثلثة 20 قطعة", "فطاير مثلثة 30 قطعة", "كباجي جبن سائل برشة سكر 10 قطع", "كباجي جبن سائل برشة سكر 30 قطعة"];
+  assert.equal(unifiedName("فطائر مثلثة 20-قطعة", names), "فطاير مثلثة 20 قطعة");
+  assert.equal(unifiedName("فطائر مثلث 30قطعة", names), "فطاير مثلثة 30 قطعة");
+  assert.equal(unifiedName("كباجي جبن سائل برشة سكر 10 حبه", names), "كباجي جبن سائل برشة سكر 10 قطع");
+  assert.equal(unifiedName("كباجي جبن سائل برشة سكر30 قطعة", names), "كباجي جبن سائل برشة سكر 30 قطعة");
+});
