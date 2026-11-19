@@ -213,7 +213,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
           <button type="button" data-v="later" aria-pressed="false">عند الاستلام</button>
         </div>
         <label class="chk"><input type="checkbox" id="prepaid"> مدفوع مقدمًا (دفع قبل الموعد)</label></div>
-      <div class="f full"><span>من وين عرفتنا؟ <small>(لازم: اسأل العميل)</small></span>
+      <div class="f full"><span>من وين عرفتنا؟ <small>(اختياري: إذا جاوب العميل)</small></span>
         <div class="seg wrap" id="heardSeg" role="group" aria-label="من وين عرفتنا">
           <button type="button" data-v="تيك توك" aria-pressed="false">تيك توك</button>
           <button type="button" data-v="سناب" aria-pressed="false">سناب</button>
@@ -1031,7 +1031,6 @@ $("sheet").addEventListener("submit",async e=>{
   if(!segVal("srcSeg")){err.textContent="اختر مصدر الطلب (المحل، اتصال، واتساب، أو التطبيق).";err.hidden=false;$("srcSeg").scrollIntoView({block:"center"});return;}
   /* Hassan 2026-11-17 (#23 saved as «واتساب» with no number): WhatsApp and phone orders need the customer's number */
   if(!isApp(segVal("srcSeg"))&&!segVal("paySeg")){err.textContent="اختر طريقة الدفع (كاش، شبكة، تحويل، أو عند الاستلام).";err.hidden=false;$("paySeg").scrollIntoView({block:"center"});return;}
-  if(!isApp(segVal("srcSeg"))&&!S.editing&&!segVal("heardSeg")){err.textContent="اختر «من وين عرفتنا؟». إذا طلب قبل اختر «عميل سابق».";err.hidden=false;$("heardSeg").scrollIntoView({block:"center"});return;}
   if(["wa","call"].includes(segVal("srcSeg"))&&$("phone").value.replace(/[^0-9٠-٩]/g,"").length<9){err.textContent="طلب الواتساب والاتصال لازم فيه رقم جوال العميل. إذا العميل جا للمحل اختر «المحل».";err.hidden=false;$("phone").focus();return;}
   if(!items){err.textContent=textMode()?"اكتب صنفًا واحدًا على الأقل.":"اضغط على صنف واحد على الأقل.";err.hidden=false;return;}
   if(!tm){err.textContent="اختر وقت التسليم.";err.hidden=false;$("slots").scrollIntoView({block:"nearest"});return;}
