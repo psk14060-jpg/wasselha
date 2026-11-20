@@ -486,6 +486,24 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     const a = built.items.split("\n").map(norm2).sort().join("|"), b = String(prev.items).split("\n").map(norm2).sort().join("|");
     if (a === b) { await chatTime(prev, "same items as the website"); return `same_as_website_order #${prev.num}`; }
   }
+  // 2026-11-20 #20/#21: someone fills the website form for the customer and sends it from his own number (…6642 sent
+  // MG-6SYX2 and MG-R2NTM for two different customers); the shop then approves in the customer's own chat. A website order
+  // approved in the last 15 minutes, sent from another number, with the same items, is this customer's order: link the chat
+  // to it (number, location) instead of opening a second card.
+  {
+    const norm3 = x => String(x).replace(/\s*—.*$/, "").replace(/\s+/g, " ").trim();
+    const mine = built.items.split("\n").map(norm3).sort().join("|");
+    const cands = (await pool.query(
+      `SELECT id, num, items, type FROM orders WHERE source='web' AND status IN ('new','prep','ready','out') AND confirmed_at > $1
+         AND wa_from IS DISTINCT FROM $2 ORDER BY confirmed_at DESC LIMIT 5`, [now - 15 * 60e3, m.from])).rows;
+    const twin = cands.find(c => String(c.items).split("\n").map(norm3).sort().join("|") === mine);
+    if (twin) {
+      await pool.query(`UPDATE orders SET wa_from=$2, phone=$3, note=TRIM(BOTH ' ·' FROM COALESCE(note,'') || ' · رقم العميل من محادثته (طلب الموقع انرسل من رقم ثاني)'), updated=$4 WHERE id=$1`,
+        [twin.id, m.from, phone || "", now]);
+      if (twin.type === "del") await locationFromChat(pool, twin.id, customerRows, log, { wantDelivery: true, waFrom: m.from });
+      return `linked_to_relayed_website_order #${twin.num}`;
+    }
+  }
   if (manual) {
     // keep the items the shop typed; take delivery, notes and location from the chat
     const extra = [customerRows.some(r => /^\[صورة\]/.test(r.body)) ? "📷 العميل أرسل صورة" : "", p.note].filter(Boolean).join(" · ");

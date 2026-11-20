@@ -380,3 +380,8 @@ t("2026-11-20 #4 MG-6SYX2: اعتماد في محادثة ثانية فيها ر
   const w = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
   assert.ok(w.includes("dir='out' AND at > $2 AND at <= $3 AND body ~* 'MG-[A-Z0-9]{4,8}'"), "approval looks for a website order number the shop wrote in this chat");
 });
+
+t("2026-11-20 #20/#21: طلب موقع انرسل من رقم ثاني + اعتماد في محادثة العميل = نفس الطلب", () => {
+  const w = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
+  assert.ok(w.includes("linked_to_relayed_website_order") && w.indexOf("linked_to_relayed_website_order") < w.indexOf("const o = await insertOrder({ ref: null, source: \"wa\""), "checked before a new WhatsApp order is created");
+});

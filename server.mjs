@@ -794,15 +794,6 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-20 (Hassan: #20 and #21 are the same customer): both orders and the chat around them; phones as last 4
-  setTimeout(async () => { try {
-    const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 19) : "-";
-    const os = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-20' AND num IN (20,21) ORDER BY num")).rows;
-    for (const o of os) console.log(`d20: #${o.num} id=${o.id} ${o.source}/${o.type}/${o.status} ref=${o.ref || "-"} created=${t(o.created)} confirmed=${t(o.confirmed_at)} due=${t(o.due)} total=${o.total} wa=…${String(o.wa_from || "").slice(-4)} area=${o.area} items=${String(o.items || "").replace(/\n/g, " / ")} note=${String(o.note || "").slice(0, 150)}`);
-    const wf = os.map(o => o.wa_from).filter(Boolean)[0];
-    if (wf) { const ms = (await pool.query("SELECT dir, at, left(body,160) AS b, result FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [wf, Date.parse("2026-11-20T15:00:00+03:00")])).rows;
-      for (const m of ms) console.log(`d20-msg: ${t(m.at)} ${m.dir === "in" ? "العميل" : "المحل"} [${m.result || "-"}] ${String(m.b).replace(/\d{7,}/g, "…").replace(/\n/g, " ⏎ ")}`); }
-  } catch (e) { console.log("d20: " + e.message); } }, 20e3);
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».
