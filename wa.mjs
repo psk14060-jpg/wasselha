@@ -369,9 +369,21 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     await pool.query(`UPDATE orders SET wa_from=$2, updated=$3 WHERE id=$1`, [manual.id, m.from, now]);
     log(`wa: chat linked to board order #${manual.num}`);
   }
-  const pendingWeb = (await pool.query(
+  let pendingWeb = (await pool.query(
     `SELECT id, num FROM orders WHERE wa_from=$1 AND source='web' AND status='pending' AND created > $2 ORDER BY created DESC LIMIT 1`,
     [m.from, now - 24 * 3600e3])).rows[0];
+  // 2026-11-20 #4 (MG-6SYX2): the shop copied the customer's website message into another chat and approved there.
+  // A website order number the shop itself wrote in this chat in the last 30 minutes points to the order being approved.
+  if (!pendingWeb) {
+    const outRef = (await pool.query(
+      `SELECT body FROM wa_messages WHERE wa_from=$1 AND dir='out' AND at > $2 AND at <= $3 AND body ~* 'MG-[A-Z0-9]{4,8}' ORDER BY at DESC LIMIT 1`,
+      [m.from, now - 30 * 60e3, m.ts + 1000])).rows[0];
+    const ref = outRef && (outRef.body.match(/MG-[A-Z0-9]{4,8}/i) || [])[0];
+    if (ref) {
+      pendingWeb = (await pool.query(`SELECT id, num FROM orders WHERE ref=$1 AND source='web' AND status='pending' AND created > $2`, [ref.toUpperCase(), now - 24 * 3600e3])).rows[0];
+      if (pendingWeb) log(`wa: approval in another chat → website order ${ref.toUpperCase()} #${pendingWeb.num}`);
+    }
+  }
   if (pendingWeb) {
     await pool.query(`UPDATE orders SET status='new', confirmed_at=$2, updated=$2 WHERE id=$1`, [pendingWeb.id, now]);
     log(`wa: website order #${pendingWeb.num} approved`);

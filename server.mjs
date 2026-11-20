@@ -794,21 +794,6 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-20 (Hassan: the shop wrote the approval for website order MG-6SYX2 at 12:29 but it never reached the board,
-  // log said approval_without_customer_text): show why, and put it on the board since the shop approved it
-  setTimeout(async () => { try {
-    const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(5, 16).replace("T", " ") : "-";
-    const k = v => v ? `…${String(v).slice(-4)}(len ${String(v).length})` : "none";
-    const o = (await pool.query("SELECT * FROM orders WHERE ref='MG-6SYX2'")).rows[0];
-    if (!o) return console.log("mg6: order not found");
-    console.log(`mg6: id=${o.id} #${o.num} day=${new Date(o.op_day).toISOString().slice(0,10)} status=${o.status} source=${o.source} created=${t(o.created)} due=${t(o.due)} wa_from=${k(o.wa_from)} phone=${k(o.phone)}`);
-    const ms = (await pool.query("SELECT wa_from, dir, at, left(body,40) AS b, result FROM wa_messages WHERE at BETWEEN $1 AND $2 ORDER BY at", [Date.parse("2026-11-20T12:25:00+03:00"), Date.parse("2026-11-20T12:31:00+03:00")])).rows;
-    for (const m of ms) console.log(`mg6-msg: ${t(m.at)} ${m.dir} from=${k(m.wa_from)} result=${m.result || "-"} body=${String(m.b).replace(/\d{7,}/g, "…")}`);
-    if (o.status === "pending") {
-      await pool.query("UPDATE orders SET status='new', confirmed_at=$2, updated=$2 WHERE id=$1", [o.id, Date.now()]);
-      console.log(`mg6: #${o.num} approved now (was pending)`);
-    }
-  } catch (e) { console.log("mg6: " + e.message); } }, 20e3);
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».

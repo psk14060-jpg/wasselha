@@ -376,3 +376,7 @@ t("2026-11-19 الدفع ومن وين عرفتنا إلزامية، وإقفا�
   assert.ok(!b.includes('!segVal("heardSeg")'), "«من وين عرفتنا» stays optional (Hassan 2026-11-19 13:26: most customers do not answer)");
   assert.ok(b.includes('a==="go"&&b.dataset.to==="done"&&!isApp(o.source)&&!o.pay'), "done asks for the payment");
 });
+t("2026-11-20 #4 MG-6SYX2: اعتماد في محادثة ثانية فيها رقم طلب الموقع يعتمده", () => {
+  const w = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
+  assert.ok(w.includes("dir='out' AND at > $2 AND at <= $3 AND body ~* 'MG-[A-Z0-9]{4,8}'"), "approval looks for a website order number the shop wrote in this chat");
+});
