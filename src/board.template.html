@@ -173,7 +173,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
       <div class="qhead"><h4>الأصناف</h4><span class="qhint" id="menuSrc"></span></div>
       <div class="tiles" id="tiles"><div class="empty">جارٍ تحميل المنيو…</div></div>
       <div class="cart" id="cart" hidden></div>
-      <div class="addons" id="addons" hidden><span>🥤 ذكّر العميل بالإضافات:</span><span id="addonBtns"></span></div>
+      <div class="addons" id="addons" hidden><span>➕ اعرض على العميل إضافة:</span><span id="addonBtns"></span></div>
     </section>
 
     <label class="f full" id="appRefWrap" hidden><span>رقم طلب التطبيق</span><input type="text" id="appRef" class="mono" inputmode="numeric" autocomplete="off" placeholder="مثل 300358933"></label>
@@ -887,12 +887,17 @@ function renderCart(){
   renderSum(); renderAddons();
 }
 /* المدير التنفيذي 2026-11-17: a reminder line when the order has no add-on (drink or water); one tap adds it */
+/* تجربة 1 (وكيل التسويق، 18 نوفمبر–1 ديسمبر): the add-ons offered on every order = 5-piece pizza or manaqeesh (12),
+   soft drink (3), water (1). The line shows until the order has one of them; one tap adds it. */
 const ADDON=/مشروب|ماء|مياه|عصير|صوص/;
-function renderAddons(){const box=$("addons");const app=isApp(segVal("srcSeg"));
-  const list=MENU?MENU.products.filter(p=>ADDON.test(p.name)):[];
-  box.hidden=app||textMode()||!cart.length||!list.length||cart.some(l=>ADDON.test(l.name));
-  $("addonBtns").innerHTML=list.map(p=>`<button type="button" data-addon="${esc(p.id)}">+ ${esc(p.name)} <small>${p.variants[0].price} ر</small></button>`).join("");}
-$("addons").addEventListener("click",e=>{const b=e.target.closest("[data-addon]");if(!b)return;const p=MENU.products.find(x=>x.id===b.dataset.addon);if(p)addItem(p,p.variants[0]);});
+const isAddonLine=l=>ADDON.test(l.name)||/^5\s/.test(l.tag||"");
+function addonList(){if(!MENU)return[];const out=[];
+  for(const p of MENU.products){const v5=p.variants.find(v=>/^5\s/.test(v.tag));if(v5)out.push([p,v5]);}
+  for(const p of MENU.products)if(ADDON.test(p.name))out.push([p,p.variants[0]]);return out;}
+function renderAddons(){const box=$("addons");const app=isApp(segVal("srcSeg"));const list=addonList();
+  box.hidden=app||textMode()||!cart.length||!list.length||cart.some(isAddonLine);
+  $("addonBtns").innerHTML=list.map(([p,v])=>`<button type="button" data-addon="${esc(p.id)}" data-tag="${esc(v.tag)}">+ ${esc(p.name)}${/^5\s/.test(v.tag)?" "+esc(v.tag):""} <small>${v.price} ر</small></button>`).join("");}
+$("addons").addEventListener("click",e=>{const b=e.target.closest("[data-addon]");if(!b)return;const p=MENU.products.find(x=>x.id===b.dataset.addon);if(!p)return;const v=p.variants.find(x=>x.tag===b.dataset.tag)||p.variants[0];addItem(p,v);});
 $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(b){e.stopPropagation();setFlavor(+b.dataset.fi,b.dataset.flv);}});
 
 /* time slots every 30 minutes, like the website */

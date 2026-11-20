@@ -385,3 +385,7 @@ t("2026-11-20 #20/#21: طلب موقع انرسل من رقم ثاني + اعت�
   const w = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
   assert.ok(w.includes("linked_to_relayed_website_order") && w.indexOf("linked_to_relayed_website_order") < w.indexOf("const o = await insertOrder({ ref: null, source: \"wa\""), "checked before a new WhatsApp order is created");
 });
+t("2026-11-20 تجربة 1: سطر الإضافات يعرض بيتزا/مناقيش 5 قطع والمشروب والماء", () => {
+  const b = fs.readFileSync(new URL("../src/board.template.html", import.meta.url), "utf8");
+  assert.ok(b.includes("const isAddonLine=l=>ADDON.test(l.name)||/^5\\s/.test(l.tag||\"\")"), "a 5-piece line counts as the add-on");
+});
