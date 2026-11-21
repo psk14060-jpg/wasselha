@@ -794,18 +794,6 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-21 22:05 (Hassan): delivery actually charged — #26 (البطالية) 20, #28 (الخالدية) 5; totals move by the same
-  setTimeout(async () => { try {
-    if ((await pool.query("SELECT 1 FROM board_settings WHERE key='fee_fix_1121'")).rows.length) return;
-    for (const [num, fee] of [[26, 20], [28, 5]]) {
-      const r = await pool.query(`UPDATE orders SET total = CASE WHEN total IS NULL THEN NULL ELSE total - COALESCE(delivery_fee,0) + $2::numeric END,
-        delivery_fee=$2::numeric, area = regexp_replace(area, '\\s*\\(.*\\)\\s*$', '') || ' (توصيل ' || $2::text || ' ر)',
-        note = concat_ws(' · ', NULLIF(note,''), 'رسوم التوصيل ' || $2::text || ' (صحّحها حسن)'), updated=$3
-        WHERE op_day='2026-11-21' AND num=$1 RETURNING total`, [num, fee, Date.now()]);
-      console.log(`fee1121: #${num} fee=${fee} total=${r.rows[0] && r.rows[0].total}`);
-    }
-    await pool.query("INSERT INTO board_settings (key, value) VALUES ('fee_fix_1121', 'true') ON CONFLICT DO NOTHING");
-  } catch (e) { console.log("fee1121: " + e.message); } }, 20e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
   // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
   // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
