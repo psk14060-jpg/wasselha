@@ -794,23 +794,22 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-21 21:55 (Hassan doubts today's delivery fees = 45): every delivery order today with its fee, the fee in its
-  // area label, the website fee for its neighbourhood and its items total; no phone numbers
-  setTimeout(async () => { try {
-    const m = await getMenu();
-    const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16) : "-";
-    const { rows } = await pool.query("SELECT * FROM orders WHERE op_day='2026-11-21' AND type='del' ORDER BY num");
-    const { feeOf } = await import("./weeksales.mjs");
-    let sum = 0;
+  // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
+  // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
+  // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
+  setInterval(async () => { try {
+    const m = await getMenu(); if (m.source !== "site") return;
+    const { rows } = await pool.query(`SELECT id, num, area, total, delivery_fee, note FROM orders WHERE type='del' AND source IN ('wa','call')
+      AND status IN ('new','prep','ready') AND COALESCE(delivery_fee,0)=0 AND updated > $1`, [Date.now() - 24 * 3600e3]);
     for (const o of rows) {
-      const live = ["new","prep","ready","out","done"].includes(o.status);
-      const lab = (String(o.area || "").match(/توصيل\s*([0-9.]+)\s*ر/) || [])[1];
-      const lines = String(o.items || "").split("\n").reduce((a, l) => a + (+((l.match(/—\s*([0-9.]+)\s*ريال/) || [])[1] || 0)), 0);
-      if (live && o.total != null && !["chefz","hunger","keeta","ninja"].includes(o.source)) sum += feeOf(o);
-      console.log(`fee21: #${o.num} ${o.source}/${o.status} due=${t(o.due)} area=${String(o.area || "").slice(0, 60)} fee=${o.delivery_fee} label=${lab ?? "-"} site=${siteFee(m.areas, o.area) ?? "-"} feeOf=${feeOf(o)} total=${o.total} items=${lines}`);
+      const fee = siteFee(m.areas, o.area);
+      if (!fee || /مجان|خصم|هدية/.test(String(o.note || "") + String(o.area || ""))) continue;
+      await pool.query(`UPDATE orders SET delivery_fee=$2::numeric, total = CASE WHEN total IS NULL THEN NULL ELSE total + $2::numeric END,
+        area = regexp_replace(area, '\\s*\\(.*\\)\\s*$', '') || ' (توصيل ' || $2::text || ' ر)',
+        note = concat_ws(' · ', NULLIF(note,''), 'أُضيفت رسوم التوصيل ' || $2::text || ' (حسب قائمة الموقع)'), updated=$3 WHERE id=$1`, [o.id, fee, Date.now()]);
+      console.log(`fee-fix: #${o.num} ${o.area} — fee 0 → ${fee}`);
     }
-    console.log(`fee21: delivery orders=${rows.length} counted_fees=${sum}`);
-  } catch (e) { console.log("fee21: " + e.message); } }, 20e3);
+  } catch (e) { console.log("fee-fix: " + e.message); } }, 60e3).unref();
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».

@@ -1,6 +1,6 @@
 // Customer location → delivery time and fee, the same way the website does it:
 // road distance from the shop (OSRM), else straight line × factor at a set speed; the fee comes from the distance zones.
-import { getMenu, isFreeArea } from "./menu.mjs";
+import { getMenu, isFreeArea, normArea } from "./menu.mjs";
 
 const DEFAULTS = { shop: { lat: 25.3287496, lng: 49.5631309 }, maxKm: 20, fallbackFactor: 1.35, fallbackSpeed: 30, timeFactor: 1.4,
   zones: [{ name: "قريب جدًا", maxKm: 3.5, fee: 5 }, { name: "قريب", maxKm: 7, fee: 5 }, { name: "متوسط", maxKm: 10, fee: 10 }, { name: "بعيد", maxKm: 13, fee: 15 }, { name: "أبعد", maxKm: 20, fee: 20 }] };
@@ -90,7 +90,8 @@ export async function applyLocation(pool, orderId, point, log = console.log, sou
   // the fee of a neighbourhood from the website's list wins (as on the website); a website order keeps the fee it was sent with.
   // The map point then only sets the drive time and the driver's link.
   const areaName = String(o.area || "").replace(/^📍\s*/, "").replace(/\s*·.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
-  const listed = ((await getMenu()).areas || []).find(a => a.name === areaName);
+  // matched the way the website list is read everywhere else (normArea: «حي», ة/ه, spaces) — an exact match missed some (#28 2026-11-21 الخالدية got no fee)
+  const listed = ((await getMenu()).areas || []).find(a => normArea(a.name) === normArea(areaName));
   const hood = listed || isFreeArea(areaName) ? "" : await neighbourhoodOf(point);
   const fee = isFreeArea(areaName) || isFreeArea(hood) ? 0 : listed ? listed.fee : (o.source === "web" && o.delivery_fee != null) ? Number(o.delivery_fee) : d.inRange ? d.fee : null;
   const total = o.total == null ? null : Number(o.total) - oldFee + (fee || 0);

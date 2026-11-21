@@ -389,3 +389,9 @@ t("2026-11-20 تجربة 1: سطر الإضافات يعرض بيتزا/مناق
   const b = fs.readFileSync(new URL("../src/board.template.html", import.meta.url), "utf8");
   assert.ok(b.includes("const isAddonLine=l=>ADDON.test(l.name)||/^5\\s/.test(l.tag||\"\")"), "a 5-piece line counts as the add-on");
 });
+t("2026-11-21 #28 الخالدية بدون رسوم: الحي يُطابق بـ normArea، وطلب واتساب/اتصال مفتوح برسوم 0 ياخذ رسوم الموقع", () => {
+  const loc = fs.readFileSync(new URL("../location.mjs", import.meta.url), "utf8");
+  assert.ok(loc.includes("normArea(a.name) === normArea(areaName)"), "neighbourhood matched like the website list");
+  const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
+  assert.ok(srv.includes("fee-fix:") && srv.includes("source IN ('wa','call')"), "open WhatsApp/phone deliveries with fee 0 get the website fee");
+});
