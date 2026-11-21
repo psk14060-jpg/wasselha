@@ -794,6 +794,23 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-21 21:55 (Hassan doubts today's delivery fees = 45): every delivery order today with its fee, the fee in its
+  // area label, the website fee for its neighbourhood and its items total; no phone numbers
+  setTimeout(async () => { try {
+    const m = await getMenu();
+    const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(11, 16) : "-";
+    const { rows } = await pool.query("SELECT * FROM orders WHERE op_day='2026-11-21' AND type='del' ORDER BY num");
+    const { feeOf } = await import("./weeksales.mjs");
+    let sum = 0;
+    for (const o of rows) {
+      const live = ["new","prep","ready","out","done"].includes(o.status);
+      const lab = (String(o.area || "").match(/توصيل\s*([0-9.]+)\s*ر/) || [])[1];
+      const lines = String(o.items || "").split("\n").reduce((a, l) => a + (+((l.match(/—\s*([0-9.]+)\s*ريال/) || [])[1] || 0)), 0);
+      if (live && o.total != null && !["chefz","hunger","keeta","ninja"].includes(o.source)) sum += feeOf(o);
+      console.log(`fee21: #${o.num} ${o.source}/${o.status} due=${t(o.due)} area=${String(o.area || "").slice(0, 60)} fee=${o.delivery_fee} label=${lab ?? "-"} site=${siteFee(m.areas, o.area) ?? "-"} feeOf=${feeOf(o)} total=${o.total} items=${lines}`);
+    }
+    console.log(`fee21: delivery orders=${rows.length} counted_fees=${sum}`);
+  } catch (e) { console.log("fee21: " + e.message); } }, 20e3);
   // 2026-11-18 13:29 (Hassan, via the executive agent): the website lowered delivery fees (by driving time). Open orders and
   // future bookings in a listed neighbourhood get the website's new fee — only when it is lower (a confirmed price is never
   // raised); total moves by the same difference. Once, after the live menu is read; logged as «refee:».
