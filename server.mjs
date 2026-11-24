@@ -794,6 +794,19 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-25 00:07 (Hassan: «طلب ٢٨ رجعه بقائمة الملغاه»): order #28 of operating day 2026-11-24 back to cancelled; its history logged first
+  setTimeout(async () => { try {
+    const t = ms => ms ? new Date(Number(ms) + 3 * 3600e3).toISOString().slice(5, 16).replace("T", " ") : "-";
+    const o = (await pool.query("SELECT * FROM orders WHERE op_day='2026-11-24' AND num=28")).rows[0];
+    if (!o) return console.log("c28: no #28 on 2026-11-24");
+    const ev = (await pool.query("SELECT * FROM order_events WHERE order_id=$1 ORDER BY at", [o.id])).rows;
+    console.log(`c28: #28 ${o.source}/${o.type}/${o.status} cancel_reason=${o.cancel_reason || "-"} total=${o.total} items=${String(o.items || "").replace(/\n/g, " / ").slice(0, 120)}`);
+    console.log("c28-ev: " + ev.map(e => `${t(e.at)} ${e.kind}:${e.from_status || ""}>${e.to_status || ""}`).join(" | "));
+    if (o.status !== "cancelled") {
+      await pool.query("UPDATE orders SET status='cancelled', cancel_reason=COALESCE(cancel_reason,'ألغاه حسن'), updated=$2 WHERE id=$1", [o.id, Date.now()]);
+      console.log(`c28: #28 ${o.status} → cancelled`);
+    }
+  } catch (e) { console.log("c28: " + e.message); } }, 20e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
   // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
   // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
