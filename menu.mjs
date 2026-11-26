@@ -60,6 +60,14 @@ function flavorsOf(p) {
     .filter(x => x && x.length <= 14 && !/بعجينة|تشكيلة|قطعة|قطع|\d/.test(x));
 }
 
+// a product's photo on the website, as an absolute https URL (any of the usual field names)
+function imageOf(p) {
+  for (const k of ["image", "img", "photo", "picture", "src", "thumb", "cover"]) {
+    const v = p && (typeof p[k] === "string" ? p[k] : Array.isArray(p[k]) ? p[k][0] : null);
+    if (v && !/^data:/.test(v)) { try { const u = new URL(v, SITE + "/"); if (u.protocol === "https:" || u.protocol === "http:") return u.href; } catch {} }
+  }
+  return "";
+}
 async function fetchText(url) {
   const r = await fetch(url, { signal: AbortSignal.timeout(10000), headers: { "user-agent": "minigeesh-orders" } });
   if (!r.ok) throw new Error(url + " " + r.status);
@@ -84,7 +92,11 @@ async function refresh() {
   }
   products = products.filter(p => p && p.id && p.name && Array.isArray(p.variants) && p.variants.length)
     .map(p => ({ id: String(p.id), name: String(p.name), description: String(p.description || ""),
-      variants: p.variants.map(v => ({ tag: String(v.tag || ""), price: Number(v.price) || 0 })) }));
+      variants: p.variants.map(v => ({ tag: String(v.tag || ""), price: Number(v.price) || 0 })),
+      image: imageOf(p) }));
+  // «شاشة العميل» shows the product photo (Hassan 2026-11-26: most customers want to see it before ordering)
+  const keys = new Set(groups.flatMap(g => g.items || []).flatMap(p => Object.keys(p || {})));
+  console.log(`menu: ${products.length} products, ${products.filter(p => p.image).length} with a photo; item fields: ${[...keys].join(",").slice(0, 200)}`);
   if (products.length < 3) throw new Error("too few products");
 
   let areas = [], rules = {};
