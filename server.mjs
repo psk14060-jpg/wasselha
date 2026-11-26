@@ -9,6 +9,7 @@ import { codeOk, codeSet, tvData, adminData } from "./dash.mjs";
 import { migratePurchases, googleCaller, pendingPurchases, markSaved } from "./purchases.mjs";
 import { normItemLines, linesSum, unpricedLines } from "./itemlines.mjs";
 import { fixTotal, fixOpenTotals } from "./totals.mjs";
+import { migrateSupplies, suppliesState, addSupplier, saveInvoice, payCash, payOther, approveInvoice, deleteDraft, addPhoto, queueSync, invDate, syncSuppliesDay } from "./supplies.mjs";
 import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -89,6 +90,7 @@ async function migrate() {
   `);
   await migrateWa(pool);
   await migratePurchases(pool);
+  await migrateSupplies(pool);
   await pool.query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS app_ref TEXT");
   await migrateTts(pool);
   await migrateGifts(pool);
@@ -486,7 +488,10 @@ const server = http.createServer(async (req, res) => {
       if (p.endsWith("pending") && req.method === "GET") return send(res, 200, { items: await pendingPurchases(pool) });
       if (p.endsWith("saved") && req.method === "POST") {
         const b = await readBody(req, 4096);
-        return send(res, 200, { ok: await markSaved(pool, String(b.id || ""), String(b.link || ""), String(b.name || "")) });
+        const ok = await markSaved(pool, String(b.id || ""), String(b.link || ""), String(b.name || ""));
+        const sm = String(b.id || "").match(/^sup-(\d+)-\d+$/); // board purchase photo: its invoice row in «مشتريات_اللوحة» gets the link
+        if (ok && sm) queueSync(pool, await invDate(pool, sm[1]));
+        return send(res, 200, { ok });
       }
       return send(res, 405, { error: "method" });
     }
@@ -534,6 +539,11 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": buf.length, "Cache-Control": "public, max-age=3600" });
       return res.end(buf);
     }
+    // «المشتريات» page (Hassan 2026-11-26): the worker's phone, same board login
+    if (p === "/supplies" && req.method === "GET") {
+      if (!isAuthed(req)) { res.writeHead(302, { Location: "/login" }); return res.end(); }
+      res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", "supplies.html")));
+    }
     // board page
     if (p === "/" || p === "/board") {
       if (!isAuthed(req)) { res.writeHead(302, { Location: "/login" }); return res.end(); }
@@ -549,6 +559,26 @@ const server = http.createServer(async (req, res) => {
         if (origin && new URL(origin).host !== req.headers.host) return send(res, 403, { error: "origin" });
       }
       if (p === "/api/board/menu" && req.method === "GET") return send(res, 200, await getMenu());
+      if (p.startsWith("/api/board/supplies")) {
+        if (p === "/api/board/supplies" && req.method === "GET") return send(res, 200, await suppliesState(pool));
+        if (req.method !== "POST") return send(res, 405, { error: "method" });
+        const b = await readBody(req, p.endsWith("/photo") ? 6 * 1024 * 1024 : 64 * 1024);
+        const id = b.id ? String(b.id).replace(/\D/g, "") : null;
+        let r;
+        if (p === "/api/board/supplies/supplier") r = await addSupplier(pool, b);
+        else if (p === "/api/board/supplies/invoice") r = await saveInvoice(pool, b);
+        else if (p === "/api/board/supplies/cash") r = await payCash(pool, id, b.amount, b.by);
+        else if (p === "/api/board/supplies/pay") r = await payOther(pool, id, b);
+        else if (p === "/api/board/supplies/approve") r = await approveInvoice(pool, id);
+        else if (p === "/api/board/supplies/delete") r = await deleteDraft(pool, id);
+        else if (p === "/api/board/supplies/photo") r = await addPhoto(pool, id, b.b64, b.mime, b.by);
+        else return send(res, 404, { error: "not_found" });
+        if (r.error) return send(res, 400, r);
+        const inv = r.invoice;
+        if (inv && inv.status === "done") queueSync(pool, inv.date);
+        console.log(`supplies: ${p.split("/").pop()} ${inv ? "P" + inv.id : ""}${r.added === false || r.changed === false ? " (already)" : ""}`);
+        return send(res, 200, r);
+      }
       if (p === "/api/board/say" && req.method === "GET") {
         try {
           const audio = await speech(pool, url.searchParams.get("t"));

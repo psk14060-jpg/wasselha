@@ -13,4 +13,5 @@ fs.writeFileSync("public/board.html",
 fs.writeFileSync("public/login.html", withLogo(fs.readFileSync("src/login.template.html", "utf8")));
 fs.writeFileSync("public/tv.html", withLogo(fs.readFileSync("src/tv.template.html", "utf8")));
 fs.writeFileSync("public/admin.html", withLogo(fs.readFileSync("src/admin.template.html", "utf8")));
+fs.writeFileSync("public/supplies.html", withLogo(fs.readFileSync("src/supplies.template.html", "utf8"))); // «المشتريات» (Hassan 2026-11-26)
 console.log("built public/board.html, public/login.html");

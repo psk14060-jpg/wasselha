@@ -237,6 +237,7 @@ textarea{resize:vertical;min-height:84px}
 #itemsHint{margin:0;color:var(--late);font-size:12.5px;font-weight:600;grid-column:1/-1}
 .total .split{display:block;font-size:11.5px;font-weight:600;color:var(--muted);line-height:1.3}
 .weekchip{cursor:pointer;font:inherit;font-size:13px;font-weight:600;color:inherit}
+.suppchip{text-decoration:none;background:#f07c21;color:#1f1200;border-color:#f07c21;min-height:36px;display:inline-flex;align-items:center}
 .weekbox{margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
 .weekbox .wk-head{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
 .weekbox .up{color:#1f8a4c;font-weight:600}.weekbox .down{color:var(--late);font-weight:600}
@@ -345,6 +346,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
         <button type="button" id="kaBtn">📢 تنبيه للمطبخ</button>
         <button type="button" id="rwBtn">↩ مرتجع وهدر</button>
         <button type="button" id="blBtn">🚫 القائمة السوداء</button>
+        <button type="button" id="weekChip" aria-expanded="false">🔒 مبيعات الأسبوع</button>
         <button type="button" id="repBtn">📊 التقارير</button>
         <button type="button" id="testBtn">🔔 جرّب الأصوات</button>
       </div></div>
@@ -1094,7 +1096,7 @@ function render(){
     ((S.screens||[]).length?`<span class="chip screens" title="الشاشات المفتوحة الآن">${S.screens.map(x=>`${x.id===DEV.id?"(هذا) ":""}${esc(x.name)} ${!x.master?"🔇":x.unlocked?"🔊":"⚠ يحتاج لمسة"}${x.ver!==BOARD_VER?" ⟳":""}${x.lastPlay&&!x.lastPlay.ok?" ✗ صوت":""}`).join(" · ")}</span>`:"")+
 
     `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`+
-    `<button type="button" class="chip weekchip" id="weekChip" aria-expanded="${!$("weekBox").hidden}" title="للمالك فقط · من الأحد لين نهاية دوام السبت">🔒 مبيعات الأسبوع</button>`+
+    `<a class="chip weekchip suppchip" href="/supplies" title="تسجيل فواتير المشتريات">🧾 مشتريات</a>`+ /* Hassan 2026-11-26: in place of «مبيعات الأسبوع», which moved to ⋯ */
     `<span class="chip">رسوم التوصيل <b>${Math.round(fees)}</b> ر</span>`+
     (returned?`<span class="chip">مرتجع <b>${Math.round(returned)}</b> ر</span>`:"")+
     (wasted?`<span class="chip">هدر <b>${Math.round(wasted)}</b> ر تكلفة</span>`:"")+
@@ -1547,7 +1549,7 @@ function renderWeek(){const w=WEEK,b=$("weekBox");if(!w||!b)return;
 document.addEventListener("click",e=>{
   if(!e.target.closest)return;
   if(e.target.closest("[data-weekclose]")){lockWeek();return;}
-  if(e.target.closest("#weekChip")){const b=$("weekBox");if(!b.hidden){lockWeek();return;}askWeek();const c=$("weekChip");if(c)c.setAttribute("aria-expanded","true");}
+  if(e.target.closest("#weekChip")){$("moreMenu").hidden=true;const b=$("weekBox");if(!b.hidden){lockWeek();return;}askWeek();const c=$("weekChip");if(c)c.setAttribute("aria-expanded","true");}
 });
 document.addEventListener("submit",async e=>{if(e.target.id!=="weekForm")return;e.preventDefault();
   const code=$("weekCode").value;

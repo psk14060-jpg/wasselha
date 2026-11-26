@@ -395,3 +395,26 @@ t("2026-11-21 #28 الخالدية بدون رسوم: الحي يُطابق بـ
   const srv = fs.readFileSync(new URL("../server.mjs", import.meta.url), "utf8");
   assert.ok(srv.includes("fee-fix:") && srv.includes("source IN ('wa','call')"), "open WhatsApp/phone deliveries with fee 0 get the website fee");
 });
+
+const SUP = await import("../supplies.mjs");
+t("2026-11-26 المشتريات: الضريبة 15٪ من الإجمالي للمورد المسجّل، وصفر لغير المسجّل", () => {
+  assert.equal(SUP.vatOf(5000, true), 652.17);
+  assert.equal(SUP.vatOf("1,150", true), 150);
+  assert.equal(SUP.vatOf(10, false), 0);
+});
+t("2026-11-26 المشتريات: مثال ثلاجة المدينة — 12 صنف مجموعها 4,950، والطحين 9 من 10 يدخل 405 كيلو وكيس ناقص", () => {
+  const prices = [207, 42.55, 310, 477.25, 174.8, 239.65, 190, 245, 98, 185, 230, 120], qty = [6, 10, 3, 1, 2, 1, 1, 1, 2, 1, 1, 2];
+  const lines = SUP.cleanLines(prices.map((p, i) => ({ name: "صنف " + i, unit: i === 1 ? "كيس" : "كرتون", factor: i === 1 ? 45 : 10, base: "كيلو", billed: qty[i], received: i === 1 ? 9 : qty[i], price: p })));
+  assert.equal(SUP.linesSum(lines), 4950);
+  const { stock, short } = SUP.receipt(lines);
+  assert.equal(stock.find(s => s.item === "صنف 1").qty, 405);
+  assert.deepEqual(short, ["1 كيس صنف 1"]);
+});
+t("2026-11-26 المشتريات: صرف الدرج له مفتاح ثابت لكل فاتورة (ما يتكرر بالحفظ المرتين) والاعتماد مرة وحدة", () => {
+  const src = fs.readFileSync(new URL("../supplies.mjs", import.meta.url), "utf8");
+  assert.ok(src.includes("key TEXT NOT NULL UNIQUE") && src.includes("`pinv-${i.id}-cash`") && src.includes("ON CONFLICT (key) DO NOTHING"), "drawer move keyed per invoice");
+  assert.ok(src.includes("WHERE id=$1 AND status='draft' RETURNING id"), "approve only moves a draft");
+  assert.ok(src.includes("UNIQUE (inv_id, item)"), "stock enters once per invoice line");
+  const board = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  assert.ok(board.includes('href="/supplies"') && board.includes('id="weekChip"'), "header link to المشتريات, weekly sales kept in ⋯");
+});

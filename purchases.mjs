@@ -167,7 +167,7 @@ export async function pendingPurchases(pool, log = console.log, max = 15) {
   const out = [];
   for (const p of rows) {
     try {
-      const raw = await download(p.media_id);
+      const raw = p.bytes ? { bytes: Buffer.from(p.bytes), type: p.mime } : await download(p.media_id); // board «مشتريات» photos are stored, not on Dualhook
       const { bytes, type } = await toPdf(raw.bytes, raw.type || p.mime).catch(e => { log(`purchases: pdf failed, saving the photo (${e.message})`); return raw; });
       const day = dayOf(p.at);
       const n = Number((await pool.query("SELECT count(*) AS c FROM purchases WHERE sender=$1 AND (at < $2 OR (at = $2 AND msg_id < $4)) AND at >= $3", [p.sender, p.at, Date.parse(day + "T00:00:00+03:00"), p.msg_id])).rows[0].c) + 1;
@@ -189,6 +189,9 @@ export async function markSaved(pool, id, link, name, log = console.log) {
   const up = await pool.query("UPDATE purchases SET status='saved', drive_link=$2, file_name=$3, err=NULL WHERE msg_id=$1 RETURNING *", [id, String(link).slice(0, 300), String(name || "").slice(0, 120)]);
   if (!up.rows.length) return false;
   const p = up.rows[0];
+  const sup = String(id).match(/^sup-(\d+)-\d+$/); // a photo from the board's «مشتريات» page: link it to its invoice
+  if (sup) await pool.query("UPDATE pinvoices SET photo_link=$2 WHERE id=$1", [sup[1], p.drive_link]).catch(e => log("purchases: link " + e.message));
+  if (sup) await pool.query("UPDATE purchases SET bytes=NULL WHERE msg_id=$1", [id]).catch(() => {}); // in Drive now
   if (!p.sheet_done) {
     await ensureTab();
     await append(TAB, [[dayOf(p.at), p.sender, p.drive_link, p.caption || "", p.pay, "جديدة"]]);

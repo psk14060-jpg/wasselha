@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>مينيقيش · المشتريات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&display=swap">
+<style>
+/* «المشتريات» (Hassan 2026-11-26): the worker's phone page, built from the approved prototype */
+:root{--bg:#f6f5ef;--card:#fff;--ink:#1f2416;--muted:#5f6650;--line:#dad8cc;--olive:#5c6e30;--olive-soft:#eef2e3;--orange:#f07c21;--warn-bg:#fff1e3;--warn:#7a3a05;--bad:#9a3b12}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;font-size:15px}
+.top{background:var(--olive);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:5}
+.top img{height:36px;background:#fff;border-radius:8px;padding:2px 6px}
+.top .t{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.top b{font-size:17px}.top small{font-size:12px;opacity:.85}
+.top a,.top button{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;min-height:44px;text-decoration:none;display:inline-flex;align-items:center}
+.toast{background:var(--warn-bg);color:var(--warn);padding:10px 16px;font-size:14px;border-bottom:1px solid #f3d3b3}
+.toast.ok{background:var(--olive-soft);color:#2e3720;border-color:#d6dec2}
+main{max-width:520px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.big{border:0;border-radius:14px;padding:16px 18px;font:inherit;font-size:18px;font-weight:700;min-height:64px;text-align:right;width:100%}
+.big small{display:block;font-size:13px;font-weight:500;color:var(--muted)}
+.big.primary{background:var(--orange);color:#1f1200}.big.primary small{color:#4a2a08}
+.big.plain{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn{border-radius:10px;padding:12px;font:inherit;font-weight:700;min-height:48px;border:1px solid var(--olive);background:#fff;color:var(--olive)}
+.btn.solid{background:var(--olive);color:#fff}
+.btn.orange{background:var(--orange);border-color:var(--orange);color:#1f1200}
+.btn.link{border:0;background:transparent;color:var(--muted);font-weight:500;text-decoration:underline;min-height:44px}
+.row2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px}
+input,select{border:1px solid #cfcdbf;border-radius:10px;padding:12px;font:inherit;font-size:16px;background:#fff;color:var(--ink);width:100%;min-width:0}
+.muted{color:var(--muted);font-size:13px;line-height:1.6}
+.sup{border-radius:12px;padding:12px 14px;font:inherit;font-weight:700;text-align:right;min-height:56px;background:#fff;border:1px solid var(--line);color:var(--ink);width:100%}
+.sup.on{background:var(--olive-soft);border:2px solid var(--olive)}
+.sup small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border-radius:999px;padding:8px 12px;font:inherit;font-size:13px;min-height:40px;background:#fff;border:1px solid #cfcdbf;color:var(--ink)}
+.chip.on{background:var(--olive);border-color:var(--olive);color:#fff}
+.match{border-radius:12px;padding:12px 14px;background:var(--warn-bg);color:var(--warn)}
+.match.ok{background:var(--olive-soft);color:#2e3720}
+.match b{display:block;font-size:17px}
+.line{background:#fff;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.line .h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.line .x{background:transparent;border:0;color:var(--bad);font:inherit;font-size:13px;min-height:44px;min-width:44px}
+.short{color:var(--bad);font-weight:700}
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.kv.due{font-size:16px;font-weight:700;color:var(--bad)}
+.badge{font-size:12px;border-radius:999px;padding:2px 10px;background:var(--warn-bg);color:var(--warn);white-space:nowrap}
+.badge.done{background:var(--olive-soft);color:#2e3720}
+.num{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header class="top">
+  <img src="{{LOGO}}" alt="مينيقيش">
+  <div class="t"><b id="title">المشتريات</b><small id="sub">—</small></div>
+  <button type="button" id="homeBtn" hidden>الرئيسية</button>
+  <a href="/" id="boardLink">اللوحة</a>
+</header>
+<div id="toast" class="toast" role="status" hidden></div>
+<main id="main"></main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nOf=v=>{const x=parseFloat(String(v??"").replace(/[٠-٩]/g,d=>"٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace(/,/g,""));return isFinite(x)?x:0;};
+const r2=x=>Math.round(x*100)/100;
+const fmt=x=>Number(r2(x||0)).toLocaleString("en-US",{maximumFractionDigits:2});
+const vatOf=(t,reg)=>reg?r2(nOf(t)*15/115):0;
+const PAYN={card:"شبكة",transfer:"تحويل",bank:"بنك"};
+let ST={suppliers:[],invoices:[],day:""},V="home",C=null,BUSY=false,payKey=null;
+function me(){try{return localStorage.getItem("mg_buyer")||"";}catch(e){return "";}}
+function setMe(v){try{localStorage.setItem("mg_buyer",v);}catch(e){}}
+function toast(t,ok){const e=$("toast");e.textContent=t||"";e.hidden=!t;e.className="toast"+(ok?" ok":"");}
+async function api(path,body){
+  const r=await fetch("/api/board/supplies"+path,body?{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)}:{});
+  if(r.status===401){location.href="/login";throw new Error("auth");}
+  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"تعذّر الحفظ");return j;}
+async function load(){ST=await api("");$("sub").textContent="مشتريات اليوم من الدرج "+fmt(ST.drawerToday)+" ريال"+(me()?" · "+me():"");}
+const sup=id=>ST.suppliers.find(s=>s.id===Number(id));
+function blank(sid){return {id:null,supplierId:sid,no:"",date:ST.day,total:"",vat:"",vatTouched:false,lines:[],status:"draft",cash:0,other:0,due:null};}
+function fromInv(i){return Object.assign({},i,{total:i.total==null?"":String(i.total),vat:i.vat==null?"":String(i.vat),vatTouched:true,lines:(i.lines||[]).map(l=>Object.assign({},l))});}
+function body(){return {id:C.id,supplierId:C.supplierId,no:C.no,date:C.date,total:C.total,vat:C.vatTouched?C.vat:"",lines:C.lines,enteredBy:me()};}
+async function saveC(){const j=await api("/invoice",body());C=fromInv(j.invoice);return C;}
+function go(v){V=v;toast("");render();window.scrollTo(0,0);}
+async function act(fn){if(BUSY)return;BUSY=true;try{await fn();}catch(e){if(e.message!=="auth")toast(e.message);}finally{BUSY=false;}}
+
+function render(){
+  const T={home:"المشتريات",new:"شراء جديد",lines:"أصناف الفاتورة",pay:"الدفع والاعتماد",drafts:"استكمال فاتورة",today:"فواتير اليوم",addsup:"مورد جديد"};
+  $("title").textContent=T[V];$("homeBtn").hidden=V==="home";
+  $("main").innerHTML=VIEWS[V]();}
+const VIEWS={
+home(){const d=ST.invoices.filter(i=>i.status==="draft").length;
+  return `<div class="card"><label>اسمك (يظهر مع كل فاتورة تدخلها)<input id="meIn" value="${esc(me())}" placeholder="مثال: سليمان" autocomplete="off"></label></div>
+  <button class="big primary" data-go="new">شراء جديد<small>اختر المورد وسجّل الفاتورة</small></button>
+  <button class="big plain" data-go="drafts">استكمال فاتورة<small>${d?d+" مسودة تنتظر":"ما فيه مسودات"}</small></button>
+  <button class="big plain" data-go="today">فواتير اليوم<small>المدفوع، الآجل، والنواقص</small></button>
+  <p class="muted">الصورة اختيارية، والأصناف اختيارية. المهم: المورد، رقم الفاتورة، الإجمالي، وكيف انصرف المبلغ.</p>`;},
+new(){const s=C&&sup(C.supplierId);
+  return `<div class="muted">1. اختر المورد</div>${ST.suppliers.map(p=>`<button class="sup ${C&&C.supplierId===p.id?"on":""}" data-sup="${p.id}">${esc(p.name)}<small>${p.vat?"الرقم الضريبي "+esc(p.vat):p.vatRegistered?"الرقم الضريبي ناقص":"غير مسجّل في الضريبة"}${p.items.length?" · "+p.items.length+" صنف معتاد":""}</small></button>`).join("")}
+  <button class="btn link" data-go="addsup">+ مورد مو في القائمة</button>
+  ${s?`<div class="card"><div class="muted">2. بيانات الفاتورة كما هي مطبوعة</div>
+    <label>رقم الفاتورة<input id="fNo" value="${esc(C.no)}" inputmode="numeric" autocomplete="off"></label>
+    <label>تاريخ الفاتورة<input id="fDate" type="date" value="${esc(C.date)}"></label>
+    <div class="row2"><label>الإجمالي شامل الضريبة<input id="fTotal" value="${esc(C.total)}" inputmode="decimal" autocomplete="off"></label>
+    <label>الضريبة${s.vatRegistered?"":" (غير مسجّل)"}<input id="fVat" value="${esc(C.vatTouched?C.vat:(C.total?vatOf(C.total,s.vatRegistered):""))}" inputmode="decimal" autocomplete="off"></label></div>
+    <p class="muted">الضريبة تنحسب لحالها (15٪ من الإجمالي). عدّلها لو الفاتورة تقول غير كذا.</p>
+    <div class="row2"><button class="btn solid" data-next="lines">الأصناف (اختياري)</button><button class="btn" data-next="pay">الدفع ←</button></div>
+    <button class="btn link" data-act="draft">حفظ مسودة وأكمل بعدين</button></div>`:""}`;},
+addsup(){return `<div class="card"><label>اسم المورد<input id="sName" autocomplete="off"></label>
+  <label>الرقم الضريبي (15 رقم، إذا مكتوب في الفاتورة)<input id="sVat" inputmode="numeric" autocomplete="off"></label>
+  <label style="flex-direction:row;align-items:center;gap:8px"><input id="sReg" type="checkbox" checked style="width:22px;height:22px"> مسجّل في الضريبة (فاتورته فيها ضريبة 15٪)</label>
+  <button class="btn solid" data-act="addsup">إضافة</button></div>`;},
+lines(){const s=sup(C.supplierId),tot=nOf(C.total),sum=r2(C.lines.reduce((a,l)=>a+nOf(l.billed)*nOf(l.price),0)),left=r2(tot-sum);
+  const mt=!C.lines.length?"أضف الأصناف من تحت، أو ارجع وكمّل بالإجمالي بس":!tot?"اكتب إجمالي الفاتورة عشان نطابق":left>0?"متبقي "+fmt(left)+" ريال للمطابقة":left<0?"البنود أكثر من الفاتورة بـ "+fmt(-left)+" ريال":"مطابق للفاتورة";
+  return `<div class="match ${C.lines.length&&tot&&!left?"ok":""}">مجموع البنود <span class="num">${fmt(sum)}</span> من <span class="num">${fmt(tot)}</span><b>${mt}</b></div>
+  ${s.items.length?`<div class="muted">أصناف ${esc(s.name)} المعتادة: اضغط للإضافة</div><div class="chips">${s.items.map((it,k)=>`<button class="chip ${C.lines.some(l=>l.name===it.name)?"on":""}" data-chip="${k}">${esc(it.name)}</button>`).join("")}</div>`:""}
+  <div class="card"><div class="muted">صنف مو في القائمة</div><div class="row2"><input id="nlName" placeholder="اسم الصنف" autocomplete="off"><input id="nlUnit" placeholder="الوحدة (كرتون، كيس…)" autocomplete="off"></div><button class="btn" data-act="addline">+ إضافة سطر</button></div>
+  ${C.lines.map((l,i)=>{const sh=r2(nOf(l.billed)-nOf(l.received));return `<div class="line"><div class="h"><b>${esc(l.name)}</b><button class="x" data-del="${i}" aria-label="حذف ${esc(l.name)}">حذف</button></div>
+    <div class="muted">${esc(l.unit)} = ${fmt(l.factor)} ${esc(l.base)} · يدخل المخزون ${fmt(nOf(l.received)*nOf(l.factor))} ${esc(l.base)}</div>
+    <div class="row3"><label>مفوتر<input data-l="${i}" data-f="billed" value="${esc(l.billed)}" inputmode="decimal"></label><label>مستلم<input data-l="${i}" data-f="received" value="${esc(l.received)}" inputmode="decimal"></label><label>سعر العبوة<input data-l="${i}" data-f="price" value="${esc(l.price)}" inputmode="decimal"></label></div>
+    <div class="kv"><span class="${sh>0?"short":"muted"}">${sh>0?"ناقص "+fmt(sh)+" "+esc(l.unit):"مستلم كامل"}</span><b class="num">${fmt(nOf(l.billed)*nOf(l.price))} ريال</b></div></div>`;}).join("")}
+  <div class="row2"><button class="btn" data-act="draft">حفظ مسودة</button><button class="btn solid" data-next="pay">الدفع ←</button></div>`;},
+pay(){const s=sup(C.supplierId),tot=nOf(C.total),done=C.status==="done",cashDone=C.cash>0,due=C.id&&C.due!=null?C.due:r2(tot-C.cash-C.other);
+  return `<div class="card"><b>${esc(s.name)}${C.no?" · فاتورة "+esc(C.no):""}</b>
+    <div class="kv"><span>الإجمالي</span><span class="num">${fmt(tot)}</span></div>
+    <div class="kv"><span>انصرف من الدرج</span><span class="num">${fmt(C.cash)}</span></div>
+    <div class="kv"><span>شبكة / تحويل / بنك</span><span class="num">${fmt(C.other)}</span></div>
+    <div class="kv due"><span>باقي للمورد (آجل)</span><span class="num">${fmt(due)}</span></div></div>
+  ${cashDone?`<div class="match ok">الصرف من الدرج مسجّل: ${fmt(C.cash)} ريال. ما ينخصم مرة ثانية لو انضغط الزر.</div>`:
+    `<div class="card"><label>كم دفعت من الدرج؟ (كاش)<input id="cashIn" inputmode="decimal" autocomplete="off" placeholder="0"></label>
+    <button class="btn orange" data-act="cash">سجّل الصرف من الدرج</button>
+    <p class="muted">ينسجّل الحين ويرتبط بالفاتورة والوردية، حتى لو الأصناف ما كملت.</p></div>`}
+  ${due>0.009?`<div class="card"><div class="muted">دفع ما يطلع من الدرج</div><div class="row2"><input id="othIn" inputmode="decimal" placeholder="المبلغ" value="${done?esc(due):""}" autocomplete="off"><select id="othM"><option value="card">شبكة</option><option value="transfer">تحويل</option><option value="bank"${done?" selected":""}>بنك (سداد آجل)</option></select></div>
+    <button class="btn" data-act="other">سجّل الدفع</button><p class="muted">الباقي بعد الدرج والشبكة والتحويل ينحسب آجل على المورد.</p></div>`:""}
+  <div class="card"><label>صورة الفاتورة (اختياري)<input id="photoIn" type="file" accept="image/*" capture="environment"></label>${C.photo?`<a href="${esc(C.photo)}" target="_blank" rel="noopener">الصورة في درايف</a>`:C.photoWait?`<span class="muted">الصورة محفوظة، تنرفع لدرايف الليلة.</span>`:""}</div>
+  ${done?`<div class="match ok">الفاتورة معتمدة${C.shortages&&C.shortages.length?" · ناقص للمتابعة: "+esc(C.shortages.join("، ")):""}</div>`:
+    `<div class="row2"><button class="btn" data-act="draft">حفظ مسودة</button><button class="btn solid" data-act="approve">اعتماد الفاتورة</button></div>`}
+  ${!done&&C.id&&!C.cash&&!C.other?`<button class="btn link" data-act="deldraft">حذف المسودة</button>`:""}`;},
+drafts(){const d=ST.invoices.filter(i=>i.status==="draft");
+  return d.length?d.map(i=>`<button class="big plain" data-open="${i.id}">${esc((sup(i.supplierId)||{}).name)}${i.no?" · "+esc(i.no):""}<small>${i.total!=null?"الإجمالي "+fmt(i.total)+" · ":""}${i.lines.length} صنف · من الدرج ${fmt(i.cash)} · ${esc(i.enteredBy||"")}</small></button>`).join(""):`<div class="card muted">ما فيه مسودات.</div>`;},
+today(){const l=ST.invoices.filter(i=>i.status==="done"||i.status==="draft");
+  return l.length?l.map(i=>`<div class="card"><div class="kv"><b>${esc((sup(i.supplierId)||{}).name)}${i.no?" · "+esc(i.no):""}</b><span class="badge ${i.status==="done"?"done":""}">${i.status==="done"?"معتمدة":"مسودة"}</span></div>
+    <div class="muted">الإجمالي ${fmt(i.total)} · الدرج ${fmt(i.cash)} · شبكة/تحويل/بنك ${fmt(i.other)} · <b>باقي للمورد ${fmt(i.due)}</b>${i.date!==ST.day?" · بتاريخ "+esc(i.date):""}</div>
+    ${i.shortages&&i.shortages.length?`<div class="short" style="font-size:13px">ناقص للمتابعة: ${esc(i.shortages.join("، "))}</div>`:""}
+    <button class="btn" data-open="${i.id}">${i.status==="draft"?"استكمال":(i.due>0.009?"سداد الباقي / التفاصيل":"التفاصيل")}</button></div>`).join(""):`<div class="card muted">ما فيه فواتير اليوم.</div>`;},
+};
+function readForm(){if($("fNo"))C.no=$("fNo").value.trim();if($("fDate"))C.date=$("fDate").value||ST.day;if($("fTotal"))C.total=$("fTotal").value.trim();
+  if($("fVat")){const s=sup(C.supplierId),auto=String(C.total?vatOf(C.total,s.vatRegistered):"");if($("fVat").value.trim()!==auto){C.vat=$("fVat").value.trim();C.vatTouched=true;}}}
+document.addEventListener("input",e=>{const t=e.target;
+  if(t.id==="meIn"){setMe(t.value.trim());return;}
+  if(t.dataset.l!=null){C.lines[+t.dataset.l][t.dataset.f]=t.value;return;}
+  if(t.id==="fTotal"&&!C.vatTouched&&$("fVat")){const s=sup(C.supplierId);$("fVat").value=t.value?vatOf(t.value,s.vatRegistered):"";}});
+document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.l!=null&&V==="lines"){const y=window.scrollY;render();window.scrollTo(0,y);}
+  if(t.id==="photoIn"&&t.files&&t.files[0])act(async()=>{if(!C.id)await saveC();const b64=await shrink(t.files[0]);
+    const j=await api("/photo",{id:C.id,b64,mime:"image/jpeg",by:me()});C=fromInv(j.invoice);await load();render();toast("انحفظت الصورة، وتنرفع لدرايف الليلة.",true);});});
+document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
+  if(b.id==="homeBtn"){C=null;load().then(()=>go("home")).catch(()=>go("home"));return;}
+  if(b.dataset.go){if(b.dataset.go==="new")C=null;if(!me()&&b.dataset.go!=="addsup"&&V==="home"){toast("اكتب اسمك أول.");$("meIn")&&$("meIn").focus();return;}go(b.dataset.go);return;}
+  if(b.dataset.sup){readForm();const id=Number(b.dataset.sup);if(C&&C.status==="draft")C.supplierId=id;else C=blank(id);render();return;}
+  if(b.dataset.next){readForm();if(!C.total&&b.dataset.next==="pay"){toast("اكتب إجمالي الفاتورة.");return;}payKey=null;go(b.dataset.next);return;}
+  if(b.dataset.chip!=null){const it=sup(C.supplierId).items[+b.dataset.chip];if(!C.lines.some(l=>l.name===it.name))C.lines.push({name:it.name,unit:it.unit,factor:it.factor,base:it.base,billed:"1",received:"1",price:String(it.price)});render();return;}
+  if(b.dataset.del!=null){C.lines.splice(+b.dataset.del,1);render();return;}
+  if(b.dataset.open){const i=ST.invoices.find(x=>x.id===b.dataset.open);if(!i)return;C=fromInv(i);payKey=null;go(i.status==="draft"?"new":"pay");return;}
+  const a=b.dataset.act;if(!a)return;
+  if(a==="addline"){const n=$("nlName").value.trim();if(!n){toast("اكتب اسم الصنف.");return;}C.lines.push({name:n,unit:$("nlUnit").value.trim()||"حبة",factor:1,base:$("nlUnit").value.trim()||"حبة",billed:"1",received:"1",price:""});render();return;}
+  act(async()=>{
+    if(a==="addsup"){const j=await api("/supplier",{name:$("sName").value,vat:$("sVat").value,vatRegistered:$("sReg").checked});await load();C=blank(j.id);go("new");toast("انضاف المورد.",true);return;}
+    if(a==="draft"){readForm();await saveC();await load();C=null;go("home");toast("انحفظت المسودة. تلقاها في «استكمال فاتورة».",true);return;}
+    if(a==="cash"){const v=nOf($("cashIn").value);if(!(v>0)){toast("اكتب المبلغ اللي انصرف من الدرج.");return;}if(!C.id)await saveC();
+      const j=await api("/cash",{id:C.id,amount:v,by:me()});C=fromInv(j.invoice);await load();render();toast(j.added?"انسجّل صرف "+fmt(v)+" ريال من الدرج.":"الصرف مسجّل من قبل، ما انخصم مرة ثانية.",true);return;}
+    if(a==="other"){const v=nOf($("othIn").value);if(!(v>0)){toast("اكتب المبلغ.");return;}if(!C.id)await saveC();payKey=payKey||("k"+Date.now()+Math.random().toString(36).slice(2,8));
+      const j=await api("/pay",{id:C.id,amount:v,method:$("othM").value,key:payKey,by:me()});payKey=null;C=fromInv(j.invoice);await load();render();toast(j.added?"انسجّل دفع "+fmt(v)+" ("+PAYN[$("othM")?$("othM").value:"card"]+").":"الدفع مسجّل من قبل.",true);return;}
+    if(a==="approve"){if(C.status!=="done")await saveC();const j=await api("/approve",{id:C.id});C=fromInv(j.invoice);await load();render();
+      toast(j.changed?"اعتُمدت الفاتورة"+(C.shortages.length?"، وفيه نواقص للمتابعة.":"."):"الفاتورة معتمدة من قبل، ما تغيّر شي.",true);return;}
+    if(a==="deldraft"){if(!confirm("تحذف المسودة؟"))return;await api("/delete",{id:C.id});await load();C=null;go("home");toast("انحذفت المسودة.",true);return;}
+  });});
+// photo → jpeg, longest side 1800 px (keeps the text readable, small enough for the phone network)
+function shrink(file){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);img.onload=()=>{const k=Math.min(1,1800/Math.max(img.width,img.height)),c=document.createElement("canvas");
+  c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL("image/jpeg",0.85).split(",")[1]);};img.onerror=()=>rej(new Error("الصورة ما انقرت"));img.src=u;});}
+load().then(render).catch(e=>{if(e.message!=="auth")toast("تعذّر التحميل: "+e.message);render();});
+</script>
+</body>
+</html>
