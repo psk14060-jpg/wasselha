@@ -150,5 +150,8 @@ export async function adminData(pool, now = Date.now()) {
     weeks.push(s);
   }
   const full = weeks.filter(w => !w.partial);
-  return { at: now, today, weeks: weeks.reverse(), last: full[full.length - 1] || null, before: full[full.length - 2] || null, appsRead: !!apps };
+  // today so far, for Hassan only (2026-11-26: «مبيعات اليوم» left the kitchen screen); compared with the same weekday last week
+  const dayOf = d => { const x = days.find(y => y.d === d); return x ? { d, day: x.day, sales: x.sales, priced: x.priced, avg: x.priced ? r2(x.sales / x.priced) : 0, fees: x.fees, cancelled: x.cancelled, apps: x.apps, ch: x.ch } : null; };
+  return { at: now, today, weeks: weeks.reverse(), last: full[full.length - 1] || null, before: full[full.length - 2] || null, appsRead: !!apps,
+    day: dayOf(today), dayLastWeek: dayOf(addDays(today, -7)) };
 }

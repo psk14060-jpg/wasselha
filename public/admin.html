@@ -114,6 +114,14 @@ tr.part td{color:var(--muted)} tr.part td.sales .cell i{background:var(--c3)}
 
 @media (max-width:980px){.span3{grid-column:span 6}.span4,.span5,.span7,.span8{grid-column:1/-1}.span6{grid-column:1/-1}}
 @media (max-width:560px){main{gap:10px}.span3{grid-column:1/-1}.kpi .v{font-size:30px}.sbar{grid-template-columns:4.6em 1fr 4.6em}.top .wk{margin-inline-start:0}.duo{grid-template-columns:1fr 1fr}}
+.today .tdgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.today .td{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:grid;gap:2px}
+.today .td .v{font-family:var(--f-mono);font-weight:700;font-size:30px;direction:ltr;text-align:right}
+.today .td .v small{font-family:var(--f-body);font-size:13px;color:var(--muted);font-weight:500;margin-inline-start:4px}
+.today .td .row{font-size:12px;color:var(--muted)}
+.today .td.hero{background:var(--olive);color:#fff;border-color:transparent}.today .td.hero .k,.today .td.hero .row,.today .td.hero .v small{color:rgba(255,255,255,.8)}
+.today .tdch{grid-column:1/-1;font-size:13px;color:var(--muted)}
+@media (max-width:560px){.today .tdgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -133,6 +141,12 @@ tr.part td{color:var(--muted)} tr.part td.sales .cell i{background:var(--c3)}
     <h1>لوحة الإدارة</h1>
     <div class="wk"><span class="pill" id="wkPill"></span><span class="pill" id="upd"></span></div>
   </header>
+
+  <section class="card span12 today" aria-labelledby="tdH">
+    <h2 id="tdH">اليوم حتى الآن</h2>
+    <p class="hint" id="tdHint"></p>
+    <div class="tdgrid" id="today"></div>
+  </section>
 
   <div id="kpis" style="display:contents"></div>
 
@@ -198,8 +212,18 @@ function spark(vals, color){
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true"><path d="${d}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/><circle cx="${last[0]}" cy="${last[1]}" r="3.5" fill="${color}"/></svg>`;
 }
 
+// today so far (owner only): the kitchen screen no longer shows the day's sales (Hassan 2026-11-26)
+function renderToday(x){
+  const t = x.day, p = x.dayLastWeek;
+  if (!t) { $("today").innerHTML = `<p class="hint">ما فيه طلبات اليوم للحين.</p>`; $("tdHint").textContent = ""; return; }
+  $("tdHint").textContent = `${t.day} ${dmy(t.d)} · يوم التشغيل من 6 الصبح · المقارنة بيوم ${p ? p.day + " " + dmy(p.d) : "الأسبوع الماضي"} كامل، فالفرق يقل كل ما مشى اليوم.`;
+  const T = [["المبيعات المباشرة", o => o.sales, f0, 1, "ريال", true], ["طلبات مسعّرة", o => o.priced, f0, 1, ""], ["متوسط الطلب", o => o.avg, f1, 1, "ريال"], ["رسوم التوصيل", o => o.fees, f0, 0, "ريال"]];
+  $("today").innerHTML = T.map(([k, g, fm, dir, unit, hero]) => `<div class="td${hero ? " hero" : ""}"><div class="k">${k}</div><div class="v">${fm(g(t))}${unit ? `<small>${unit}</small>` : ""}</div><div class="row"><span>الأسبوع الماضي: <span class="num">${p ? fm(g(p)) : "—"}</span></span></div></div>`).join("")
+    + `<div class="tdch">المحل <b class="num">${f0(t.ch.shop)}</b> · اتصال <b class="num">${f0(t.ch.call)}</b> · واتساب <b class="num">${f0(t.ch.wa)}</b> · الموقع <b class="num">${f0(t.ch.web)}</b> · ملغي <b class="num">${f0(t.cancelled)}</b> · طلبات التطبيقات <b class="num">${f0(t.apps)}</b></div>`;
+}
 function render(x){
   $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short",timeZone:"Asia/Riyadh"});
+  renderToday(x);
   const a = x.last, b = x.before;
   const full = x.weeks.filter(w => !w.partial).slice().reverse(); // oldest → newest
   $("wkPill").innerHTML = a ? `آخر أسبوع كامل: <b>${rng(a.from, a.to)}</b>` : "ما فيه أسبوع كامل للحين";
