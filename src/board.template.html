@@ -269,7 +269,7 @@ select{font:inherit;width:100%;border:1px solid var(--line);background:var(--sur
     <button type="button" data-v="waste" aria-pressed="false">هدر</button>
   </div>
   <div id="rwReturn" class="rwform">
-    <p class="muted">المرتجع ما ينسجل إلا برمز المشرف ومع كتابة السبب. المبلغ ينخصم من مبيعات اليوم.</p>
+    <p class="muted">المرتجع ما ينسجل إلا برمز المشرف ومع كتابة السبب. المبلغ ينخصم من مبيعات اليوم في التقارير.</p>
     <label>رقم الطلب <select id="rwOrder"></select></label>
     <label>المبلغ المرتجع (ريال) <input id="rwAmount" type="number" min="1" step="0.5" inputmode="decimal"></label>
     <label>السبب <select id="rwRReason"><option>الطلب غلط</option><option>جودة الأكل</option><option>تأخير</option><option>صنف ناقص</option><option>أخرى</option></select></label>
@@ -546,7 +546,7 @@ function render(){
     `<span class="chip">مفتوحة <b>${live.length}</b></span>`+
     ((S.screens||[]).length?`<span class="chip screens" title="الشاشات المفتوحة الآن">${S.screens.map(x=>`${x.id===DEV.id?"(هذا) ":""}${esc(x.name)} ${!x.master?"🔇":x.unlocked?"🔊":"⚠ يحتاج لمسة"}${x.ver!==BOARD_VER?" ⟳":""}${x.lastPlay&&!x.lastPlay.ok?" ✗ صوت":""}`).join(" · ")}</span>`:"")+
 
-    `<span class="chip">مبيعات اليوم <b>${Math.round(sales)}</b> ر</span>`+
+    /* «مبيعات اليوم» removed (Hassan 2026-11-26 23:03): the day's sales are for the owner only */
     `<a class="chip weekchip suppchip" href="/supplies" title="تسجيل فواتير المشتريات">🧾 مشتريات</a>`+ /* Hassan 2026-11-26: in place of «مبيعات الأسبوع», which moved to ⋯ */
     `<span class="chip">رسوم التوصيل <b>${Math.round(fees)}</b> ر</span>`+
     (returned?`<span class="chip">مرتجع <b>${Math.round(returned)}</b> ر</span>`:"")+

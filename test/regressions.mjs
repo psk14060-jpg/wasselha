@@ -418,3 +418,7 @@ t("2026-11-26 المشتريات: صرف الدرج له مفتاح ثابت ل�
   const board = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
   assert.ok(board.includes('href="/supplies"') && board.includes('id="weekChip"'), "header link to المشتريات, weekly sales kept in ⋯");
 });
+t("2026-11-26 23:03 «مبيعات اليوم» ما تظهر في شريط اللوحة (للمالك فقط)", () => {
+  const board = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  assert.ok(!board.includes("مبيعات اليوم <b>"), "no today-sales chip on the kitchen screen");
+});
