@@ -19,10 +19,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex S
 .top a,.top button{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:10px;padding:10px 12px;font:inherit;font-size:14px;min-height:44px;text-decoration:none;display:inline-flex;align-items:center}
 .toast{background:var(--warn-bg);color:var(--warn);padding:10px 16px;font-size:14px;border-bottom:1px solid #f3d3b3}
 .toast.ok{background:var(--olive-soft);color:#2e3720;border-color:#d6dec2}
-main{max-width:520px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+main{max-width:1100px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.narrow{width:100%;max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.suplist{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.homegrid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.newwrap{display:flex;flex-direction:column;gap:12px}
+@media (min-width:760px){.suplist{grid-template-columns:repeat(2,minmax(0,1fr))}.homegrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.newwrap{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:16px;align-items:start}.newwrap .formcol{position:sticky;top:80px}}
+@media (min-width:1180px){.suplist{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .card{background:var(--card);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
-.big{border:0;border-radius:14px;padding:16px 18px;font:inherit;font-size:18px;font-weight:700;min-height:64px;text-align:right;width:100%}
-.big small{display:block;font-size:13px;font-weight:500;color:var(--muted)}
+button{-webkit-appearance:none;appearance:none}
+.big{border:0;border-radius:14px;padding:16px 18px;font:inherit;font-size:18px;font-weight:700;min-height:64px;text-align:right;width:100%;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;line-height:1.4}
+.big small{font-size:13px;font-weight:500;color:var(--muted)}
 .big.primary{background:var(--orange);color:#1f1200}.big.primary small{color:#4a2a08}
 .big.plain{background:#fff;color:var(--ink);border:1px solid var(--line)}
 .btn{border-radius:10px;padding:12px;font:inherit;font-weight:700;min-height:48px;border:1px solid var(--olive);background:#fff;color:var(--olive)}
@@ -34,9 +42,9 @@ main{max-width:520px;margin:0 auto;padding:16px;display:flex;flex-direction:colu
 label{display:flex;flex-direction:column;gap:4px;font-size:13px}
 input,select{border:1px solid #cfcdbf;border-radius:10px;padding:12px;font:inherit;font-size:16px;background:#fff;color:var(--ink);width:100%;min-width:0}
 .muted{color:var(--muted);font-size:13px;line-height:1.6}
-.sup{border-radius:12px;padding:12px 14px;font:inherit;font-weight:700;text-align:right;min-height:56px;background:#fff;border:1px solid var(--line);color:var(--ink);width:100%}
+.sup{border-radius:12px;padding:10px 14px;font:inherit;font-weight:700;text-align:right;min-height:60px;background:#fff;border:1px solid var(--line);color:var(--ink);width:100%;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;gap:2px;line-height:1.4}
 .sup.on{background:var(--olive-soft);border:2px solid var(--olive)}
-.sup small{display:block;font-weight:400;font-size:12px;color:var(--muted)}
+.sup small{font-weight:400;font-size:12px;color:var(--muted)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{border-radius:999px;padding:8px 12px;font:inherit;font-size:13px;min-height:40px;background:#fff;border:1px solid #cfcdbf;color:var(--ink)}
 .chip.on{background:var(--olive);border-color:var(--olive);color:#fff}
@@ -92,25 +100,25 @@ async function act(fn){if(BUSY)return;BUSY=true;try{await fn();}catch(e){if(e.me
 function render(){
   const T={home:"المشتريات",new:"شراء جديد",lines:"أصناف الفاتورة",pay:"الدفع والاعتماد",drafts:"استكمال فاتورة",today:"فواتير اليوم",addsup:"مورد جديد"};
   $("title").textContent=T[V];$("homeBtn").hidden=V==="home";
-  $("main").innerHTML=VIEWS[V]();}
+  const h=VIEWS[V]();$("main").innerHTML=(V==="home"||V==="new")?h:`<div class="narrow">${h}</div>`;}
 const VIEWS={
 home(){const d=ST.invoices.filter(i=>i.status==="draft").length;
-  return `<div class="card"><label>اسمك (يظهر مع كل فاتورة تدخلها)<input id="meIn" value="${esc(me())}" placeholder="مثال: سليمان" autocomplete="off"></label></div>
-  <button class="big primary" data-go="new">شراء جديد<small>اختر المورد وسجّل الفاتورة</small></button>
+  return `<div class="narrow" style="max-width:1100px"><div class="card"><label>اسمك (يظهر مع كل فاتورة تدخلها)<input id="meIn" value="${esc(me())}" placeholder="مثال: سليمان" autocomplete="off"></label></div>
+  <div class="homegrid"><button class="big primary" data-go="new">شراء جديد<small>اختر المورد وسجّل الفاتورة</small></button>
   <button class="big plain" data-go="drafts">استكمال فاتورة<small>${d?d+" مسودة تنتظر":"ما فيه مسودات"}</small></button>
-  <button class="big plain" data-go="today">فواتير اليوم<small>المدفوع، الآجل، والنواقص</small></button>
-  <p class="muted">الصورة اختيارية، والأصناف اختيارية. المهم: المورد، رقم الفاتورة، الإجمالي، وكيف انصرف المبلغ.</p>`;},
+  <button class="big plain" data-go="today">فواتير اليوم<small>المدفوع، الآجل، والنواقص</small></button></div>
+  <p class="muted">الصورة اختيارية، والأصناف اختيارية. المهم: المورد، رقم الفاتورة، الإجمالي، وكيف انصرف المبلغ.</p></div>`;},
 new(){const s=C&&sup(C.supplierId);
-  return `<div class="muted">1. اختر المورد</div>${ST.suppliers.map(p=>`<button class="sup ${C&&C.supplierId===p.id?"on":""}" data-sup="${p.id}">${esc(p.name)}<small>${p.vat?"الرقم الضريبي "+esc(p.vat):p.vatRegistered?"الرقم الضريبي ناقص":"غير مسجّل في الضريبة"}${p.items.length?" · "+p.items.length+" صنف معتاد":""}</small></button>`).join("")}
-  <button class="btn link" data-go="addsup">+ مورد مو في القائمة</button>
-  ${s?`<div class="card"><div class="muted">2. بيانات الفاتورة كما هي مطبوعة</div>
+  return `<div class="newwrap"><div><div class="muted" style="margin-bottom:8px">1. اختر المورد</div><div class="suplist">${ST.suppliers.map(p=>`<button class="sup ${C&&C.supplierId===p.id?"on":""}" data-sup="${p.id}">${esc(p.name)}<small>${!p.vatRegistered?"بدون ضريبة":!p.vat?"الرقم الضريبي ناقص":p.items.length?p.items.length+" صنف معتاد":"&nbsp;"}</small></button>`).join("")}</div>
+  <button class="btn link" data-go="addsup">+ مورد مو في القائمة</button></div>
+  <div class="formcol" id="formcol">${s?`<div class="card"><div class="muted">2. ${esc(s.name)}: بيانات الفاتورة كما هي مطبوعة</div>
     <label>رقم الفاتورة<input id="fNo" value="${esc(C.no)}" inputmode="numeric" autocomplete="off"></label>
     <label>تاريخ الفاتورة<input id="fDate" type="date" value="${esc(C.date)}"></label>
     <div class="row2"><label>الإجمالي شامل الضريبة<input id="fTotal" value="${esc(C.total)}" inputmode="decimal" autocomplete="off"></label>
     <label>الضريبة${s.vatRegistered?"":" (غير مسجّل)"}<input id="fVat" value="${esc(C.vatTouched?C.vat:(C.total?vatOf(C.total,s.vatRegistered):""))}" inputmode="decimal" autocomplete="off"></label></div>
     <p class="muted">الضريبة تنحسب لحالها (15٪ من الإجمالي). عدّلها لو الفاتورة تقول غير كذا.</p>
     <div class="row2"><button class="btn solid" data-next="lines">الأصناف (اختياري)</button><button class="btn" data-next="pay">الدفع ←</button></div>
-    <button class="btn link" data-act="draft">حفظ مسودة وأكمل بعدين</button></div>`:""}`;},
+    <button class="btn link" data-act="draft">حفظ مسودة وأكمل بعدين</button></div>`:`<div class="card muted">اختر المورد، وتطلع هنا خانات الفاتورة.</div>`}</div></div>`;},
 addsup(){return `<div class="card"><label>اسم المورد<input id="sName" autocomplete="off"></label>
   <label>الرقم الضريبي (15 رقم، إذا مكتوب في الفاتورة)<input id="sVat" inputmode="numeric" autocomplete="off"></label>
   <label style="flex-direction:row;align-items:center;gap:8px"><input id="sReg" type="checkbox" checked style="width:22px;height:22px"> مسجّل في الضريبة (فاتورته فيها ضريبة 15٪)</label>
@@ -162,7 +170,7 @@ document.addEventListener("change",e=>{const t=e.target;
 document.addEventListener("click",e=>{const b=e.target.closest("button");if(!b)return;
   if(b.id==="homeBtn"){C=null;load().then(()=>go("home")).catch(()=>go("home"));return;}
   if(b.dataset.go){if(b.dataset.go==="new")C=null;if(!me()&&b.dataset.go!=="addsup"&&V==="home"){toast("اكتب اسمك أول.");$("meIn")&&$("meIn").focus();return;}go(b.dataset.go);return;}
-  if(b.dataset.sup){readForm();const id=Number(b.dataset.sup);if(C&&C.status==="draft")C.supplierId=id;else C=blank(id);render();return;}
+  if(b.dataset.sup){readForm();const id=Number(b.dataset.sup);if(C&&C.status==="draft")C.supplierId=id;else C=blank(id);render();if(innerWidth<760){const f=$("formcol");if(f)f.scrollIntoView({block:"start"});}setTimeout(()=>{const n=$("fNo");if(n&&!n.value)n.focus({preventScroll:innerWidth<760});},50);return;}
   if(b.dataset.next){readForm();if(!C.total&&b.dataset.next==="pay"){toast("اكتب إجمالي الفاتورة.");return;}payKey=null;go(b.dataset.next);return;}
   if(b.dataset.chip!=null){const it=sup(C.supplierId).items[+b.dataset.chip];if(!C.lines.some(l=>l.name===it.name))C.lines.push({name:it.name,unit:it.unit,factor:it.factor,base:it.base,billed:"1",received:"1",price:String(it.price)});render();return;}
   if(b.dataset.del!=null){C.lines.splice(+b.dataset.del,1);render();return;}
