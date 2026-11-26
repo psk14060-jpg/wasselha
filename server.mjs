@@ -794,6 +794,22 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-26 (CEO task): Mon–Wed 23–25 Nov vs baseline 16–18 Nov, same method as 2026-11-19 (log only)
+  setTimeout(async () => { try {
+    const { collectDays } = await import("./dash.mjs");
+    const { feeOf } = await import("./weeksales.mjs");
+    const APPS = ["chefz", "hunger", "keeta", "ninja"], LIVE = ["new", "prep", "ready", "out", "done"];
+    for (const [a, b] of [["2026-11-16", "2026-11-18"], ["2026-11-23", "2026-11-25"]]) {
+      const { rows } = await pool.query("SELECT source, status, total, delivery_fee, area, type, heard, pay, entered_by FROM orders WHERE op_day BETWEEN $1::date AND $2::date AND status NOT IN ('pending','dismissed')", [a, b]);
+      const live = rows.filter(o => LIVE.includes(o.status)), direct = live.filter(o => !APPS.includes(o.source));
+      const by = {}; let n = 0, s = 0;
+      for (const o of direct) { if (o.total == null) continue; const v = Math.max(0, Number(o.total) - feeOf(o)); const x = by[o.source] = by[o.source] || { n: 0, s: 0 }; x.n++; x.s += v; n++; s += v; }
+      const days = await collectDays(pool, a, b);
+      const late = days.reduce((t, x) => t + x.latePrep + x.lateOut, 0), all = days.reduce((t, x) => t + (Number(x.orders) || 0), 0);
+      console.log(`cmp ${a}: priced=${n} sales=${Math.round(s)} avg=${n ? (s / n).toFixed(2) : 0} | ` + Object.entries(by).map(([k, v]) => `${k}=${v.n}/${(v.s / v.n).toFixed(2)}`).join(" ") +
+        ` | apps=${live.length - direct.length} cancelled=${rows.length - live.length} late=${late}/${all} | cov direct=${direct.length} heard=${direct.filter(o => o.heard).length} pay=${direct.filter(o => o.pay && o.pay !== "app").length} entered=${direct.filter(o => o.entered_by).length}`);
+    }
+  } catch (e) { console.log("cmp: " + e.message); } }, 25e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
   // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
   // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
