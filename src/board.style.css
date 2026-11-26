@@ -239,4 +239,6 @@ textarea{resize:vertical;min-height:84px}
 .weekbox .wk-row input{flex:1;min-width:120px;font:inherit;padding:6px 10px;border-radius:8px;border:1px solid var(--line)}.weekbox .wk-err{color:var(--late);margin:6px 0 0;font-weight:600}
 .weekbox .wk-head .sm{margin-inline-start:auto}
 @media (max-width:520px){.weekbox .wk-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.pc.kiosk{border:2px solid #f07c21}
+.pc.kiosk .src{background:#f07c21;color:#1f1200;border-radius:999px;padding:2px 10px;font-weight:700}
 </style>

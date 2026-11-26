@@ -16,7 +16,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { migrateWa, handleWebhook, recentReviews, readTranscript, lastKnownPoint } from "./wa.mjs";
+import { migrateWa, handleWebhook, recentReviews, readTranscript, lastKnownPoint, busyReady } from "./wa.mjs";
+import { priceKiosk } from "./kiosk.mjs";
+import { nextReady, openOf } from "./capacity.mjs";
 import { migrateReader, recordCorrection, evalReader, readerVersion } from "./reader.mjs";
 import { isFreeArea, getMenu, siteFee } from "./menu.mjs";
 import { migrateAdMentions, heardFromAd } from "./admention.mjs";
@@ -539,9 +541,14 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": buf.length, "Cache-Control": "public, max-age=3600" });
       return res.end(buf);
     }
+    // «شاشة العميل» (Hassan 2026-11-26): the customer screen in the shop, opened once with the board PIN on that device
+    if (p === "/kiosk" && req.method === "GET") {
+      if (!isAuthed(req)) { res.writeHead(302, { Location: "/login?next=kiosk" }); return res.end(); }
+      res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", "kiosk.html")));
+    }
     // «المشتريات» page (Hassan 2026-11-26): the worker's phone, same board login
     if (p === "/supplies" && req.method === "GET") {
-      if (!isAuthed(req)) { res.writeHead(302, { Location: "/login" }); return res.end(); }
+      if (!isAuthed(req)) { res.writeHead(302, { Location: "/login?next=supplies" }); return res.end(); }
       res.writeHead(200, pageHeaders); return res.end(fs.readFileSync(path.join(__dirname, "public", "supplies.html")));
     }
     // board page
@@ -559,6 +566,24 @@ const server = http.createServer(async (req, res) => {
         if (origin && new URL(origin).host !== req.headers.host) return send(res, 403, { error: "origin" });
       }
       if (p === "/api/board/menu" && req.method === "GET") return send(res, 200, await getMenu());
+      if (p === "/api/board/kiosk" && req.method === "POST") {
+        if (limited("kiosk:" + clientIp(req), 40, 3600e3)) return send(res, 429, { error: "محاولات كثيرة" });
+        const b = await readBody(req, 16 * 1024);
+        const menu = await getMenu();
+        const pr = priceKiosk(menu, b.lines);
+        if (pr.error) return send(res, 400, { error: pr.error });
+        const key = clip(b.key, 40);
+        if (key) { // the same press sent twice (slow network) → the same order
+          const dup = (await pool.query("SELECT * FROM orders WHERE raw->>'kioskKey'=$1 AND created > $2 LIMIT 1", [key, Date.now() - 10 * 60e3])).rows[0];
+          if (dup) return send(res, 200, { order: rowToOrder(dup), duplicate: true });
+        }
+        const now = Date.now();
+        const due = nextReady(await busyReady(pool, now, menu).catch(() => ({ oven: [], fry: [] })), now, pr.items, kitchenModel(), openOf(now));
+        const o = await insertOrder({ source: "shop", type: "pick", status: "pending", name: clip(b.name, 40), phone: "", area: "", items: pr.items, total: pr.total,
+          deliveryFee: null, note: "من شاشة العميل · يدفع عند الكاشير", due, raw: { kiosk: true, kioskKey: key || null }, enteredBy: "شاشة العميل" });
+        console.log(`kiosk: #${o.num} ${pr.total}`);
+        return send(res, 201, { order: o });
+      }
       if (p.startsWith("/api/board/supplies")) {
         if (p === "/api/board/supplies" && req.method === "GET") return send(res, 200, await suppliesState(pool));
         if (req.method !== "POST") return send(res, 405, { error: "method" });

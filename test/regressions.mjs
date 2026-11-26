@@ -422,3 +422,13 @@ t("2026-11-26 23:03 «مبيعات اليوم» ما تظهر في شريط ال
   const board = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
   assert.ok(!board.includes("مبيعات اليوم <b>"), "no today-sales chip on the kitchen screen");
 });
+const { priceKiosk } = await import("../kiosk.mjs");
+t("2026-11-26 شاشة العميل: السعر من المنيو مو من الصفحة، والصنف الغلط ينرفض", () => {
+  const r = priceKiosk(menu, [{ id: "triangles", tag: "20 قطعة", qty: 2, flavor: "رانش", price: 1 }, { id: "boats18", tag: "18 قطعة", qty: 1 }]);
+  assert.equal(r.items, "2 × فطائر مثلثة 20 قطعة (رانش) — 70 ريال\n1 × قوارب 18 قطعة — 35 ريال");
+  assert.equal(r.total, 105);
+  assert.ok(priceKiosk(menu, [{ id: "x", tag: "1", qty: 1 }]).error);
+  assert.ok(priceKiosk(menu, []).error);
+  const board = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
+  assert.ok(board.includes('data-act="kioskpay"'), "the cashier sends a paid customer-screen order to the kitchen");
+});

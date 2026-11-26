@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="robots" content="noindex">
+<title>مينيقيش · اطلب بنفسك</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;700&family=Lalezar&display=swap">
+<style>
+/* «شاشة العميل» (Hassan 2026-11-26): customer self-order screen in the shop, pickup only, pays at the cashier */
+:root{--bg:#f6f5ef;--card:#fff;--ink:#1f2416;--muted:#5f6650;--line:#e0ddd0;--olive:#5c6e30;--olive-ink:#46551f;--olive-soft:#eef2e3;--orange:#f07c21;--orange-ink:#1f1200}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans Arabic",system-ui,sans-serif;user-select:none;-webkit-user-select:none}
+button{-webkit-appearance:none;appearance:none;font:inherit;cursor:pointer}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 360px;height:100vh}
+.top{grid-column:1/-1;background:var(--olive);color:#fff;display:flex;align-items:center;gap:14px;padding:12px 20px}
+.top img{height:46px;background:#fff;border-radius:10px;padding:3px 8px}
+.top h1{margin:0;font-family:"Lalezar","IBM Plex Sans Arabic",sans-serif;font-weight:400;font-size:30px;line-height:1}
+.top p{margin:0;font-size:15px;opacity:.85}
+.menu{overflow-y:auto;padding:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px;align-content:start}
+.prod{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;text-align:right;display:flex;flex-direction:column;gap:6px;min-height:150px;color:var(--ink)}
+.prod b{font-size:20px;line-height:1.3}
+.prod span{font-size:14px;color:var(--muted);line-height:1.5}
+.prod .from{margin-top:auto;font-size:16px;font-weight:700;color:var(--olive)}
+.prod.in{border:2px solid var(--olive);background:var(--olive-soft)}
+.cart{background:#fff;border-inline-start:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.cart h2{margin:0;padding:16px 18px 8px;font-size:20px}
+.lines{flex:1;overflow-y:auto;padding:0 18px;display:flex;flex-direction:column;gap:10px}
+.line{border:1px solid var(--line);border-radius:14px;padding:10px 12px;display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center}
+.line .n{font-weight:700;font-size:15px}.line .s{font-size:13px;color:var(--muted)}
+.qty{display:flex;align-items:center;gap:8px}
+.qty button{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:#fff;font-size:22px;font-weight:700;color:var(--ink)}
+.qty b{min-width:22px;text-align:center;font-size:17px}
+.empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:15px;line-height:1.7}
+.foot{padding:14px 18px 18px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.tot{display:flex;justify-content:space-between;font-size:20px;font-weight:700}
+.foot input{border:1px solid #cfcdbf;border-radius:12px;padding:14px;font:inherit;font-size:18px;width:100%;user-select:text;-webkit-user-select:text}
+.go{background:var(--orange);color:var(--orange-ink);border:0;border-radius:14px;padding:18px;font-size:21px;font-weight:700;min-height:64px}
+.go:disabled{opacity:.45}
+.muted{font-size:13px;color:var(--muted);text-align:center}
+.scrim{position:fixed;inset:0;background:rgba(20,24,12,.55);display:flex;align-items:center;justify-content:center;padding:20px;z-index:10}
+.sheet{background:#fff;border-radius:22px;padding:22px;width:min(560px,100%);max-height:92vh;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.sheet h3{margin:0;font-size:24px}.sheet .d{color:var(--muted);font-size:15px;margin-top:-10px}
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.opt{border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px;text-align:right;min-height:64px;display:flex;flex-direction:column;gap:2px;color:var(--ink)}
+.opt b{font-size:17px}.opt span{font-size:15px;color:var(--olive);font-weight:700}
+.opt.on{border:2px solid var(--olive);background:var(--olive-soft)}
+.lbl{font-size:15px;font-weight:700}
+.row{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.btn2{border:1px solid var(--line);background:#fff;border-radius:14px;padding:16px 20px;font-size:17px;min-height:56px;color:var(--ink)}
+.done{background:#fff;border-radius:26px;padding:34px;text-align:center;width:min(520px,100%);display:flex;flex-direction:column;gap:14px;align-items:center}
+.done .num{font-family:"Lalezar",sans-serif;font-size:96px;line-height:1;color:var(--olive)}
+.done p{margin:0;font-size:20px;line-height:1.6}
+.done .pay{background:var(--orange);color:var(--orange-ink);border-radius:14px;padding:12px 18px;font-size:22px;font-weight:700}
+@media (max-width:860px){.app{grid-template-columns:1fr;grid-template-rows:auto 1fr auto;height:auto;min-height:100vh}.cart{border-inline-start:0;border-top:1px solid var(--line)}.lines{max-height:34vh}.menu{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><img src="{{LOGO}}" alt="مينيقيش"><div><h1>اطلب بنفسك</h1><p>اختر، أضف للسلة، واعتمد. والدفع عند الكاشير</p></div></header>
+  <main class="menu" id="menu"><p class="empty">جاري تحميل المنيو…</p></main>
+  <aside class="cart" aria-label="السلة">
+    <h2>سلتك</h2>
+    <div class="lines" id="lines"></div>
+    <div class="foot">
+      <div class="tot"><span>المجموع</span><span id="tot">0 ريال</span></div>
+      <input id="name" placeholder="اسمك (عشان نناديك)" maxlength="30" autocomplete="off">
+      <button class="go" id="send" disabled>اعتمد الطلب</button>
+      <div class="muted">استلام من المحل · الأسعار شاملة الضريبة</div>
+    </div>
+  </aside>
+</div>
+<div class="scrim" id="pick" hidden></div>
+<div class="scrim" id="ok" hidden></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt=n=>Number(Math.round(n*100)/100).toLocaleString("en-US");
+let MENU=null,cart=[],P=null,sending=false,key=null,idle=0,okT=0;
+async function loadMenu(){
+  const r=await fetch("/api/board/menu");if(r.status===401){location.href="/login?next=kiosk";return;}
+  MENU=await r.json();renderMenu();}
+function renderMenu(){
+  const ps=(MENU.products||[]).filter(p=>(p.variants||[]).some(v=>v.price>0));
+  $("menu").innerHTML=ps.map(p=>{const min=Math.min(...p.variants.filter(v=>v.price>0).map(v=>v.price));const n=cart.filter(l=>l.id===p.id).reduce((a,l)=>a+l.qty,0);
+    return `<button class="prod ${n?"in":""}" data-p="${esc(p.id)}"><b>${esc(p.name)}</b>${p.description?`<span>${esc(p.description)}</span>`:""}<span class="from">${p.variants.length>1?"من ":""}${fmt(min)} ريال${n?` · في السلة ${n}`:""}</span></button>`;}).join("")||`<p class="empty">المنيو ما وصل. نادِ الكاشير.</p>`;}
+function renderCart(){
+  const t=cart.reduce((a,l)=>a+l.price*l.qty,0);
+  $("lines").innerHTML=cart.length?cart.map((l,i)=>`<div class="line"><div><div class="n">${esc(l.name)} ${esc(l.tag)}</div><div class="s">${l.flavor?esc(l.flavor)+" · ":""}${fmt(l.price*l.qty)} ريال</div></div>
+    <div class="qty"><button data-dec="${i}" aria-label="أنقص">−</button><b>${l.qty}</b><button data-inc="${i}" aria-label="زد">+</button></div></div>`).join(""):`<div class="empty">السلة فاضية.<br>اضغط على أي صنف عشان تضيفه.</div>`;
+  $("tot").textContent=fmt(t)+" ريال";$("send").disabled=!cart.length;renderMenu();}
+function openPick(id){const p=MENU.products.find(x=>x.id===id);if(!p)return;
+  const vs=p.variants.filter(v=>v.price>0);P={p,tag:vs.length===1?vs[0].tag:null,flavor:"",qty:1};drawPick();$("pick").hidden=false;}
+function drawPick(){const {p}=P,vs=p.variants.filter(v=>v.price>0),fl=p.flavors||[];const v=vs.find(x=>x.tag===P.tag);
+  $("pick").innerHTML=`<div class="sheet" role="dialog" aria-label="${esc(p.name)}"><h3>${esc(p.name)}</h3>${p.description?`<div class="d">${esc(p.description)}</div>`:""}
+    <div class="lbl">الحجم</div><div class="opts">${vs.map(x=>`<button class="opt ${P.tag===x.tag?"on":""}" data-tag="${esc(x.tag)}"><b>${esc(x.tag)}</b><span>${fmt(x.price)} ريال</span></button>`).join("")}</div>
+    ${fl.length?`<div class="lbl">النكهة</div><div class="opts"><button class="opt ${!P.flavor?"on":""}" data-fl=""><b>مشكل</b></button>${fl.map(f=>`<button class="opt ${P.flavor===f?"on":""}" data-fl="${esc(f)}"><b>${esc(f)}</b></button>`).join("")}</div>`:""}
+    <div class="row"><div class="lbl">الكمية</div><div class="qty"><button data-pq="-1" aria-label="أنقص">−</button><b>${P.qty}</b><button data-pq="1" aria-label="زد">+</button></div></div>
+    <div class="row"><button class="btn2" data-close>رجوع</button><button class="go" data-add ${v?"":"disabled"} style="flex:1">${v?"أضف للسلة · "+fmt(v.price*P.qty)+" ريال":"اختر الحجم"}</button></div></div>`;}
+function addPick(){const {p}=P,v=p.variants.find(x=>x.tag===P.tag);if(!v)return;
+  const same=cart.find(l=>l.id===p.id&&l.tag===v.tag&&l.flavor===P.flavor);
+  if(same)same.qty=Math.min(20,same.qty+P.qty);else cart.push({id:p.id,name:p.name,tag:v.tag,flavor:P.flavor,price:v.price,qty:P.qty});
+  $("pick").hidden=true;P=null;key=null;renderCart();}
+async function send(){if(sending||!cart.length)return;sending=true;$("send").disabled=true;$("send").textContent="جاري الإرسال…";key=key||("k"+Date.now()+Math.random().toString(36).slice(2,8));
+  try{const r=await fetch("/api/board/kiosk",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({key,name:$("name").value.trim(),lines:cart.map(l=>({id:l.id,tag:l.tag,qty:l.qty,flavor:l.flavor}))})});
+    const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||"ما وصل الطلب");
+    showOk(j.order);}
+  catch(e){$("send").textContent="ما وصل، جرّب مرة ثانية";setTimeout(()=>{$("send").textContent="اعتمد الطلب";},2500);$("send").disabled=false;}
+  finally{sending=false;}}
+function showOk(o){$("ok").innerHTML=`<div class="done"><p>رقم طلبك</p><div class="num">#${esc(o.num)}</div><div class="pay">ادفع ${fmt(o.total)} ريال عند الكاشير</div><p>بعد الدفع يبدأ تجهيز طلبك، ونناديك${o.name?" يا "+esc(o.name):""} برقمك.</p><button class="btn2" data-new>طلب جديد</button></div>`;
+  $("ok").hidden=false;clearTimeout(okT);okT=setTimeout(reset,20000);}
+function reset(){cart=[];P=null;key=null;$("name").value="";$("pick").hidden=true;$("ok").hidden=true;$("send").textContent="اعتمد الطلب";renderCart();$("menu").scrollTop=0;}
+document.addEventListener("click",e=>{const b=e.target.closest("button");idle=Date.now();if(!b)return;
+  if(b.dataset.p){openPick(b.dataset.p);return;}
+  if(b.dataset.tag!=null){P.tag=b.dataset.tag;drawPick();return;}
+  if(b.dataset.fl!=null){P.flavor=b.dataset.fl;drawPick();return;}
+  if(b.dataset.pq){P.qty=Math.max(1,Math.min(20,P.qty+(+b.dataset.pq)));drawPick();return;}
+  if(b.hasAttribute("data-close")){$("pick").hidden=true;P=null;return;}
+  if(b.hasAttribute("data-add")){addPick();return;}
+  if(b.dataset.inc!=null){const l=cart[+b.dataset.inc];l.qty=Math.min(20,l.qty+1);key=null;renderCart();return;}
+  if(b.dataset.dec!=null){const i=+b.dataset.dec;cart[i].qty--;if(cart[i].qty<1)cart.splice(i,1);key=null;renderCart();return;}
+  if(b.id==="send"){send();return;}
+  if(b.hasAttribute("data-new")){reset();return;}});
+$("pick").addEventListener("click",e=>{if(e.target.id==="pick"){$("pick").hidden=true;P=null;}});
+document.addEventListener("input",()=>{idle=Date.now();});
+// left alone for 2 minutes with something in the cart → clean screen for the next customer
+setInterval(()=>{if((cart.length||P)&&$("ok").hidden&&Date.now()-idle>120e3)reset();},10e3);
+// the menu follows the website: re-read every 10 minutes
+setInterval(()=>{if(!cart.length&&!P)loadMenu().catch(()=>{});},600e3);
+loadMenu().then(renderCart).catch(()=>{$("menu").innerHTML=`<p class="empty">ما قدرنا نحمّل المنيو. نادِ الكاشير.</p>`;});
+</script>
+</body>
+</html>

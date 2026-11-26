@@ -487,6 +487,18 @@ function ticket(o,t){
 function pendingCard(o,t){
   const age=Math.round((t-o.created)/60000);
   const items=(o.items||"").split("\n").filter(Boolean);
+  /* «شاشة العميل» (Hassan 2026-11-26): the customer ordered on the shop screen; nothing is cooked until the cashier takes the money */
+  if(o.enteredBy==="شاشة العميل") return `<div class="pc kiosk" data-id="${esc(o.id)}">
+    <div class="top"><span class="src">شاشة العميل</span><span class="type">استلام</span><span class="refchip">#${esc(o.num)}</span><span class="refchip">قبل ${age} د</span></div>
+    <div><strong>${esc(o.name||"بدون اسم")}</strong> · <strong>${o.total!=null?esc(o.total)+" ريال":""}</strong></div>
+    <div class="sum">${esc(items.join(" · "))}</div>
+    <div class="row">
+      <span>استلمت المبلغ:</span>
+      <button type="button" class="go" data-act="kioskpay" data-pay="cash">كاش ← للمطبخ</button>
+      <button type="button" class="go" data-act="kioskpay" data-pay="card">شبكة ← للمطبخ</button>
+      <button type="button" class="sm" data-act="dismiss">ما دفع</button>
+    </div>
+  </div>`;
   if(o.source==="wa") return `<div class="pc wa" data-id="${esc(o.id)}">
     <div class="top"><span class="src wa">واتساب</span><span class="type ${o.type==="del"?"del":""}">${o.type==="del"?"توصيل":"استلام"}</span>
       <span class="refchip">${esc(o.phone)}</span><span class="refchip">قبل ${age} د</span></div>
@@ -623,6 +635,7 @@ document.addEventListener("click",e=>{
     else if(a==="back"){const p=o.status==="done"?(o.type==="del"?"out":"ready"):PREV[o.status];if(p)patch(o,{status:p});}
     else if(a==="restore") patch(o,{status:o.status==="dismissed"?"pending":"new"});
     else if(a==="confirm") patch(o,{status:"new",confirm:true},"أُكّد الطلب #"+o.num+" وانتقل للمطبخ");
+    else if(a==="kioskpay") patch(o,{status:"new",confirm:true,pay:b.dataset.pay,due:kioskDue(o)},"انتقل الطلب #"+o.num+" للمطبخ");
     else if(a==="dismiss") patch(o,{status:"dismissed"},"أُخفي الطلب "+(o.ref||""));
     else if(a==="edit"||a==="review") openSheet(o);
     else if(a==="gift") sendGift(o,b);
@@ -902,6 +915,11 @@ $("addons").addEventListener("click",e=>{const b=e.target.closest("[data-addon]"
 $("cart").addEventListener("click",e=>{const b=e.target.closest("[data-fi]");if(b){e.stopPropagation();setFlavor(+b.dataset.fi,b.dataset.flv);}});
 
 /* time slots every 30 minutes, like the website */
+/* a paid customer-screen order goes into the kitchen queue now: its time is the first free moment for its items */
+function kioskDue(o){const t=now(),M=S.kitchenModel||DEFAULT_MODEL;
+  const open=(S.orders||[]).filter(x=>["new","prep"].includes(x.status)&&x.id!==o.id);
+  const jobs=kitchenJobs(open.map(x=>({status:x.status,prepAt:x.prepAt,readyAt:handoverAt(x),items:x.items})),t,M);
+  return nextReady(jobs,t,o.items,M,openOf(t));}
 let pickedSlot=null;
 /* «أقرب وقت»: oven and fryer queues (capacity.mjs, measured times from the server); the order is ready when its slower
    station is; plus the drive for a delivery */
