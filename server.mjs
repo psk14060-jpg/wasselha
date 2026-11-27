@@ -849,6 +849,14 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-27 (Hassan: today's sales in /admin look wrong): log the day's orders and what /admin shows (removed next commit)
+  setTimeout(async () => { try {
+    const { adminData } = await import("./dash.mjs"); const { feeOf } = await import("./weeksales.mjs");
+    const a = await adminData(pool); console.log("chk admin day " + JSON.stringify(a.day) + " lastweek " + JSON.stringify(a.dayLastWeek));
+    const { rows } = await pool.query("SELECT num, source, type, status, total, delivery_fee, area, op_day::text AS d, to_char(to_timestamp(created/1000) AT TIME ZONE 'Asia/Riyadh','MM-DD HH24:MI') AS c, to_char(to_timestamp(due/1000) AT TIME ZONE 'Asia/Riyadh','MM-DD HH24:MI') AS du FROM orders WHERE op_day >= $1::date - 1 OR created > $2 ORDER BY op_day, num", [a.today, Date.now() - 36 * 3600e3]);
+    for (const o of rows) console.log(`chk ${o.d} #${o.num} ${o.source}/${o.type} ${o.status} total=${o.total} fee=${o.delivery_fee} net=${o.total == null ? "" : Math.max(0, o.total - feeOf(o))} created=${o.c} due=${o.du}`);
+    const rw = await pool.query("SELECT op_day::text d, kind, amount FROM returns_waste WHERE op_day >= $1::date - 1", [a.today]); console.log("chk rw " + JSON.stringify(rw.rows));
+  } catch (e) { console.log("chk: " + e.message); } }, 20e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
   // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
   // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
