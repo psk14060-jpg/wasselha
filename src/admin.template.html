@@ -146,7 +146,11 @@ tr.part td{color:var(--muted)} tr.part td.sales .cell i{background:var(--c3)}
     <h2 id="tdH">اليوم حتى الآن</h2>
     <p class="hint" id="tdHint"></p>
     <div class="tdgrid" id="today"></div>
+    <h2 id="wsH" style="margin-top:14px">هذا الأسبوع حتى الآن</h2>
+    <p class="hint" id="wsHint"></p>
+    <div class="tdgrid" id="wsofar"></div>
   </section>
+  <h2 class="span12" id="fullH" style="margin:6px 4px 0;font-size:15px;color:var(--muted)"></h2>
 
   <div id="kpis" style="display:contents"></div>
 
@@ -213,6 +217,16 @@ function spark(vals, color){
 }
 
 // today so far (owner only): the kitchen screen no longer shows the day's sales (Hassan 2026-11-26)
+function renderWeekSoFar(x){
+  const w = x.weekSoFar, b = x.weekSoFarBefore;
+  if (!w) return;
+  $("wsHint").textContent = `من الأحد ${dmy(w.from)} لين ${dmy(w.to)} · المقارنة بنفس الأيام من الأسبوع الماضي (${dmy(b.from)} لين ${dmy(b.to)})`;
+  const avg = o => o.priced ? o.sales / o.priced : 0;
+  const pct = (a, c) => c ? Math.round((a - c) / c * 100) : null;
+  const T = [["المبيعات المباشرة", o => o.sales, f0, "ريال", true], ["طلبات مسعّرة", o => o.priced, f0, ""], ["متوسط الطلب", avg, f1, "ريال"], ["رسوم التوصيل", o => o.fees, f0, "ريال"]];
+  $("wsofar").innerHTML = T.map(([k, g, fm, unit, hero]) => { const p = pct(g(w), g(b));
+    return `<div class="td${hero ? " hero" : ""}"><div class="k">${k}</div><div class="v">${fm(g(w))}${unit ? `<small>${unit}</small>` : ""}</div><div class="row"><span>نفس الأيام قبل: <span class="num">${fm(g(b))}</span>${p == null ? "" : ` · <span class="num">${p > 0 ? "+" : ""}${p}%</span>`}</span></div></div>`; }).join("");
+}
 function renderToday(x){
   const t = x.day, p = x.dayLastWeek;
   if (!t) { $("today").innerHTML = `<p class="hint">ما فيه طلبات اليوم للحين.</p>`; $("tdHint").textContent = ""; return; }
@@ -223,10 +237,11 @@ function renderToday(x){
 }
 function render(x){
   $("upd").textContent = "آخر تحديث " + new Date(x.at).toLocaleString("ar-SA-u-nu-latn-ca-gregory",{hour:"2-digit",minute:"2-digit",day:"numeric",month:"short",timeZone:"Asia/Riyadh"});
-  renderToday(x);
+  renderToday(x); renderWeekSoFar(x);
   const a = x.last, b = x.before;
   const full = x.weeks.filter(w => !w.partial).slice().reverse(); // oldest → newest
   $("wkPill").innerHTML = a ? `آخر أسبوع كامل: <b>${rng(a.from, a.to)}</b>` : "ما فيه أسبوع كامل للحين";
+  $("fullH").textContent = a ? `آخر أسبوع كامل (${rng(a.from, a.to)}) مقابل الأسبوع اللي قبله:` : "";
   if (!a) { $("kpis").innerHTML = ""; return; }
 
   const K = [
