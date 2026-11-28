@@ -852,6 +852,11 @@ migrate().then(() => {
   // one-off 2026-11-28 (Hassan: wrong delivery fees today): log today's deliveries (removed next commit)
   setTimeout(async () => { try {
     const { rows } = await pool.query(`SELECT id, num, source, status, area, delivery_fee, total, note, dest, entered_by, to_char(to_timestamp(created/1000) AT TIME ZONE 'Asia/Riyadh','HH24:MI') c, raw::text AS raw FROM orders WHERE op_day=$1 AND type='del' ORDER BY num`, [opDayOf(Date.now())]);
+    for (const o of rows.filter(r => r.source === "wa")) {
+      const w = (await pool.query("SELECT wa_from FROM orders WHERE id=$1", [o.id])).rows[0].wa_from;
+      const ms = (await pool.query("SELECT dir, body, to_char(to_timestamp(at/1000) AT TIME ZONE 'Asia/Riyadh','HH24:MI') t FROM wa_messages WHERE wa_from=$1 AND at > $2 ORDER BY at", [w, Date.now() - 6 * 3600e3])).rows;
+      console.log(`chkchat #${o.num} …${String(w).slice(-4)}: ` + ms.map(m => `[${m.t} ${m.dir}] ${String(m.body || "").replace(/\s+/g, " ").slice(0, 120)}`).join(" | ").slice(0, 1800));
+    }
     for (const o of rows) console.log(`chkfee #${o.num} ${o.source} ${o.status} ${o.c} area=«${o.area}» fee=${o.delivery_fee} total=${o.total} ll=${o.dest} by=${o.entered_by || ""} note=«${String(o.note || "").slice(0, 160)}» raw=${String(o.raw || "").slice(0, 260)}`);
   } catch (e) { console.log("chkfee: " + e.message); } }, 20e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
