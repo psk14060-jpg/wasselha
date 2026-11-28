@@ -296,6 +296,11 @@ $("gf").addEventListener("submit", e => { e.preventDefault(); code = $("code").v
 function fit(){ const w = innerWidth, z = w > 1300 ? Math.min(2.6, (w - 40) / 1200) : 1; document.documentElement.style.zoom = z; }
 addEventListener("resize", fit); fit();
 load(); setInterval(() => { if (code) load(); }, 5 * 60e3);
+// 2026-11-28 Hassan: the numbers looked frozen since the afternoon: a phone stops timers while the page is in the background,
+// so the page reloads its numbers whenever it comes back to the screen, and every minute while it is shown
+addEventListener("visibilitychange", () => { if (!document.hidden && code) load(); });
+addEventListener("pageshow", () => { if (code) load(); });
+setInterval(() => { if (code && !document.hidden) load(); }, 60e3);
 </script>
 </body>
 </html>
