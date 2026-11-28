@@ -849,13 +849,6 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
-  // one-off 2026-11-28 (Hassan: weekly sales look frozen since yesterday afternoon): log what the week views show (removed next commit)
-  setTimeout(async () => { try {
-    const { adminData } = await import("./dash.mjs"); const { weekSales } = await import("./weeksales.mjs");
-    const a = await adminData(pool), cur = a.weeks[0];
-    console.log(`chk admin today=${a.today} curweek ${cur.from}..${cur.to} sales=${cur.sales} priced=${cur.priced} day=${JSON.stringify(a.day)}`);
-    const w = await weekSales(pool, opDayOf(Date.now())); console.log("chk week " + JSON.stringify({ sales: w.sales, n: w.n, days: w.days.map(d => d.d.slice(5) + ":" + d.sales) }));
-  } catch (e) { console.log("chk: " + e.message); } }, 20e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
   // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
   // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
