@@ -849,6 +849,11 @@ migrate().then(() => {
   // every order we price ourselves: total = item lines + delivery (totals.mjs; #13 of 2026-11-15 stood at 16 instead of 26)
   setTimeout(() => fixOpenTotals(pool).then(n => console.log("total-fix: start, fixed " + n)).catch(e => console.log("total-fix: " + e.message)), 15e3);
   setInterval(() => fixOpenTotals(pool).catch(e => console.log("total-fix: " + e.message)), 60e3).unref();
+  // one-off 2026-11-28 (Hassan: wrong delivery fees today): log today's deliveries (removed next commit)
+  setTimeout(async () => { try {
+    const { rows } = await pool.query(`SELECT id, num, source, status, area, delivery_fee, total, note, dest, entered_by, to_char(to_timestamp(created/1000) AT TIME ZONE 'Asia/Riyadh','HH24:MI') c, raw::text AS raw FROM orders WHERE op_day=$1 AND type='del' ORDER BY num`, [opDayOf(Date.now())]);
+    for (const o of rows) console.log(`chkfee #${o.num} ${o.source} ${o.status} ${o.c} area=«${o.area}» fee=${o.delivery_fee} total=${o.total} ll=${o.dest} by=${o.entered_by || ""} note=«${String(o.note || "").slice(0, 160)}» raw=${String(o.raw || "").slice(0, 260)}`);
+  } catch (e) { console.log("chkfee: " + e.message); } }, 20e3);
   // 2026-11-21 #28 (الخالدية, 4.7 km, WhatsApp) went out with delivery 0 while the website lists 5. Every minute: an open
   // WhatsApp / phone delivery whose neighbourhood is on the website list with a fee, saved with 0 or no fee, gets that fee
   // (before it leaves the shop). Free neighbourhoods and website orders (they keep the fee they were sent with) are not touched.
