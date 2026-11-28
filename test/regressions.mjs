@@ -432,3 +432,8 @@ t("2026-11-26 شاشة العميل: السعر من المنيو مو من ال
   const board = fs.readFileSync(new URL("../public/board.html", import.meta.url), "utf8");
   assert.ok(board.includes('data-act="kioskpay"'), "the cashier sends a paid customer-screen order to the kitchen");
 });
+t("2026-11-28 #4 موقع طلب سابق ينستخدم بس لما العميل يطلب توصيل في المحادثة نفسها", () => {
+  const src = fs.readFileSync(new URL("../wa.mjs", import.meta.url), "utf8");
+  assert.ok(!src.includes('wantDelivery: p.type !== "pick"'), "an unknown type must not pull an old location");
+  assert.ok(src.includes('wantDelivery: saidType === "del"'));
+});

@@ -540,14 +540,16 @@ async function approveFromConversation(m, phone, ctx, apiKey) {
     await pool.query(`UPDATE orders SET name=CASE WHEN $1<>'' THEN $1 ELSE name END,type=$2,area=$3,items=$4,total=$5,note=$6,due=$7,raw_text=$8,updated=$9,delivery_fee=$11 WHERE id=$10`,
       [fields.name, fields.type, fields.area, fields.items, fields.total, note, fields.due, transcript.slice(-3000), now, prev.id, fields.deliveryFee]);
     if (ctx.applyGift) await ctx.applyGift(pool, prev.id, customerLines(transcript)).catch(() => null);
-    if (prev.source !== "web") await locationFromChat(pool, prev.id, customerRows, log, { wantDelivery: p.type !== "pick", waFrom: m.from });
+    if (prev.source !== "web") await locationFromChat(pool, prev.id, customerRows, log, { wantDelivery: saidType === "del", waFrom: m.from });
     return `order_changed #${prev.num}`;
   }
   const note = [prev && p.is_change ? `تعديل على الطلب #${prev.num} وقد بدأ تجهيزه — راجعهما` : "", ...baseNote].filter(Boolean).join(" · ").slice(0, 300);
   const o = await insertOrder({ ref: null, source: "wa", status: "new", phone, ...fields, note,
     waFrom: m.from, rawText: transcript.slice(-3000), needsReview: false });
   if (ctx.applyGift) await ctx.applyGift(pool, o.id, customerLines(transcript)).catch(() => null);
-  await locationFromChat(pool, o.id, customerRows, log, { wantDelivery: p.type !== "pick", waFrom: m.from });
+  // 2026-11-28 #4: the customer never said pickup or delivery; the board took the location of his order of 22 Nov
+  // (السلمانية الرابع, fee 10) while Hassan says the order was for النايفية (free). A past location is used only when he asked for delivery now.
+  await locationFromChat(pool, o.id, customerRows, log, { wantDelivery: saidType === "del", waFrom: m.from });
   return `approved_order #${o.num}`;
 }
 
